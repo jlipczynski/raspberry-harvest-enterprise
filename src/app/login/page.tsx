@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import Image from 'next/image'
+import { Leaf } from 'lucide-react'
 
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
@@ -21,27 +21,22 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-red-100">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-500 to-green-700">
       <div className="w-full max-w-md px-4">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <Image 
-              src="/logo.jpg" 
-              alt="GR Lipczyński" 
-              width={200} 
-              height={80}
-              className="h-20 w-auto"
-            />
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-white/20 rounded-2xl mb-4 backdrop-blur">
+            <Leaf className="w-12 h-12 text-white" />
           </div>
-          <p className="text-gray-600 mt-1">System zarządzania plantacją</p>
+          <h1 className="text-3xl font-bold text-white">Planer Zbiorów</h1>
+          <p className="text-green-100 mt-1">System zarządzania plantacją malin</p>
         </div>
 
         {/* Karta logowania */}
-        <Card className="shadow-xl border-0">
+        <Card className="shadow-2xl border-0">
           <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-xl">Zaloguj się</CardTitle>
-            <CardDescription>
+            <CardTitle className="text-xl text-center">Zaloguj się</CardTitle>
+            <CardDescription className="text-center">
               Wprowadź swoje dane aby uzyskać dostęp
             </CardDescription>
           </CardHeader>
@@ -60,15 +55,7 @@ export default function LoginPage() {
                 />
               </div>
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Hasło</Label>
-                  <a 
-                    href="#" 
-                    className="text-sm text-red-700 hover:text-red-800"
-                  >
-                    Zapomniałeś hasła?
-                  </a>
-                </div>
+                <Label htmlFor="password">Hasło</Label>
                 <Input
                   id="password"
                   type="password"
@@ -81,7 +68,7 @@ export default function LoginPage() {
               </div>
               <Button 
                 type="submit" 
-                className="w-full h-11 bg-red-700 hover:bg-red-800"
+                className="w-full h-11 bg-green-600 hover:bg-green-700"
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -113,8 +100,8 @@ export default function LoginPage() {
         </Card>
 
         {/* Footer */}
-        <p className="text-center text-sm text-gray-500 mt-6">
-          © 2026 GR Lipczyński. Wszelkie prawa zastrzeżone.
+        <p className="text-center text-sm text-green-100 mt-6">
+          © 2026 Planer Zbiorów Malin
         </p>
       </div>
     </div>

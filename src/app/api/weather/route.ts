@@ -1,6 +1,15 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 
+interface WeatherRecord {
+  date: string
+  tempMin: number
+  tempMax: number
+  gdhDaily: number
+  gdhCumulative: number
+  source?: string
+}
+
 // GET - pobierz dane pogodowe
 export async function GET() {
   try {
@@ -71,7 +80,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Zapisz nowe dane
-    const records = weatherRecords.map((r: any) => ({
+    const records = weatherRecords.map((r: WeatherRecord) => ({
       date: new Date(r.date),
       tempMin: r.tempMin,
       tempMax: r.tempMax,

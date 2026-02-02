@@ -1,6 +1,22 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 
+interface VarietyInput {
+  id?: string
+  name: string
+  origin?: string
+  type: 'single' | 'double'
+  gdhThreshold?: number
+  baseTemp?: number
+  summerYield?: number
+  autumnYield?: number
+  yield?: number
+  fruitingDays?: number
+  workerEfficiency?: number
+  wastePercentage?: number
+  secondCategoryPercentage?: number
+}
+
 // GET - pobierz odmiany
 export async function GET() {
   try {
@@ -67,7 +83,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { varieties } = body
 
-    let farm = await prisma.farm.findFirst()
+    const farm = await prisma.farm.findFirst()
     if (!farm) {
       return NextResponse.json({ error: 'Farm not found' }, { status: 404 })
     }
@@ -81,7 +97,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Aktualizuj lub utwórz odmiany
-    for (const variety of varieties) {
+    for (const variety of varieties as VarietyInput[]) {
       await prisma.variety.upsert({
         where: { 
           id: variety.id || 'new-' + Date.now()

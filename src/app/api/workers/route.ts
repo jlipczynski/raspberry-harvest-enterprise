@@ -1,6 +1,18 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 
+interface WorkerInput {
+  name: string
+  efficiency?: number
+  status?: 'active' | 'inactive'
+}
+
+interface WorkerConfig {
+  availableWorkers?: number
+  averageEfficiency?: number
+  hoursPerDay?: number
+}
+
 // GET - pobierz pracowników i konfigurację
 export async function GET() {
   try {
@@ -43,9 +55,9 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { workers, config } = body
+    const { workers, config } = body as { workers?: WorkerInput[], config?: WorkerConfig }
 
-    let farm = await prisma.farm.findFirst()
+    const farm = await prisma.farm.findFirst()
     if (!farm) {
       return NextResponse.json({ error: 'Farm not found' }, { status: 404 })
     }
@@ -77,7 +89,7 @@ export async function POST(request: NextRequest) {
 
       // Dodaj nowych
       await prisma.worker.createMany({
-        data: workers.map((w: any) => ({
+        data: workers.map((w: WorkerInput) => ({
           name: w.name,
           efficiency: w.efficiency || 8,
           isActive: w.status === 'active',

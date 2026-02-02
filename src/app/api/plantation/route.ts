@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     const varieties = await prisma.variety.findMany({
       where: { farmId: farm.id }
     })
-    const varietyMap = new Map(varieties.map(v => [v.name, v.id]))
+    const varietyMap = new Map(varieties.map((v: { name: string; id: string }) => [v.name, v.id]))
 
     // Usuń stare bloki i sekcje
     await prisma.section.deleteMany({

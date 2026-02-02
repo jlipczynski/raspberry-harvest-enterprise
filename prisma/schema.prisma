@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== TENANTS ====================
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  users     User[]
+  farms     Farm[]
+  varieties Variety[]
+  
+  @@map("tenants")
+}
+
+// ==================== USERS ====================
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  role         String   @default("MANAGER")
+  
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@map("users")
+}
+
+// ==================== FARMS ====================
+model Farm {
+  id              String    @id @default(cuid())
+  name            String
+  location        String?
+  seasonStartDate DateTime?
+  
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id])
+  
+  blocks          Block[]
+  workers         Worker[]
+  weatherData     WeatherData[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@map("farms")
+}
+
+// ==================== BLOCKS ====================
+model Block {
+  id       String    @id @default(cuid())
+  name     String
+  areaHa   Float?
+  
+  farmId   String
+  farm     Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  
+  sections Section[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("blocks")
+}
+
+// ==================== SECTIONS ====================
+model Section {
+  id           String    @id @default(cuid())
+  name         String?
+  rowsCount    Int
+  rowLengthM   Float
+  plantSpacing Float
+  plantsCount  Int
+  plantingDate DateTime?
+  
+  blockId      String
+  block        Block     @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  
+  varietyId    String
+  variety      Variety   @relation(fields: [varietyId], references: [id])
+  
+  harvests     Harvest[]
+  
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  @@map("sections")
+}
+
+// ==================== VARIETIES ====================
+model Variety {
+  id               String    @id @default(cuid())
+  name             String
+  gdhFirstHarvest  Int
+  avgYieldPerPlant Float
+  fruitCurve       Json      @default("[]")
+  isCustom         Boolean   @default(false)
+  
+  tenantId         String?
+  tenant           Tenant?   @relation(fields: [tenantId], references: [id])
+  
+  sections         Section[]
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  @@map("varieties")
+}
+
+// ==================== WEATHER ====================
+model WeatherData {
+  id            String   @id @default(cuid())
+  date          DateTime @db.Date
+  tempMin       Float
+  tempMax       Float
+  gdhDaily      Float
+  gdhCumulative Float
+  
+  farmId        String
+  farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime @default(now())
+  
+  @@unique([farmId, date])
+  @@map("weather_data")
+}
+
+// ==================== WORKERS ====================
+model Worker {
+  id            String   @id @default(cuid())
+  name          String
+  phone         String?
+  efficiencyKgH Float
+  isActive      Boolean  @default(true)
+  
+  farmId        String
+  farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@map("workers")
+}
+
+// ==================== HARVESTS ====================
+model Harvest {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  yieldKg   Float
+  notes     String?
+  
+  sectionId String
+  section   Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@map("harvests")
+}

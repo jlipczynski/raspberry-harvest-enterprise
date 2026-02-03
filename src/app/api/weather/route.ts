@@ -1,45 +1,20 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 
-interface WeatherRecord {
-  date: string
-  tempMin: number
-  tempMax: number
-  gdhDaily: number
-  gdhCumulative: number
-  source?: string
-}
-
 // GET - pobierz dane pogodowe
 export async function GET() {
   try {
-    // Pobierz lub utwórz domyślną farmę
-    let farm = await prisma.farm.findFirst()
+    // Pobierz pierwszą farmę
+    const farm = await prisma.farm.findFirst({
+      include: { weatherData: { orderBy: { date: 'desc' }, take: 365 } }
+    })
+
     if (!farm) {
-      farm = await prisma.farm.create({
-        data: {
-          name: 'Plantacja Malin - Wyszynki',
-          location: 'Wyszynki, gmina Budzyń',
-          latitude: 52.8831,
-          longitude: 16.8156,
-        }
-      })
+      return NextResponse.json({ weatherData: [], farm: null })
     }
 
-    const weatherData = await prisma.weatherData.findMany({
-      where: { farmId: farm.id },
-      orderBy: { date: 'desc' },
-      take: 365,
-    })
-    
-    // Pobierz ustawienia GDH
-    const settings = await prisma.settings.findFirst({
-      where: { farmId: farm.id }
-    })
-
     return NextResponse.json({ 
-      weatherData,
-      baseTemp: settings?.gdhBaseTemp || 5,
+      weatherData: farm.weatherData,
       farm
     })
   } catch (error) {
@@ -48,50 +23,42 @@ export async function GET() {
   }
 }
 
-// POST - zapisz dane pogodowe (bulk)
+// POST - zapisz dane pogodowe
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { weatherRecords, baseTemp } = body
+    const { weatherRecords, farmId } = body
 
-    // Pobierz lub utwórz farmę
-    let farm = await prisma.farm.findFirst()
-    if (!farm) {
-      farm = await prisma.farm.create({
-        data: {
-          name: 'Plantacja Malin - Wyszynki',
-          location: 'Wyszynki, gmina Budzyń',
-          latitude: 52.8831,
-          longitude: 16.8156,
-        }
-      })
+    if (!farmId) {
+      return NextResponse.json({ error: 'farmId is required' }, { status: 400 })
     }
 
-    // Zapisz lub zaktualizuj ustawienia
-    await prisma.settings.upsert({
-      where: { farmId: farm.id },
-      update: { gdhBaseTemp: baseTemp },
-      create: { farmId: farm.id, gdhBaseTemp: baseTemp }
-    })
-
-    // Usuń stare dane i zapisz nowe (prostsze niż upsert dla wielu rekordów)
+    // Usuń stare dane
     await prisma.weatherData.deleteMany({
-      where: { farmId: farm.id }
+      where: { farmId }
     })
 
     // Zapisz nowe dane
+    interface WeatherRecord {
+      date: string
+      tempMin: number
+      tempMax: number
+      gdhDaily: number
+      gdhCumulative: number
+    }
+
     const records = weatherRecords.map((r: WeatherRecord) => ({
       date: new Date(r.date),
       tempMin: r.tempMin,
       tempMax: r.tempMax,
       gdhDaily: r.gdhDaily,
       gdhCumulative: r.gdhCumulative,
-      source: r.source || 'API',
-      farmId: farm.id,
+      farmId,
     }))
 
     await prisma.weatherData.createMany({
-      data: records
+      data: records,
+      skipDuplicates: true,
     })
 
     return NextResponse.json({ success: true, count: records.length })

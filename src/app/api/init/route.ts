@@ -5,7 +5,9 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 function getPrisma() {
-  return new PrismaClient()
+  return new PrismaClient({
+    datasourceUrl: process.env.DATABASE_URL,
+  })
 }
 
 // POST - inicjalizuj dane startowe
@@ -80,7 +82,7 @@ export async function POST() {
   } catch (error) {
     await prisma.$disconnect()
     console.error('Error initializing data:', error)
-    return NextResponse.json({ error: 'Failed to initialize data' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to initialize data', details: String(error) }, { status: 500 })
   }
 }
 
@@ -105,6 +107,6 @@ export async function GET() {
   } catch (error) {
     await prisma.$disconnect()
     console.error('Error checking status:', error)
-    return NextResponse.json({ error: 'Failed to check status' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to check status', details: String(error) }, { status: 500 })
   }
 }

@@ -5,7 +5,9 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 function getPrisma() {
-  return new PrismaClient()
+  return new PrismaClient({
+    datasourceUrl: process.env.DATABASE_URL,
+  })
 }
 
 export async function GET() {

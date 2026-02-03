@@ -1,23 +1,27 @@
-import { prisma } from '@/lib/prisma'
 import { NextResponse } from 'next/server'
+import { PrismaClient } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
+function getPrisma() {
+  return new PrismaClient()
+}
 
 // POST - inicjalizuj dane startowe
 export async function POST() {
+  const prisma = getPrisma()
+  
   try {
-    // Sprawdź czy już istnieje tenant
     let tenant = await prisma.tenant.findFirst()
     
     if (!tenant) {
-      // Utwórz tenant
       tenant = await prisma.tenant.create({
         data: {
           name: 'GR Lipczynski',
         }
       })
 
-      // Utwórz farmę
       const farm = await prisma.farm.create({
         data: {
           name: 'Plantacja Malin - Wyszynki',
@@ -26,7 +30,6 @@ export async function POST() {
         }
       })
 
-      // Utwórz domyślne odmiany
       const dj = await prisma.variety.create({
         data: {
           name: 'Diamond Jubilee',
@@ -49,24 +52,11 @@ export async function POST() {
         }
       })
 
-      // Utwórz bloki
-      const blockA = await prisma.block.create({
-        data: { name: 'Blok A', farmId: farm.id }
-      })
+      const blockA = await prisma.block.create({ data: { name: 'Blok A', farmId: farm.id } })
+      const blockB = await prisma.block.create({ data: { name: 'Blok B', farmId: farm.id } })
+      const blockC = await prisma.block.create({ data: { name: 'Blok C', farmId: farm.id } })
+      const blockD = await prisma.block.create({ data: { name: 'Blok D', farmId: farm.id } })
 
-      const blockB = await prisma.block.create({
-        data: { name: 'Blok B', farmId: farm.id }
-      })
-
-      const blockC = await prisma.block.create({
-        data: { name: 'Blok C', farmId: farm.id }
-      })
-
-      const blockD = await prisma.block.create({
-        data: { name: 'Blok D', farmId: farm.id }
-      })
-
-      // Utwórz sekcje
       await prisma.section.createMany({
         data: [
           { name: 'A1-9', rowsCount: 18, rowLengthM: 147, plantSpacing: 0.5, plantsCount: 5284, blockId: blockA.id, varietyId: dj.id },
@@ -80,25 +70,15 @@ export async function POST() {
         ]
       })
 
-      return NextResponse.json({ 
-        success: true, 
-        message: 'Dane zainicjalizowane',
-        tenant,
-        farm
-      })
+      await prisma.$disconnect()
+      return NextResponse.json({ success: true, message: 'Dane zainicjalizowane', tenant, farm })
     }
 
-    const farm = await prisma.farm.findFirst({
-      where: { tenantId: tenant.id }
-    })
-
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Dane już istnieją',
-      tenant,
-      farm
-    })
+    const farm = await prisma.farm.findFirst({ where: { tenantId: tenant.id } })
+    await prisma.$disconnect()
+    return NextResponse.json({ success: true, message: 'Dane już istnieją', tenant, farm })
   } catch (error) {
+    await prisma.$disconnect()
     console.error('Error initializing data:', error)
     return NextResponse.json({ error: 'Failed to initialize data' }, { status: 500 })
   }
@@ -106,6 +86,8 @@ export async function POST() {
 
 // GET - sprawdź status
 export async function GET() {
+  const prisma = getPrisma()
+  
   try {
     const tenant = await prisma.tenant.findFirst()
     const farm = await prisma.farm.findFirst()
@@ -113,17 +95,15 @@ export async function GET() {
     const blocksCount = await prisma.block.count()
     const sectionsCount = await prisma.section.count()
 
+    await prisma.$disconnect()
     return NextResponse.json({
       initialized: !!tenant,
       tenant,
       farm,
-      counts: {
-        varieties: varietiesCount,
-        blocks: blocksCount,
-        sections: sectionsCount,
-      }
+      counts: { varieties: varietiesCount, blocks: blocksCount, sections: sectionsCount }
     })
   } catch (error) {
+    await prisma.$disconnect()
     console.error('Error checking status:', error)
     return NextResponse.json({ error: 'Failed to check status' }, { status: 500 })
   }

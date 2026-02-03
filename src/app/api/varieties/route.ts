@@ -1,24 +1,30 @@
-import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
+import { PrismaClient } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
-// GET - pobierz odmiany
+function getPrisma() {
+  return new PrismaClient()
+}
+
 export async function GET() {
+  const prisma = getPrisma()
+  
   try {
-    const varieties = await prisma.variety.findMany({
-      orderBy: { name: 'asc' }
-    })
-
+    const varieties = await prisma.variety.findMany({ orderBy: { name: 'asc' } })
+    await prisma.$disconnect()
     return NextResponse.json({ varieties })
   } catch (error) {
+    await prisma.$disconnect()
     console.error('Error fetching varieties:', error)
     return NextResponse.json({ error: 'Failed to fetch varieties' }, { status: 500 })
   }
 }
 
-// POST - zapisz odmianę
 export async function POST(request: NextRequest) {
+  const prisma = getPrisma()
+  
   try {
     const body = await request.json()
     const { variety } = body
@@ -33,8 +39,10 @@ export async function POST(request: NextRequest) {
       }
     })
 
+    await prisma.$disconnect()
     return NextResponse.json({ variety: newVariety })
   } catch (error) {
+    await prisma.$disconnect()
     console.error('Error creating variety:', error)
     return NextResponse.json({ error: 'Failed to create variety' }, { status: 500 })
   }

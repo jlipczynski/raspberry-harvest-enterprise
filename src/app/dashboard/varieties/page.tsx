@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, Leaf, X, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Leaf, X, Pencil, Trash2, Save } from 'lucide-react'
 
 interface Variety {
   id: string
@@ -20,6 +20,7 @@ export default function VarietiesPage() {
   const [varieties, setVarieties] = useState<Variety[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editingVariety, setEditingVariety] = useState<Variety | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     gdhFirstHarvest: 20000,
@@ -42,34 +43,68 @@ export default function VarietiesPage() {
     }
   }
 
-  const addVariety = async () => {
+  const resetForm = () => {
+    setFormData({ name: '', gdhFirstHarvest: 20000, avgYieldPerPlant: 1.5 })
+    setEditingVariety(null)
+    setShowForm(false)
+  }
+
+  const startEdit = (variety: Variety) => {
+    setEditingVariety(variety)
+    setFormData({
+      name: variety.name,
+      gdhFirstHarvest: variety.gdhFirstHarvest,
+      avgYieldPerPlant: variety.avgYieldPerPlant,
+    })
+    setShowForm(true)
+  }
+
+  const saveVariety = async () => {
     if (!formData.name.trim()) return
     
     try {
-      const res = await fetch('/api/varieties', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          variety: {
+      if (editingVariety) {
+        // Update existing
+        const res = await fetch(`/api/varieties/${editingVariety.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             name: formData.name,
-            gdhThreshold: formData.gdhFirstHarvest,
-            yield: formData.avgYieldPerPlant,
-          }
+            gdhFirstHarvest: formData.gdhFirstHarvest,
+            avgYieldPerPlant: formData.avgYieldPerPlant,
+          })
         })
-      })
-      
-      if (res.ok) {
-        setFormData({ name: '', gdhFirstHarvest: 20000, avgYieldPerPlant: 1.5 })
-        setShowForm(false)
-        fetchVarieties()
+        
+        if (res.ok) {
+          resetForm()
+          fetchVarieties()
+        }
+      } else {
+        // Create new
+        const res = await fetch('/api/varieties', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            variety: {
+              name: formData.name,
+              gdhThreshold: formData.gdhFirstHarvest,
+              yield: formData.avgYieldPerPlant,
+            }
+          })
+        })
+        
+        if (res.ok) {
+          resetForm()
+          fetchVarieties()
+        }
       }
     } catch (error) {
-      console.error('Error adding variety:', error)
+      console.error('Error saving variety:', error)
     }
   }
 
   const deleteVariety = async (id: string) => {
-    if (!confirm('Czy na pewno chcesz usunąć tę odmianę?')) return
+    if (!confirm('Czy na pewno chcesz usunąć tę odmianę? Jeśli są sekcje używające tej odmiany, usunięcie nie będzie możliwe.')) return
     
     try {
       const res = await fetch(`/api/varieties/${id}`, {
@@ -78,6 +113,9 @@ export default function VarietiesPage() {
       
       if (res.ok) {
         fetchVarieties()
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Nie można usunąć odmiany')
       }
     } catch (error) {
       console.error('Error deleting variety:', error)
@@ -110,8 +148,8 @@ export default function VarietiesPage() {
         <Card className="border-green-200 bg-green-50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center justify-between">
-              <span>Nowa odmiana</span>
-              <Button variant="ghost" size="icon" onClick={() => setShowForm(false)}>
+              <span>{editingVariety ? 'Edytuj odmianę' : 'Nowa odmiana'}</span>
+              <Button variant="ghost" size="icon" onClick={resetForm}>
                 <X className="w-4 h-4" />
               </Button>
             </CardTitle>
@@ -127,7 +165,7 @@ export default function VarietiesPage() {
                 />
               </div>
               <div>
-                <Label>Próg GDH</Label>
+                <Label>Próg GDH do pierwszego zbioru</Label>
                 <Input
                   type="number"
                   value={formData.gdhFirstHarvest}
@@ -135,7 +173,7 @@ export default function VarietiesPage() {
                 />
               </div>
               <div>
-                <Label>Plon (kg/roślina)</Label>
+                <Label>Średni plon (kg/roślina)</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -146,10 +184,11 @@ export default function VarietiesPage() {
             </div>
             
             <div className="flex gap-2 mt-4">
-              <Button onClick={addVariety} className="bg-green-600 hover:bg-green-700">
-                Dodaj odmianę
+              <Button onClick={saveVariety} className="bg-green-600 hover:bg-green-700">
+                <Save className="w-4 h-4 mr-2" />
+                {editingVariety ? 'Zapisz zmiany' : 'Dodaj odmianę'}
               </Button>
-              <Button variant="outline" onClick={() => setShowForm(false)}>
+              <Button variant="outline" onClick={resetForm}>
                 Anuluj
               </Button>
             </div>
@@ -173,28 +212,33 @@ export default function VarietiesPage() {
                       Własna
                     </span>
                   )}
-                  {variety.isCustom && (
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => deleteVariety(variety.id)}
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => startEdit(variety)}
+                  >
+                    <Pencil className="w-4 h-4 text-gray-500" />
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => deleteVariety(variety.id)}
+                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-gray-50 p-2 rounded">
-                  <div className="text-gray-500">GDH próg</div>
-                  <div className="font-semibold">{variety.gdhFirstHarvest.toLocaleString('pl-PL')}</div>
+                <div className="bg-gray-50 p-3 rounded">
+                  <div className="text-gray-500">GDH do pierwszego zbioru</div>
+                  <div className="font-semibold text-lg">{variety.gdhFirstHarvest.toLocaleString('pl-PL')}</div>
                 </div>
-                <div className="bg-green-50 p-2 rounded">
-                  <div className="text-green-600">Plon</div>
-                  <div className="font-semibold">{variety.avgYieldPerPlant} kg/roślina</div>
+                <div className="bg-green-50 p-3 rounded">
+                  <div className="text-green-600">Średni plon</div>
+                  <div className="font-semibold text-lg">{variety.avgYieldPerPlant} kg/roślina</div>
                 </div>
               </div>
             </CardContent>

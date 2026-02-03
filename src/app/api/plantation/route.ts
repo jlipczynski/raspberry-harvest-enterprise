@@ -1,20 +1,9 @@
+import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-import { Pool } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
 
 export const dynamic = 'force-dynamic'
-export const runtime = 'nodejs'
-
-function getPrisma() {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-  const adapter = new PrismaNeon(pool)
-  return new PrismaClient({ adapter })
-}
 
 export async function GET() {
-  const prisma = getPrisma()
-  
   try {
     const farm = await prisma.farm.findFirst({
       include: {
@@ -30,30 +19,24 @@ export async function GET() {
     })
 
     if (!farm) {
-      await prisma.$disconnect()
       return NextResponse.json({ blocks: [], farm: null })
     }
 
     const varieties = await prisma.variety.findMany()
-    await prisma.$disconnect()
 
     return NextResponse.json({ blocks: farm.blocks, varieties, farm })
   } catch (error) {
-    await prisma.$disconnect()
     console.error('Error fetching plantation data:', error)
     return NextResponse.json({ error: 'Failed to fetch plantation data' }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
-  const prisma = getPrisma()
-  
   try {
     const body = await request.json()
     const { block, farmId } = body
 
     if (!farmId) {
-      await prisma.$disconnect()
       return NextResponse.json({ error: 'farmId is required' }, { status: 400 })
     }
 
@@ -65,10 +48,8 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    await prisma.$disconnect()
     return NextResponse.json({ block: newBlock })
   } catch (error) {
-    await prisma.$disconnect()
     console.error('Error creating block:', error)
     return NextResponse.json({ error: 'Failed to create block' }, { status: 500 })
   }

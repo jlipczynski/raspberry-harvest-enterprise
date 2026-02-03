@@ -11,10 +11,16 @@ export async function POST(request: NextRequest) {
     const newSection = await prisma.section.create({
       data: {
         name: section.name,
-        rowsCount: section.rowsCount,
-        rowLengthM: section.rowLengthM,
-        plantSpacing: section.plantSpacing,
-        plantsCount: section.plantsCount,
+        metersLength: section.metersLength,
+        potsPerMeter: section.potsPerMeter,
+        shootsPerPot: section.shootsPerPot,
+        plantingYear: section.plantingYear || null,
+        productionYear: section.productionYear || null,
+        plantMaterialType: section.plantMaterialType || null,
+        yieldSummerPerShoot: section.yieldSummerPerShoot || null,
+        yieldAutumnPerShoot: section.yieldAutumnPerShoot || null,
+        gdhSummer: section.gdhSummer || null,
+        gdhAutumn: section.gdhAutumn || null,
         blockId: section.blockId,
         varietyId: section.varietyId,
       }

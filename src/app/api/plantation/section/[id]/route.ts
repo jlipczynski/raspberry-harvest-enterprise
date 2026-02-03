@@ -15,11 +15,19 @@ export async function PATCH(
       where: { id },
       data: {
         name: body.name,
-        rowsCount: body.rowsCount,
-        rowLengthM: body.rowLengthM,
-        plantSpacing: body.plantSpacing,
-        plantsCount: body.plantsCount,
+        metersLength: body.metersLength,
+        potsPerMeter: body.potsPerMeter,
+        shootsPerPot: body.shootsPerPot,
+        plantingYear: body.plantingYear || null,
+        productionYear: body.productionYear || null,
+        plantMaterialType: body.plantMaterialType || null,
+        yieldSummerPerShoot: body.yieldSummerPerShoot || null,
+        yieldAutumnPerShoot: body.yieldAutumnPerShoot || null,
+        gdhSummer: body.gdhSummer || null,
+        gdhAutumn: body.gdhAutumn || null,
         varietyId: body.varietyId,
+        certificateUrl: body.certificateUrl || null,
+        deliveryProofUrl: body.deliveryProofUrl || null,
       }
     })
 

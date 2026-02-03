@@ -15,8 +15,17 @@ export async function PATCH(
       where: { id },
       data: {
         name: body.name,
-        gdhFirstHarvest: body.gdhFirstHarvest,
-        avgYieldPerPlant: body.avgYieldPerPlant,
+        origin: body.origin || null,
+        description: body.description || null,
+        yieldSummerPerShoot: body.yieldSummerPerShoot ?? null,
+        yieldAutumnPerShoot: body.yieldAutumnPerShoot ?? null,
+        gdhSummer: body.gdhSummer ?? null,
+        gdhAutumn: body.gdhAutumn ?? null,
+        harvestCurveSummer: body.harvestCurveSummer || null,
+        harvestCurveAutumn: body.harvestCurveAutumn || null,
+        pickingEfficiency: body.pickingEfficiency ?? null,
+        wastePercent: body.wastePercent ?? null,
+        secondCategoryPercent: body.secondCategoryPercent ?? null,
       }
     })
 

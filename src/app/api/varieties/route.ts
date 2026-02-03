@@ -5,7 +5,9 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const varieties = await prisma.variety.findMany({ orderBy: { name: 'asc' } })
+    const varieties = await prisma.variety.findMany({ 
+      orderBy: { name: 'asc' }
+    })
     return NextResponse.json({ varieties })
   } catch (error) {
     console.error('Error fetching varieties:', error)
@@ -18,13 +20,25 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { variety } = body
 
+    // Get tenant
+    const tenant = await prisma.tenant.findFirst()
+    
     const newVariety = await prisma.variety.create({
       data: {
         name: variety.name,
-        gdhFirstHarvest: variety.gdhThreshold || 20000,
-        avgYieldPerPlant: variety.yield || variety.summerYield || 1.5,
-        fruitCurve: variety.fruitCurve || [],
+        origin: variety.origin || null,
+        description: variety.description || null,
+        yieldSummerPerShoot: variety.yieldSummerPerShoot || null,
+        yieldAutumnPerShoot: variety.yieldAutumnPerShoot || null,
+        gdhSummer: variety.gdhSummer || null,
+        gdhAutumn: variety.gdhAutumn || null,
+        harvestCurveSummer: variety.harvestCurveSummer || null,
+        harvestCurveAutumn: variety.harvestCurveAutumn || null,
+        pickingEfficiency: variety.pickingEfficiency || null,
+        wastePercent: variety.wastePercent || null,
+        secondCategoryPercent: variety.secondCategoryPercent || null,
         isCustom: true,
+        tenantId: tenant?.id || null,
       }
     })
 

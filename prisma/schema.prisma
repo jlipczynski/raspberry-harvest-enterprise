@@ -43,6 +43,8 @@ model Farm {
   id              String    @id @default(cuid())
   name            String
   location        String?
+  latitude        Float?
+  longitude       Float?
   seasonStartDate DateTime?
   
   tenantId        String
@@ -75,48 +77,106 @@ model Block {
   @@map("blocks")
 }
 
+// ==================== VARIETIES ====================
+model Variety {
+  id                    String    @id @default(cuid())
+  name                  String
+  origin                String?
+  description           String?
+  
+  // Normy produkcyjne (domyślne)
+  yieldSummerPerShoot   Float?    // kg/pęd LATO
+  yieldAutumnPerShoot   Float?    // kg/pęd JESIEŃ
+  
+  // GDH do zbioru (domyślne)
+  gdhSummer             Int?      // GDH do zbioru LATO
+  gdhAutumn             Int?      // GDH do zbioru JESIEŃ
+  
+  // Krzywe zbioru (% na tydzień)
+  harvestCurveSummer    Json?     // np. [2, 6, 12, 16, 15, 13, 11, 9, 7, 5, 3, 1]
+  harvestCurveAutumn    Json?     // np. [5, 15, 25, 25, 15, 10, 5]
+  
+  // Statystyki zbierania
+  pickingEfficiency     Float?    // kg/h - domyślna wydajność
+  wastePercent          Float?    // % odpadu
+  secondCategoryPercent Float?    // % II kategorii
+  
+  isCustom              Boolean   @default(false)
+  
+  tenantId              String?
+  tenant                Tenant?   @relation(fields: [tenantId], references: [id])
+  
+  sections              Section[]
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@map("varieties")
+}
+
 // ==================== SECTIONS ====================
 model Section {
-  id           String    @id @default(cuid())
-  name         String?
-  rowsCount    Int
-  rowLengthM   Float
-  plantSpacing Float
-  plantsCount  Int
-  plantingDate DateTime?
+  id                    String    @id @default(cuid())
+  name                  String?
   
-  blockId      String
-  block        Block     @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  // Dane podstawowe
+  metersLength          Float     // metry bieżące
+  potsPerMeter          Float     // doniczek na metr
+  shootsPerPot          Float     // pędów w doniczce
   
-  varietyId    String
-  variety      Variety   @relation(fields: [varietyId], references: [id])
+  // Lata
+  plantingYear          Int?      // rok nasadzenia
+  productionYear        Int?      // rok produkcyjny (1, 2, 3...)
   
-  harvests     Harvest[]
+  // Typ materiału roślinnego
+  plantMaterialType     String?   // SMALL_POT, ROOT, LONGCANE, PLUG
   
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  // Normy (override z odmiany)
+  yieldSummerPerShoot   Float?    // kg/pęd LATO (jeśli inne niż odmiana)
+  yieldAutumnPerShoot   Float?    // kg/pęd JESIEŃ (jeśli inne niż odmiana)
+  
+  // GDH (override z odmiany)
+  gdhSummer             Int?      // GDH LATO (jeśli inne niż odmiana)
+  gdhAutumn             Int?      // GDH JESIEŃ (jeśli inne niż odmiana)
+  
+  // Dokumenty
+  certificateUrl        String?   // URL do certyfikatu
+  deliveryProofUrl      String?   // URL do dowodu dostawy
+  
+  // Relacje
+  blockId               String
+  block                 Block     @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  
+  varietyId             String
+  variety               Variety   @relation(fields: [varietyId], references: [id])
+  
+  harvests              Harvest[]
+  weeklyOverrides       WeeklyOverride[]
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
   
   @@map("sections")
 }
 
-// ==================== VARIETIES ====================
-model Variety {
-  id               String    @id @default(cuid())
-  name             String
-  gdhFirstHarvest  Int
-  avgYieldPerPlant Float
-  fruitCurve       Json      @default("[]")
-  isCustom         Boolean   @default(false)
+// ==================== WEEKLY OVERRIDES ====================
+// Nadpisanie wydajności dla konkretnego tygodnia
+model WeeklyOverride {
+  id                String   @id @default(cuid())
   
-  tenantId         String?
-  tenant           Tenant?   @relation(fields: [tenantId], references: [id])
+  weekNumber        Int      // numer tygodnia w roku
+  year              Int      // rok
+  pickingEfficiency Float?   // nadpisana wydajność kg/h
+  notes             String?  // uwagi
   
-  sections         Section[]
+  sectionId         String
+  section           Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
   
-  @@map("varieties")
+  @@unique([sectionId, weekNumber, year])
+  @@map("weekly_overrides")
 }
 
 // ==================== WEATHER ====================
@@ -125,8 +185,10 @@ model WeatherData {
   date          DateTime @db.Date
   tempMin       Float
   tempMax       Float
-  gdhDaily      Float
-  gdhCumulative Float
+  tempAvg       Float?
+  gdhDaily      Float    // GDH tego dnia
+  gdhCumulative Float    // suma GDH od początku roku
+  source        String?  // API, MANUAL, HISTORICAL
   
   farmId        String
   farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
@@ -137,12 +199,28 @@ model WeatherData {
   @@map("weather_data")
 }
 
+// ==================== HISTORICAL GDH ====================
+// Średnie GDH z poprzednich lat do estymacji
+model HistoricalGdh {
+  id            String   @id @default(cuid())
+  dayOfYear     Int      // 1-366
+  avgGdh        Float    // średnia GDH dla tego dnia
+  minGdh        Float?   // minimum
+  maxGdh        Float?   // maksimum
+  yearsCount    Int?     // z ilu lat średnia
+  
+  farmId        String
+  
+  @@unique([farmId, dayOfYear])
+  @@map("historical_gdh")
+}
+
 // ==================== WORKERS ====================
 model Worker {
   id            String   @id @default(cuid())
   name          String
   phone         String?
-  efficiencyKgH Float
+  efficiencyKgH Float    // domyślna wydajność
   isActive      Boolean  @default(true)
   
   farmId        String

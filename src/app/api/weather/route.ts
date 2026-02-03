@@ -1,10 +1,11 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 // GET - pobierz dane pogodowe
 export async function GET() {
   try {
-    // Pobierz pierwszą farmę
     const farm = await prisma.farm.findFirst({
       include: { weatherData: { orderBy: { date: 'desc' }, take: 365 } }
     })
@@ -33,12 +34,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'farmId is required' }, { status: 400 })
     }
 
-    // Usuń stare dane
     await prisma.weatherData.deleteMany({
       where: { farmId }
     })
 
-    // Zapisz nowe dane
     interface WeatherRecord {
       date: string
       tempMin: number

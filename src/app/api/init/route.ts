@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma'
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 // POST - inicjalizuj dane startowe
 export async function POST() {
   try {
@@ -29,7 +31,7 @@ export async function POST() {
         data: {
           name: 'Diamond Jubilee',
           gdhFirstHarvest: 20000,
-          avgYieldPerPlant: 1.92, // 1.48 + 0.44
+          avgYieldPerPlant: 1.92,
           fruitCurve: [2, 6, 12, 16, 15, 13, 11, 9, 7, 5, 3, 1],
           isCustom: false,
           tenantId: tenant.id,
@@ -86,7 +88,6 @@ export async function POST() {
       })
     }
 
-    // Pobierz istniejące dane
     const farm = await prisma.farm.findFirst({
       where: { tenantId: tenant.id }
     })

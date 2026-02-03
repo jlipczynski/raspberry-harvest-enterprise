@@ -1,10 +1,11 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 // GET - pobierz bloki i sekcje
 export async function GET() {
   try {
-    // Pobierz pierwszą farmę z blokami i sekcjami
     const farm = await prisma.farm.findFirst({
       include: {
         blocks: {
@@ -24,7 +25,6 @@ export async function GET() {
       return NextResponse.json({ blocks: [], farm: null })
     }
 
-    // Pobierz odmiany
     const varieties = await prisma.variety.findMany()
 
     return NextResponse.json({ 

@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 // GET - pobierz pracowników
 export async function GET(request: NextRequest) {
   try {
@@ -8,7 +10,6 @@ export async function GET(request: NextRequest) {
     const farmId = searchParams.get('farmId')
 
     if (!farmId) {
-      // Pobierz pierwszą farmę
       const farm = await prisma.farm.findFirst()
       if (!farm) {
         return NextResponse.json({ workers: [] })

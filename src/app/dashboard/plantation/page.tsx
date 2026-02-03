@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, MapPin, Layers, X, Pencil, Trash2 } from 'lucide-react'
+import { Plus, MapPin, Layers, X, Pencil, Trash2, Save } from 'lucide-react'
 
 interface Section {
   id: string
@@ -44,9 +44,14 @@ export default function PlantationPage() {
   const [varieties, setVarieties] = useState<Variety[]>([])
   const [farm, setFarm] = useState<Farm | null>(null)
   const [loading, setLoading] = useState(true)
+  
+  // Forms state
   const [showBlockForm, setShowBlockForm] = useState(false)
-  const [showSectionForm, setShowSectionForm] = useState<string | null>(null)
+  const [editingBlock, setEditingBlock] = useState<Block | null>(null)
   const [blockName, setBlockName] = useState('')
+  
+  const [showSectionForm, setShowSectionForm] = useState<string | null>(null)
+  const [editingSection, setEditingSection] = useState<Section | null>(null)
   const [sectionForm, setSectionForm] = useState({
     name: '',
     rowsCount: 10,
@@ -73,27 +78,99 @@ export default function PlantationPage() {
     }
   }
 
-  const addBlock = async () => {
+  // ============ BLOCK OPERATIONS ============
+  
+  const resetBlockForm = () => {
+    setBlockName('')
+    setEditingBlock(null)
+    setShowBlockForm(false)
+  }
+
+  const startEditBlock = (block: Block) => {
+    setEditingBlock(block)
+    setBlockName(block.name)
+    setShowBlockForm(true)
+  }
+
+  const saveBlock = async () => {
     if (!blockName.trim() || !farm) return
     
     try {
-      const res = await fetch('/api/plantation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ block: { name: blockName }, farmId: farm.id })
-      })
-      
-      if (res.ok) {
-        setBlockName('')
-        setShowBlockForm(false)
-        fetchData()
+      if (editingBlock) {
+        // Update existing block
+        await fetch(`/api/plantation/block/${editingBlock.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: blockName })
+        })
+      } else {
+        // Create new block
+        await fetch('/api/plantation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ block: { name: blockName }, farmId: farm.id })
+        })
       }
+      
+      resetBlockForm()
+      fetchData()
     } catch (error) {
-      console.error('Error adding block:', error)
+      console.error('Error saving block:', error)
     }
   }
 
-  const addSection = async (blockId: string) => {
+  const deleteBlock = async (blockId: string) => {
+    const block = blocks.find(b => b.id === blockId)
+    if (block && block.sections.length > 0) {
+      if (!confirm(`Blok "${block.name}" zawiera ${block.sections.length} sekcji. Czy na pewno chcesz usunąć blok wraz ze wszystkimi sekcjami?`)) {
+        return
+      }
+    } else {
+      if (!confirm('Czy na pewno chcesz usunąć ten blok?')) return
+    }
+    
+    try {
+      await fetch(`/api/plantation/block/${blockId}`, {
+        method: 'DELETE'
+      })
+      fetchData()
+    } catch (error) {
+      console.error('Error deleting block:', error)
+    }
+  }
+
+  // ============ SECTION OPERATIONS ============
+  
+  const resetSectionForm = () => {
+    setSectionForm({
+      name: '',
+      rowsCount: 10,
+      rowLengthM: 100,
+      plantSpacing: 0.5,
+      varietyId: ''
+    })
+    setEditingSection(null)
+    setShowSectionForm(null)
+  }
+
+  const startAddSection = (blockId: string) => {
+    resetSectionForm()
+    setShowSectionForm(blockId)
+  }
+
+  const startEditSection = (blockId: string, section: Section) => {
+    setEditingSection(section)
+    setSectionForm({
+      name: section.name || '',
+      rowsCount: section.rowsCount,
+      rowLengthM: section.rowLengthM,
+      plantSpacing: section.plantSpacing,
+      varietyId: section.varietyId
+    })
+    setShowSectionForm(blockId)
+  }
+
+  const saveSection = async (blockId: string) => {
     if (!sectionForm.name.trim() || !sectionForm.varietyId) return
     
     const plantsCount = Math.round(
@@ -101,38 +178,56 @@ export default function PlantationPage() {
     )
     
     try {
-      const res = await fetch('/api/plantation/section', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          section: {
+      if (editingSection) {
+        // Update existing section
+        await fetch(`/api/plantation/section/${editingSection.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             ...sectionForm,
-            plantsCount,
-            blockId
-          }
+            plantsCount
+          })
         })
-      })
-      
-      if (res.ok) {
-        setSectionForm({
-          name: '',
-          rowsCount: 10,
-          rowLengthM: 100,
-          plantSpacing: 0.5,
-          varietyId: ''
+      } else {
+        // Create new section
+        await fetch('/api/plantation/section', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            section: {
+              ...sectionForm,
+              plantsCount,
+              blockId
+            }
+          })
         })
-        setShowSectionForm(null)
-        fetchData()
       }
+      
+      resetSectionForm()
+      fetchData()
     } catch (error) {
-      console.error('Error adding section:', error)
+      console.error('Error saving section:', error)
     }
   }
 
+  const deleteSection = async (sectionId: string) => {
+    if (!confirm('Czy na pewno chcesz usunąć tę sekcję?')) return
+    
+    try {
+      await fetch(`/api/plantation/section/${sectionId}`, {
+        method: 'DELETE'
+      })
+      fetchData()
+    } catch (error) {
+      console.error('Error deleting section:', error)
+    }
+  }
+
+  // ============ STATS ============
+  
   const totalPlants = blocks.reduce((sum, block) => 
     sum + block.sections.reduce((s, section) => s + section.plantsCount, 0), 0
   )
-
   const totalSections = blocks.reduce((sum, block) => sum + block.sections.length, 0)
 
   if (loading) {
@@ -199,13 +294,13 @@ export default function PlantationPage() {
         </Card>
       </div>
 
-      {/* Formularz nowego bloku */}
+      {/* Formularz bloku */}
       {showBlockForm && (
         <Card className="border-green-200 bg-green-50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center justify-between">
-              <span>Nowy blok</span>
-              <Button variant="ghost" size="icon" onClick={() => setShowBlockForm(false)}>
+              <span>{editingBlock ? 'Edytuj blok' : 'Nowy blok'}</span>
+              <Button variant="ghost" size="icon" onClick={resetBlockForm}>
                 <X className="w-4 h-4" />
               </Button>
             </CardTitle>
@@ -220,9 +315,13 @@ export default function PlantationPage() {
                   onChange={(e) => setBlockName(e.target.value)}
                 />
               </div>
-              <div className="flex items-end">
-                <Button onClick={addBlock} className="bg-green-600 hover:bg-green-700">
-                  Dodaj
+              <div className="flex items-end gap-2">
+                <Button onClick={saveBlock} className="bg-green-600 hover:bg-green-700">
+                  <Save className="w-4 h-4 mr-2" />
+                  {editingBlock ? 'Zapisz' : 'Dodaj'}
+                </Button>
+                <Button variant="outline" onClick={resetBlockForm}>
+                  Anuluj
                 </Button>
               </div>
             </div>
@@ -239,21 +338,42 @@ export default function PlantationPage() {
                 <div className="flex items-center gap-2">
                   <Layers className="w-5 h-5 text-green-600" />
                   {block.name}
+                  <span className="text-sm font-normal text-gray-500">
+                    ({block.sections.length} sekcji, {block.sections.reduce((s, sec) => s + sec.plantsCount, 0).toLocaleString('pl-PL')} roślin)
+                  </span>
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => setShowSectionForm(block.id)}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Dodaj sekcję
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => startAddSection(block.id)}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Sekcja
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => startEditBlock(block)}
+                  >
+                    <Pencil className="w-4 h-4 text-gray-500" />
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => deleteBlock(block.id)}
+                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {/* Formularz nowej sekcji */}
+              {/* Formularz sekcji */}
               {showSectionForm === block.id && (
-                <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h4 className="font-medium mb-3">{editingSection ? 'Edytuj sekcję' : 'Nowa sekcja'}</h4>
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                     <div>
                       <Label>Nazwa</Label>
@@ -302,13 +422,19 @@ export default function PlantationPage() {
                       </select>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button onClick={() => addSection(block.id)} className="bg-green-600 hover:bg-green-700">
-                      Dodaj sekcję
-                    </Button>
-                    <Button variant="outline" onClick={() => setShowSectionForm(null)}>
-                      Anuluj
-                    </Button>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-500">
+                      Liczba roślin: <strong>{Math.round(sectionForm.rowsCount * sectionForm.rowLengthM / sectionForm.plantSpacing).toLocaleString('pl-PL')}</strong>
+                    </p>
+                    <div className="flex gap-2">
+                      <Button onClick={() => saveSection(block.id)} className="bg-green-600 hover:bg-green-700">
+                        <Save className="w-4 h-4 mr-2" />
+                        {editingSection ? 'Zapisz' : 'Dodaj'}
+                      </Button>
+                      <Button variant="outline" onClick={resetSectionForm}>
+                        Anuluj
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -317,19 +443,36 @@ export default function PlantationPage() {
               {block.sections.length > 0 ? (
                 <div className="space-y-2">
                   {block.sections.map((section) => (
-                    <div key={section.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={section.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                       <div className="flex items-center gap-4">
                         <span className="font-medium">{section.name}</span>
-                        <span className="text-sm text-gray-500">
+                        <span className="text-sm px-2 py-1 bg-green-100 text-green-700 rounded">
                           {section.variety?.name || 'Brak odmiany'}
                         </span>
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-500">
-                        <span>{section.rowsCount} rzędów</span>
-                        <span>{section.rowLengthM}m</span>
-                        <span className="font-medium text-green-600">
-                          {section.plantsCount.toLocaleString('pl-PL')} roślin
-                        </span>
+                      <div className="flex items-center gap-4">
+                        <div className="text-sm text-gray-500 flex gap-4">
+                          <span>{section.rowsCount} rzędów</span>
+                          <span>{section.rowLengthM}m</span>
+                          <span className="font-medium text-green-600">
+                            {section.plantsCount.toLocaleString('pl-PL')} roślin
+                          </span>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => startEditSection(block.id, section)}
+                        >
+                          <Pencil className="w-4 h-4 text-gray-500" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => deleteSection(section.id)}
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </div>
                   ))}

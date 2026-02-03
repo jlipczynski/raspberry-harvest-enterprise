@@ -5,790 +5,614 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, Layers, X, Pencil, Trash2, Save, ChevronDown, ChevronUp, Upload, FileText, Calendar, Users, TrendingUp, Sun, Leaf as LeafIcon } from 'lucide-react'
+import { Plus, Cloud, Thermometer, TrendingUp, X, Loader2, Download, MapPin, Settings } from 'lucide-react'
 
-interface Variety {
+interface WeatherRecord {
   id: string
-  name: string
-  yieldSummerPerShoot?: number
-  yieldAutumnPerShoot?: number
-  gdhSummer?: number
-  gdhAutumn?: number
-  harvestCurveSummer?: number[]
-  harvestCurveAutumn?: number[]
-  pickingEfficiency?: number
-}
-
-interface Section {
-  id: string
-  name: string
-  metersLength: number
-  potsPerMeter: number
-  shootsPerPot: number
-  plantingYear?: number
-  productionYear?: number
-  plantMaterialType?: string
-  yieldSummerPerShoot?: number
-  yieldAutumnPerShoot?: number
-  gdhSummer?: number
-  gdhAutumn?: number
-  certificateUrl?: string
-  deliveryProofUrl?: string
-  varietyId: string
-  variety?: Variety
-}
-
-interface Block {
-  id: string
-  name: string
-  sections: Section[]
-}
-
-interface Farm {
-  id: string
-  name: string
-}
-
-interface WeatherData {
   date: string
+  tempMin: number
+  tempMax: number
+  gdhDaily: number
   gdhCumulative: number
+  source?: string
 }
 
-const PLANT_MATERIAL_TYPES = [
-  { value: 'SMALL_POT', label: 'Mała doniczka (szkółka)' },
-  { value: 'ROOT', label: 'Z korzenia' },
-  { value: 'LONGCANE', label: 'Longcane zimowany' },
-  { value: 'PLUG', label: 'Plug' },
-]
+// Lokalizacja plantacji - Wyszynki
+const LOCATION = {
+  name: 'Wyszynki, gmina Budzyń',
+  latitude: 52.8831,
+  longitude: 16.8156
+}
 
-const defaultCurveSummer = [2, 6, 12, 16, 15, 13, 11, 9, 7, 5, 3, 1]
-const defaultCurveAutumn = [5, 15, 25, 25, 15, 10, 5]
-
-export default function PlantationPage() {
-  const [blocks, setBlocks] = useState<Block[]>([])
-  const [varieties, setVarieties] = useState<Variety[]>([])
-  const [farm, setFarm] = useState<Farm | null>(null)
-  const [weatherData, setWeatherData] = useState<WeatherData[]>([])
-  const [loading, setLoading] = useState(true)
-  
-  const [showBlockForm, setShowBlockForm] = useState(false)
-  const [editingBlock, setEditingBlock] = useState<Block | null>(null)
-  const [blockName, setBlockName] = useState('')
-  
-  const [showSectionForm, setShowSectionForm] = useState<string | null>(null)
-  const [editingSection, setEditingSection] = useState<Section | null>(null)
-  const [expandedSection, setExpandedSection] = useState<string | null>(null)
-  
-  const [sectionForm, setSectionForm] = useState({
-    name: '',
-    metersLength: 100,
-    potsPerMeter: 2,
-    shootsPerPot: 2,
-    plantingYear: new Date().getFullYear(),
-    productionYear: 1,
-    plantMaterialType: 'SMALL_POT',
-    varietyId: '',
-    yieldSummerPerShoot: 0,
-    yieldAutumnPerShoot: 0,
-    gdhSummer: 0,
-    gdhAutumn: 0,
+export default function WeatherPage() {
+  const [weatherData, setWeatherData] = useState<WeatherRecord[]>([])
+  const [showForm, setShowForm] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [isFetching, setIsFetching] = useState(false)
+  const [fetchStatus, setFetchStatus] = useState('')
+  const [baseTemp, setBaseTemp] = useState(5) // Domyślna temperatura bazowa
+  const [tempBaseTempInput, setTempBaseTempInput] = useState('5')
+  const [formData, setFormData] = useState({
+    date: new Date().toISOString().split('T')[0],
+    tempMin: '',
+    tempMax: '',
   })
 
+  // Przy pierwszym załadowaniu - sprawdź localStorage
   useEffect(() => {
-    fetchData()
+    const savedWeather = localStorage.getItem('weatherData')
+    const savedBaseTemp = localStorage.getItem('gdhBaseTemp')
+    
+    if (savedWeather) {
+      setWeatherData(JSON.parse(savedWeather))
+    }
+    if (savedBaseTemp) {
+      const temp = parseFloat(savedBaseTemp)
+      setBaseTemp(temp)
+      setTempBaseTempInput(temp.toString())
+    }
   }, [])
 
-  const fetchData = async () => {
+  // Zapisuj dane do localStorage przy każdej zmianie
+  useEffect(() => {
+    if (weatherData.length > 0) {
+      localStorage.setItem('weatherData', JSON.stringify(weatherData))
+    }
+  }, [weatherData])
+
+  // Zapisuj temperaturę bazową
+  useEffect(() => {
+    localStorage.setItem('gdhBaseTemp', baseTemp.toString())
+  }, [baseTemp])
+
+  const currentGDH = weatherData[0]?.gdhCumulative || 0
+
+  // Oblicz GDH dla dnia
+  const calculateGDH = (tempMin: number, tempMax: number, baseTempValue: number = baseTemp): number => {
+    const avgTemp = (tempMin + tempMax) / 2
+    return Math.round(Math.max(0, avgTemp - baseTempValue) * 24)
+  }
+
+  // Przelicz skumulowane GDH dla wszystkich rekordów
+  const recalculateCumulativeGDH = (data: WeatherRecord[], baseTempValue: number = baseTemp): WeatherRecord[] => {
+    const sorted = [...data].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    let cumulative = 0
+    return sorted.map(record => {
+      // Przelicz GDH dnia z nową temperaturą bazową
+      const gdhDaily = calculateGDH(record.tempMin, record.tempMax, baseTempValue)
+      cumulative += gdhDaily
+      return { ...record, gdhDaily, gdhCumulative: cumulative }
+    }).reverse() // Najnowsze pierwsze
+  }
+
+  // Zmień temperaturę bazową i przelicz wszystkie GDH
+  const handleBaseTempChange = () => {
+    const newBaseTemp = parseFloat(tempBaseTempInput)
+    if (isNaN(newBaseTemp)) return
+    
+    setBaseTemp(newBaseTemp)
+    
+    // Przelicz wszystkie dane z nową temperaturą bazową
+    if (weatherData.length > 0) {
+      const recalculated = recalculateCumulativeGDH(weatherData, newBaseTemp)
+      setWeatherData(recalculated)
+    }
+    
+    setShowSettings(false)
+  }
+
+  // Pobierz dane z Open-Meteo (darmowe, bez klucza API)
+  const fetchFromOpenMeteo = async (startDate: string, endDate: string): Promise<WeatherRecord[]> => {
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${LOCATION.latitude}&longitude=${LOCATION.longitude}&start_date=${startDate}&end_date=${endDate}&daily=temperature_2m_max,temperature_2m_min&timezone=Europe/Warsaw`
+    
+    const response = await fetch(url)
+    if (!response.ok) throw new Error('Open-Meteo API error')
+    
+    const data = await response.json()
+    
+    return data.daily.time.map((date: string, i: number) => ({
+      id: `om-${date}`,
+      date,
+      tempMin: Math.round(data.daily.temperature_2m_min[i] * 10) / 10,
+      tempMax: Math.round(data.daily.temperature_2m_max[i] * 10) / 10,
+      gdhDaily: calculateGDH(data.daily.temperature_2m_min[i], data.daily.temperature_2m_max[i]),
+      gdhCumulative: 0,
+      source: 'Open-Meteo'
+    }))
+  }
+
+  // Pobierz prognozę z Open-Meteo
+  const fetchForecast = async (): Promise<WeatherRecord[]> => {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${LOCATION.latitude}&longitude=${LOCATION.longitude}&daily=temperature_2m_max,temperature_2m_min&timezone=Europe/Warsaw&forecast_days=7`
+    
+    const response = await fetch(url)
+    if (!response.ok) throw new Error('Open-Meteo Forecast API error')
+    
+    const data = await response.json()
+    
+    return data.daily.time.map((date: string, i: number) => ({
+      id: `forecast-${date}`,
+      date,
+      tempMin: Math.round(data.daily.temperature_2m_min[i] * 10) / 10,
+      tempMax: Math.round(data.daily.temperature_2m_max[i] * 10) / 10,
+      gdhDaily: calculateGDH(data.daily.temperature_2m_min[i], data.daily.temperature_2m_max[i]),
+      gdhCumulative: 0,
+      source: 'Prognoza'
+    }))
+  }
+
+  // Główna funkcja pobierania danych od początku roku
+  const fetchWeatherData = async () => {
+    setIsFetching(true)
+    setFetchStatus('Łączenie z Open-Meteo...')
+
     try {
-      const [plantationRes, weatherRes] = await Promise.all([
-        fetch('/api/plantation'),
-        fetch('/api/weather')
-      ])
+      const currentYear = new Date().getFullYear()
+      const startDate = `${currentYear}-01-01`
+      const today = new Date()
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+      const endDate = yesterday.toISOString().split('T')[0]
+
+      // Pobierz dane historyczne
+      setFetchStatus('Pobieranie danych historycznych...')
+      const historicalData = await fetchFromOpenMeteo(startDate, endDate)
       
-      const plantationData = await plantationRes.json()
-      const weatherDataRes = await weatherRes.json()
+      // Pobierz prognozę
+      setFetchStatus('Pobieranie prognozy 7-dniowej...')
+      const forecastData = await fetchForecast()
+
+      // Połącz dane (usuń duplikaty)
+      const allDates = new Set<string>()
+      const combinedData: WeatherRecord[] = []
       
-      setBlocks(plantationData.blocks || [])
-      setVarieties(plantationData.varieties || [])
-      setFarm(plantationData.farm)
-      setWeatherData(weatherDataRes.weatherData || [])
+      // Najpierw historyczne (mają priorytet)
+      historicalData.forEach(record => {
+        if (!allDates.has(record.date)) {
+          allDates.add(record.date)
+          combinedData.push(record)
+        }
+      })
+      
+      // Potem prognoza (tylko przyszłe dni)
+      forecastData.forEach(record => {
+        if (!allDates.has(record.date)) {
+          allDates.add(record.date)
+          combinedData.push(record)
+        }
+      })
+
+      // Przelicz skumulowane GDH
+      const finalData = recalculateCumulativeGDH(combinedData)
+      
+      setWeatherData(finalData)
+      setFetchStatus(`✓ Pobrano ${finalData.length} dni danych`)
+      
+      setTimeout(() => setFetchStatus(''), 3000)
     } catch (error) {
-      console.error('Error fetching data:', error)
+      console.error('Error fetching weather:', error)
+      setFetchStatus('❌ Błąd pobierania danych')
     } finally {
-      setLoading(false)
+      setIsFetching(false)
     }
   }
 
-  // Get current GDH from weather data
-  const getCurrentGdh = () => {
-    if (weatherData.length === 0) return 0
-    const sorted = [...weatherData].sort((a, b) => 
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
-    return sorted[0]?.gdhCumulative || 0
-  }
+  // Dodaj ręczny odczyt
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
 
-  // Calculate section stats
-  const calcSectionStats = (section: Section) => {
-    const variety = varieties.find(v => v.id === section.varietyId)
-    
-    const pots = section.metersLength * section.potsPerMeter
-    const shoots = pots * section.shootsPerPot
-    
-    const yieldSummer = section.yieldSummerPerShoot || variety?.yieldSummerPerShoot || 0
-    const yieldAutumn = section.yieldAutumnPerShoot || variety?.yieldAutumnPerShoot || 0
-    const gdhSummer = section.gdhSummer || variety?.gdhSummer || 20000
-    const gdhAutumn = section.gdhAutumn || variety?.gdhAutumn || 25000
-    
-    const forecastSummer = shoots * yieldSummer
-    const forecastAutumn = shoots * yieldAutumn
-    const forecastTotal = forecastSummer + forecastAutumn
-    
-    const currentGdh = getCurrentGdh()
-    const gdhProgressSummer = Math.min(100, (currentGdh / gdhSummer) * 100)
-    const gdhProgressAutumn = Math.min(100, (currentGdh / gdhAutumn) * 100)
-    
-    // Estimate start date (simplified - assume ~50 GDH per day average)
-    const gdhRemainingSummer = Math.max(0, gdhSummer - currentGdh)
-    const gdhRemainingAutumn = Math.max(0, gdhAutumn - currentGdh)
-    const daysToSummer = Math.ceil(gdhRemainingSummer / 50)
-    const daysToAutumn = Math.ceil(gdhRemainingAutumn / 50)
-    
-    const today = new Date()
-    const startDateSummer = new Date(today.getTime() + daysToSummer * 24 * 60 * 60 * 1000)
-    const startDateAutumn = new Date(today.getTime() + daysToAutumn * 24 * 60 * 60 * 1000)
-    
-    return {
-      pots,
-      shoots,
-      yieldSummer,
-      yieldAutumn,
-      gdhSummer,
-      gdhAutumn,
-      forecastSummer,
-      forecastAutumn,
-      forecastTotal,
-      currentGdh,
-      gdhProgressSummer,
-      gdhProgressAutumn,
-      gdhRemainingSummer,
-      gdhRemainingAutumn,
-      startDateSummer,
-      startDateAutumn,
-      curveSummer: variety?.harvestCurveSummer || defaultCurveSummer,
-      curveAutumn: variety?.harvestCurveAutumn || defaultCurveAutumn,
-      pickingEfficiency: variety?.pickingEfficiency || 8,
+    const tempMin = parseFloat(formData.tempMin)
+    const tempMax = parseFloat(formData.tempMax)
+    const gdhDaily = calculateGDH(tempMin, tempMax)
+
+    const newRecord: WeatherRecord = {
+      id: `manual-${Date.now()}`,
+      date: formData.date,
+      tempMin,
+      tempMax,
+      gdhDaily,
+      gdhCumulative: 0,
+      source: 'Ręczny'
     }
-  }
 
-  // Generate weekly forecast
-  const getWeeklyForecast = (totalKg: number, curve: number[], startDate: Date, efficiency: number) => {
-    const weeks: { week: number, date: string, kg: number, workers: number, hours: number }[] = []
-    const startWeek = getWeekNumber(startDate)
+    // Dodaj i usuń duplikaty (ten sam dzień)
+    const existingIndex = weatherData.findIndex(w => w.date === formData.date)
+    let updatedData: WeatherRecord[]
     
-    curve.forEach((percent, i) => {
-      const kg = Math.round(totalKg * percent / 100)
-      const hours = Math.round(kg / efficiency)
-      const workers = Math.ceil(hours / (8 * 6)) // 8h/day, 6 days/week
-      
-      const weekDate = new Date(startDate.getTime() + i * 7 * 24 * 60 * 60 * 1000)
-      
-      weeks.push({
-        week: startWeek + i,
-        date: weekDate.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
-        kg,
-        workers,
-        hours
-      })
-    })
-    
-    return weeks
-  }
-
-  const getWeekNumber = (date: Date) => {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
-    const dayNum = d.getUTCDay() || 7
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum)
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
-    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
-  }
-
-  // Block operations
-  const resetBlockForm = () => {
-    setBlockName('')
-    setEditingBlock(null)
-    setShowBlockForm(false)
-  }
-
-  const saveBlock = async () => {
-    if (!blockName.trim() || !farm) return
-    
-    try {
-      if (editingBlock) {
-        await fetch(`/api/plantation/block/${editingBlock.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: blockName })
-        })
-      } else {
-        await fetch('/api/plantation', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ block: { name: blockName }, farmId: farm.id })
-        })
-      }
-      
-      resetBlockForm()
-      fetchData()
-    } catch (error) {
-      console.error('Error saving block:', error)
-    }
-  }
-
-  const deleteBlock = async (blockId: string) => {
-    if (!confirm('Czy na pewno chcesz usunąć ten blok wraz ze wszystkimi sekcjami?')) return
-    
-    try {
-      await fetch(`/api/plantation/block/${blockId}`, { method: 'DELETE' })
-      fetchData()
-    } catch (error) {
-      console.error('Error deleting block:', error)
-    }
-  }
-
-  // Section operations
-  const resetSectionForm = () => {
-    setSectionForm({
-      name: '',
-      metersLength: 100,
-      potsPerMeter: 2,
-      shootsPerPot: 2,
-      plantingYear: new Date().getFullYear(),
-      productionYear: 1,
-      plantMaterialType: 'SMALL_POT',
-      varietyId: '',
-      yieldSummerPerShoot: 0,
-      yieldAutumnPerShoot: 0,
-      gdhSummer: 0,
-      gdhAutumn: 0,
-    })
-    setEditingSection(null)
-    setShowSectionForm(null)
-  }
-
-  const startAddSection = (blockId: string) => {
-    resetSectionForm()
-    setShowSectionForm(blockId)
-  }
-
-  const startEditSection = (blockId: string, section: Section) => {
-    setEditingSection(section)
-    const variety = varieties.find(v => v.id === section.varietyId)
-    
-    setSectionForm({
-      name: section.name || '',
-      metersLength: section.metersLength,
-      potsPerMeter: section.potsPerMeter,
-      shootsPerPot: section.shootsPerPot,
-      plantingYear: section.plantingYear || new Date().getFullYear(),
-      productionYear: section.productionYear || 1,
-      plantMaterialType: section.plantMaterialType || 'SMALL_POT',
-      varietyId: section.varietyId,
-      yieldSummerPerShoot: section.yieldSummerPerShoot || variety?.yieldSummerPerShoot || 0,
-      yieldAutumnPerShoot: section.yieldAutumnPerShoot || variety?.yieldAutumnPerShoot || 0,
-      gdhSummer: section.gdhSummer || variety?.gdhSummer || 0,
-      gdhAutumn: section.gdhAutumn || variety?.gdhAutumn || 0,
-    })
-    setShowSectionForm(blockId)
-  }
-
-  const onVarietyChange = (varietyId: string) => {
-    const variety = varieties.find(v => v.id === varietyId)
-    if (variety) {
-      setSectionForm({
-        ...sectionForm,
-        varietyId,
-        yieldSummerPerShoot: variety.yieldSummerPerShoot || 0,
-        yieldAutumnPerShoot: variety.yieldAutumnPerShoot || 0,
-        gdhSummer: variety.gdhSummer || 0,
-        gdhAutumn: variety.gdhAutumn || 0,
-      })
+    if (existingIndex >= 0) {
+      updatedData = [...weatherData]
+      updatedData[existingIndex] = newRecord
     } else {
-      setSectionForm({ ...sectionForm, varietyId })
+      updatedData = [...weatherData, newRecord]
+    }
+
+    const finalData = recalculateCumulativeGDH(updatedData)
+    setWeatherData(finalData)
+
+    setShowForm(false)
+    setFormData({ date: new Date().toISOString().split('T')[0], tempMin: '', tempMax: '' })
+    setIsLoading(false)
+  }
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  }
+
+  const getSourceBadge = (source?: string) => {
+    switch (source) {
+      case 'Open-Meteo':
+        return <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">API</span>
+      case 'Prognoza':
+        return <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">Prognoza</span>
+      case 'Ręczny':
+        return <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-xs rounded">Ręczny</span>
+      default:
+        return null
     }
   }
 
-  const saveSection = async (blockId: string) => {
-    if (!sectionForm.name.trim() || !sectionForm.varietyId) return
-    
-    const payload = {
-      name: sectionForm.name,
-      metersLength: sectionForm.metersLength,
-      potsPerMeter: sectionForm.potsPerMeter,
-      shootsPerPot: sectionForm.shootsPerPot,
-      plantingYear: sectionForm.plantingYear,
-      productionYear: sectionForm.productionYear,
-      plantMaterialType: sectionForm.plantMaterialType,
-      varietyId: sectionForm.varietyId,
-      yieldSummerPerShoot: sectionForm.yieldSummerPerShoot || null,
-      yieldAutumnPerShoot: sectionForm.yieldAutumnPerShoot || null,
-      gdhSummer: sectionForm.gdhSummer || null,
-      gdhAutumn: sectionForm.gdhAutumn || null,
-      blockId,
-    }
-    
-    try {
-      if (editingSection) {
-        await fetch(`/api/plantation/section/${editingSection.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        })
-      } else {
-        await fetch('/api/plantation/section', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ section: payload })
-        })
-      }
-      
-      resetSectionForm()
-      fetchData()
-    } catch (error) {
-      console.error('Error saving section:', error)
-    }
-  }
-
-  const deleteSection = async (sectionId: string) => {
-    if (!confirm('Czy na pewno chcesz usunąć tę sekcję?')) return
-    
-    try {
-      await fetch(`/api/plantation/section/${sectionId}`, { method: 'DELETE' })
-      fetchData()
-    } catch (error) {
-      console.error('Error deleting section:', error)
-    }
-  }
-
-  // Calculate form preview
-  const formPreview = () => {
-    const pots = sectionForm.metersLength * sectionForm.potsPerMeter
-    const shoots = pots * sectionForm.shootsPerPot
-    const forecastSummer = shoots * (sectionForm.yieldSummerPerShoot || 0)
-    const forecastAutumn = shoots * (sectionForm.yieldAutumnPerShoot || 0)
-    return { pots, shoots, forecastSummer, forecastAutumn, total: forecastSummer + forecastAutumn }
-  }
-
-  // Stats
-  const totalStats = blocks.reduce((acc, block) => {
-    block.sections.forEach(section => {
-      const stats = calcSectionStats(section)
-      acc.pots += stats.pots
-      acc.shoots += stats.shoots
-      acc.forecastSummer += stats.forecastSummer
-      acc.forecastAutumn += stats.forecastAutumn
-    })
-    return acc
-  }, { pots: 0, shoots: 0, forecastSummer: 0, forecastAutumn: 0 })
-
-  if (loading) {
-    return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Ładowanie...</div></div>
-  }
-
-  const preview = formPreview()
+  // Statystyki
+  const last7Days = weatherData.filter(w => w.source !== 'Prognoza').slice(0, 7)
+  const last7DaysGDH = last7Days.reduce((s, d) => s + d.gdhDaily, 0)
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Plantacja</h1>
-          <p className="text-gray-500">{farm?.name}</p>
+          <h1 className="text-2xl font-bold text-gray-900">Pogoda & GDH</h1>
+          <p className="text-gray-500 flex items-center gap-1">
+            <MapPin className="w-4 h-4" />
+            {LOCATION.name} ({LOCATION.latitude}°N, {LOCATION.longitude}°E)
+          </p>
         </div>
-        <Button className="bg-green-600 hover:bg-green-700" onClick={() => setShowBlockForm(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Dodaj blok
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline"
+            onClick={() => setShowSettings(true)}
+          >
+            <Settings className="w-4 h-4 mr-2" />
+            Temp. bazowa: {baseTemp}°C
+          </Button>
+          <Button 
+            variant="outline"
+            onClick={fetchWeatherData}
+            disabled={isFetching}
+          >
+            {isFetching ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Pobieranie...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4 mr-2" />
+                Pobierz pogodę
+              </>
+            )}
+          </Button>
+          <Button 
+            className="bg-green-600 hover:bg-green-700"
+            onClick={() => setShowForm(true)}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Dodaj ręcznie
+          </Button>
+        </div>
       </div>
 
-      {/* Statystyki ogólne */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-sm text-gray-500">Bloki</div>
-            <div className="text-2xl font-bold">{blocks.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-sm text-gray-500">Sekcje</div>
-            <div className="text-2xl font-bold">{blocks.reduce((s, b) => s + b.sections.length, 0)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="text-sm text-gray-500">Doniczki</div>
-            <div className="text-2xl font-bold">{totalStats.pots.toLocaleString('pl-PL')}</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-orange-50">
-          <CardContent className="pt-4">
-            <div className="text-sm text-orange-600">Prognoza LATO</div>
-            <div className="text-2xl font-bold text-orange-700">{(totalStats.forecastSummer / 1000).toFixed(1)} t</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-amber-50">
-          <CardContent className="pt-4">
-            <div className="text-sm text-amber-600">Prognoza JESIEŃ</div>
-            <div className="text-2xl font-bold text-amber-700">{(totalStats.forecastAutumn / 1000).toFixed(1)} t</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Formularz bloku */}
-      {showBlockForm && (
-        <Card className="border-green-200 bg-green-50">
+      {/* Panel ustawień temperatury bazowej */}
+      {showSettings && (
+        <Card className="border-blue-200 bg-blue-50">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center justify-between">
-              <span>{editingBlock ? 'Edytuj blok' : 'Nowy blok'}</span>
-              <Button variant="ghost" size="icon" onClick={resetBlockForm}><X className="w-4 h-4" /></Button>
+              <span>Ustawienia GDH</span>
+              <Button variant="ghost" size="icon" onClick={() => setShowSettings(false)}>
+                <X className="w-4 h-4" />
+              </Button>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <Label>Nazwa bloku</Label>
-                <Input placeholder="np. Blok E" value={blockName} onChange={(e) => setBlockName(e.target.value)} />
+            <div className="space-y-4">
+              <div className="p-4 bg-white rounded-lg border">
+                <h4 className="font-medium mb-2">Temperatura bazowa (próg GDH)</h4>
+                <p className="text-sm text-gray-500 mb-4">
+                  GDH są liczone tylko gdy średnia dzienna temperatura przekracza temperaturę bazową.
+                  Różne odmiany malin mogą mieć różne progi:
+                </p>
+                <ul className="text-sm text-gray-600 mb-4 space-y-1">
+                  <li>• <strong>Diamond Jubilee</strong>: zalecane 5°C</li>
+                  <li>• <strong>Ruby</strong>: zalecane 6°C</li>
+                </ul>
+                
+                <div className="flex items-end gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="baseTemp">Temperatura bazowa (°C)</Label>
+                    <Input
+                      id="baseTemp"
+                      type="number"
+                      step="0.5"
+                      value={tempBaseTempInput}
+                      onChange={(e) => setTempBaseTempInput(e.target.value)}
+                      className="w-32"
+                    />
+                  </div>
+                  <Button onClick={handleBaseTempChange} className="bg-blue-600 hover:bg-blue-700">
+                    Zastosuj i przelicz
+                  </Button>
+                </div>
+                
+                <p className="text-xs text-gray-400 mt-3">
+                  Zmiana temperatury bazowej przeliczy GDH dla wszystkich zapisanych dni.
+                </p>
               </div>
-              <div className="flex items-end gap-2">
-                <Button onClick={saveBlock} className="bg-green-600 hover:bg-green-700">
-                  <Save className="w-4 h-4 mr-2" />{editingBlock ? 'Zapisz' : 'Dodaj'}
-                </Button>
-                <Button variant="outline" onClick={resetBlockForm}>Anuluj</Button>
+              
+              {/* Szybkie przyciski */}
+              <div className="flex gap-2">
+                <span className="text-sm text-gray-500 py-2">Szybki wybór:</span>
+                {[4, 4.5, 5, 5.5, 6, 6.5, 7].map(temp => (
+                  <Button
+                    key={temp}
+                    variant={baseTemp === temp ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setTempBaseTempInput(temp.toString())
+                      setBaseTemp(temp)
+                      if (weatherData.length > 0) {
+                        const recalculated = recalculateCumulativeGDH(weatherData, temp)
+                        setWeatherData(recalculated)
+                      }
+                    }}
+                    className={baseTemp === temp ? "bg-blue-600" : ""}
+                  >
+                    {temp}°C
+                  </Button>
+                ))}
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Lista bloków */}
-      <div className="space-y-4">
-        {blocks.map((block) => (
-          <Card key={block.id}>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-green-600" />
-                  {block.name}
-                  <span className="text-sm font-normal text-gray-500">({block.sections.length} sekcji)</span>
+      {/* Status pobierania */}
+      {fetchStatus && (
+        <div className={`p-3 rounded-lg text-sm ${
+          fetchStatus.includes('✓') ? 'bg-green-100 text-green-700' :
+          fetchStatus.includes('❌') ? 'bg-red-100 text-red-700' :
+          'bg-blue-100 text-blue-700'
+        }`}>
+          {fetchStatus}
+        </div>
+      )}
+
+      {/* Formularz dodawania */}
+      {showForm && (
+        <Card className="border-green-200 bg-green-50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between">
+              <span>Nowy odczyt temperatury</span>
+              <Button variant="ghost" size="icon" onClick={() => setShowForm(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="date">Data</Label>
+                  <Input
+                    id="date"
+                    type="date"
+                    value={formData.date}
+                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                    required
+                  />
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => startAddSection(block.id)}>
-                    <Plus className="w-4 h-4 mr-1" />Sekcja
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => { setEditingBlock(block); setBlockName(block.name); setShowBlockForm(true) }}>
-                    <Pencil className="w-4 h-4 text-gray-500" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => deleteBlock(block.id)} className="text-red-500 hover:bg-red-50">
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                <div className="space-y-2">
+                  <Label htmlFor="tempMin">Temperatura min (°C)</Label>
+                  <Input
+                    id="tempMin"
+                    type="number"
+                    step="0.1"
+                    placeholder="np. 5"
+                    value={formData.tempMin}
+                    onChange={(e) => setFormData({ ...formData, tempMin: e.target.value })}
+                    required
+                  />
                 </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {/* Formularz sekcji */}
-              {showSectionForm === block.id && (
-                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <h4 className="font-medium mb-4">{editingSection ? 'Edytuj sekcję' : 'Nowa sekcja'}</h4>
-                  
-                  {/* Dane podstawowe */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div>
-                      <Label>Nazwa sekcji *</Label>
-                      <Input value={sectionForm.name} onChange={(e) => setSectionForm({...sectionForm, name: e.target.value})} placeholder="np. A01-05" />
-                    </div>
-                    <div>
-                      <Label>Odmiana *</Label>
-                      <select className="w-full h-10 px-3 border rounded-md" value={sectionForm.varietyId} onChange={(e) => onVarietyChange(e.target.value)}>
-                        <option value="">Wybierz...</option>
-                        {varieties.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <Label>Rok nasadzenia</Label>
-                      <Input type="number" value={sectionForm.plantingYear} onChange={(e) => setSectionForm({...sectionForm, plantingYear: parseInt(e.target.value) || 0})} />
-                    </div>
-                    <div>
-                      <Label>Rok produkcyjny</Label>
-                      <Input type="number" value={sectionForm.productionYear} onChange={(e) => setSectionForm({...sectionForm, productionYear: parseInt(e.target.value) || 1})} />
-                    </div>
-                  </div>
-
-                  {/* Parametry nasadzenia */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div>
-                      <Label>Metry bieżące</Label>
-                      <Input type="number" value={sectionForm.metersLength} onChange={(e) => setSectionForm({...sectionForm, metersLength: parseFloat(e.target.value) || 0})} />
-                    </div>
-                    <div>
-                      <Label>Doniczek na metr</Label>
-                      <Input type="number" step="0.1" value={sectionForm.potsPerMeter} onChange={(e) => setSectionForm({...sectionForm, potsPerMeter: parseFloat(e.target.value) || 0})} />
-                    </div>
-                    <div>
-                      <Label>Pędów w doniczce</Label>
-                      <Input type="number" step="0.1" value={sectionForm.shootsPerPot} onChange={(e) => setSectionForm({...sectionForm, shootsPerPot: parseFloat(e.target.value) || 0})} />
-                    </div>
-                    <div>
-                      <Label>Typ materiału</Label>
-                      <select className="w-full h-10 px-3 border rounded-md" value={sectionForm.plantMaterialType} onChange={(e) => setSectionForm({...sectionForm, plantMaterialType: e.target.value})}>
-                        {PLANT_MATERIAL_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Normy i GDH */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div>
-                      <Label>Norma LATO (kg/pęd)</Label>
-                      <Input type="number" step="0.01" value={sectionForm.yieldSummerPerShoot} onChange={(e) => setSectionForm({...sectionForm, yieldSummerPerShoot: parseFloat(e.target.value) || 0})} />
-                    </div>
-                    <div>
-                      <Label>Norma JESIEŃ (kg/pęd)</Label>
-                      <Input type="number" step="0.01" value={sectionForm.yieldAutumnPerShoot} onChange={(e) => setSectionForm({...sectionForm, yieldAutumnPerShoot: parseFloat(e.target.value) || 0})} />
-                    </div>
-                    <div>
-                      <Label>GDH LATO</Label>
-                      <Input type="number" value={sectionForm.gdhSummer} onChange={(e) => setSectionForm({...sectionForm, gdhSummer: parseInt(e.target.value) || 0})} />
-                    </div>
-                    <div>
-                      <Label>GDH JESIEŃ</Label>
-                      <Input type="number" value={sectionForm.gdhAutumn} onChange={(e) => setSectionForm({...sectionForm, gdhAutumn: parseInt(e.target.value) || 0})} />
-                    </div>
-                  </div>
-
-                  {/* Podgląd obliczeń */}
-                  <div className="bg-white p-3 rounded border mb-4">
-                    <div className="grid grid-cols-5 gap-4 text-sm">
-                      <div><span className="text-gray-500">Doniczki:</span> <strong>{preview.pots.toLocaleString('pl-PL')}</strong></div>
-                      <div><span className="text-gray-500">Pędy:</span> <strong>{preview.shoots.toLocaleString('pl-PL')}</strong></div>
-                      <div><span className="text-orange-600">LATO:</span> <strong>{preview.forecastSummer.toLocaleString('pl-PL')} kg</strong></div>
-                      <div><span className="text-amber-600">JESIEŃ:</span> <strong>{preview.forecastAutumn.toLocaleString('pl-PL')} kg</strong></div>
-                      <div><span className="text-green-600">RAZEM:</span> <strong>{preview.total.toLocaleString('pl-PL')} kg</strong></div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button onClick={() => saveSection(block.id)} className="bg-green-600 hover:bg-green-700">
-                      <Save className="w-4 h-4 mr-2" />{editingSection ? 'Zapisz' : 'Dodaj'}
-                    </Button>
-                    <Button variant="outline" onClick={resetSectionForm}>Anuluj</Button>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tempMax">Temperatura max (°C)</Label>
+                  <Input
+                    id="tempMax"
+                    type="number"
+                    step="0.1"
+                    placeholder="np. 15"
+                    value={formData.tempMax}
+                    onChange={(e) => setFormData({ ...formData, tempMax: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+              
+              {formData.tempMin && formData.tempMax && (
+                <div className="p-3 bg-white rounded-lg border">
+                  <span className="text-sm text-gray-500">Szacowane GDH (przy temp. bazowej {baseTemp}°C): </span>
+                  <span className="font-bold text-green-600">
+                    +{calculateGDH(parseFloat(formData.tempMin), parseFloat(formData.tempMax))}
+                  </span>
                 </div>
               )}
 
-              {/* Lista sekcji */}
-              {block.sections.length > 0 ? (
-                <div className="space-y-3">
-                  {block.sections.map((section) => {
-                    const stats = calcSectionStats(section)
-                    const isExpanded = expandedSection === section.id
-                    const weeklySummer = getWeeklyForecast(stats.forecastSummer, stats.curveSummer, stats.startDateSummer, stats.pickingEfficiency)
-                    const weeklyAutumn = getWeeklyForecast(stats.forecastAutumn, stats.curveAutumn, stats.startDateAutumn, stats.pickingEfficiency)
-                    const maxKgSummer = Math.max(...weeklySummer.map(w => w.kg))
-                    const maxKgAutumn = Math.max(...weeklyAutumn.map(w => w.kg))
+              <div className="flex gap-2">
+                <Button type="submit" className="bg-green-600 hover:bg-green-700" disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Zapisywanie...
+                    </>
+                  ) : (
+                    'Zapisz odczyt'
+                  )}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                  Anuluj
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
-                    return (
-                      <div key={section.id} className="border rounded-lg overflow-hidden">
-                        {/* Nagłówek sekcji */}
-                        <div 
-                          className="flex items-center justify-between p-3 bg-gray-50 cursor-pointer hover:bg-gray-100"
-                          onClick={() => setExpandedSection(isExpanded ? null : section.id)}
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="font-medium">{section.name}</span>
-                            <span className="text-sm px-2 py-0.5 bg-green-100 text-green-700 rounded">{section.variety?.name}</span>
-                            <span className="text-sm text-gray-500">{section.metersLength}m</span>
-                            {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-                          </div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-sm"><span className="text-orange-600">{stats.forecastSummer.toLocaleString('pl-PL')}</span> + <span className="text-amber-600">{stats.forecastAutumn.toLocaleString('pl-PL')}</span> kg</span>
-                            <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); startEditSection(block.id, section) }}>
-                              <Pencil className="w-4 h-4 text-gray-500" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); deleteSection(section.id) }} className="text-red-500 hover:bg-red-50">
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
+      {/* Karty podsumowania */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-green-600 font-medium">Aktualne GDH (od 1.01)</p>
+                <p className="text-4xl font-bold text-green-700">{currentGDH.toLocaleString()}</p>
+                <p className="text-xs text-green-500 mt-1">
+                  Temp. bazowa: {baseTemp}°C
+                </p>
+              </div>
+              <div className="p-3 bg-green-200 rounded-full">
+                <TrendingUp className="w-8 h-8 text-green-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-                        {/* Rozwinięte szczegóły */}
-                        {isExpanded && (
-                          <div className="p-4 space-y-6 border-t">
-                            {/* Podsumowanie */}
-                            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-sm">
-                              <div className="bg-gray-50 p-2 rounded">
-                                <div className="text-gray-500 text-xs">Doniczki</div>
-                                <div className="font-semibold">{stats.pots.toLocaleString('pl-PL')}</div>
-                              </div>
-                              <div className="bg-gray-50 p-2 rounded">
-                                <div className="text-gray-500 text-xs">Pędy</div>
-                                <div className="font-semibold">{stats.shoots.toLocaleString('pl-PL')}</div>
-                              </div>
-                              <div className="bg-orange-50 p-2 rounded">
-                                <div className="text-orange-600 text-xs">Prognoza LATO</div>
-                                <div className="font-semibold">{stats.forecastSummer.toLocaleString('pl-PL')} kg</div>
-                              </div>
-                              <div className="bg-amber-50 p-2 rounded">
-                                <div className="text-amber-600 text-xs">Prognoza JESIEŃ</div>
-                                <div className="font-semibold">{stats.forecastAutumn.toLocaleString('pl-PL')} kg</div>
-                              </div>
-                              <div className="bg-green-50 p-2 rounded">
-                                <div className="text-green-600 text-xs">RAZEM</div>
-                                <div className="font-semibold">{stats.forecastTotal.toLocaleString('pl-PL')} kg</div>
-                              </div>
-                              <div className="bg-blue-50 p-2 rounded">
-                                <div className="text-blue-600 text-xs">Rok prod.</div>
-                                <div className="font-semibold">{section.productionYear || 1}</div>
-                              </div>
-                            </div>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Ostatni dzień</p>
+                <p className="text-2xl font-bold">+{weatherData[0]?.gdhDaily || 0} GDH</p>
+                <p className="text-sm text-gray-500">
+                  {weatherData[0] ? `${weatherData[0].tempMin}° - ${weatherData[0].tempMax}°C` : '-'}
+                </p>
+              </div>
+              <div className="p-3 bg-orange-100 rounded-full">
+                <Thermometer className="w-8 h-8 text-orange-500" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-                            {/* Status GDH */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="bg-orange-50 p-4 rounded-lg">
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="font-medium text-orange-700 flex items-center gap-2"><Sun className="w-4 h-4" /> GDH LATO</span>
-                                  <span className="text-sm text-orange-600">{stats.currentGdh.toLocaleString('pl-PL')} / {stats.gdhSummer.toLocaleString('pl-PL')}</span>
-                                </div>
-                                <div className="w-full bg-orange-200 rounded-full h-3 mb-2">
-                                  <div className="bg-orange-500 h-3 rounded-full transition-all" style={{ width: `${stats.gdhProgressSummer}%` }} />
-                                </div>
-                                <div className="flex justify-between text-xs text-orange-600">
-                                  <span>Pozostało: {stats.gdhRemainingSummer.toLocaleString('pl-PL')} GDH</span>
-                                  <span className="font-medium">Start: {stats.startDateSummer.toLocaleDateString('pl-PL')}</span>
-                                </div>
-                              </div>
-                              <div className="bg-amber-50 p-4 rounded-lg">
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="font-medium text-amber-700 flex items-center gap-2"><LeafIcon className="w-4 h-4" /> GDH JESIEŃ</span>
-                                  <span className="text-sm text-amber-600">{stats.currentGdh.toLocaleString('pl-PL')} / {stats.gdhAutumn.toLocaleString('pl-PL')}</span>
-                                </div>
-                                <div className="w-full bg-amber-200 rounded-full h-3 mb-2">
-                                  <div className="bg-amber-500 h-3 rounded-full transition-all" style={{ width: `${stats.gdhProgressAutumn}%` }} />
-                                </div>
-                                <div className="flex justify-between text-xs text-amber-600">
-                                  <span>Pozostało: {stats.gdhRemainingAutumn.toLocaleString('pl-PL')} GDH</span>
-                                  <span className="font-medium">Start: {stats.startDateAutumn.toLocaleDateString('pl-PL')}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Wykresy tygodniowe */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {/* LATO */}
-                              <div>
-                                <h4 className="font-medium text-orange-700 mb-3 flex items-center gap-2">
-                                  <Sun className="w-4 h-4" /> Prognoza tygodniowa - LATO
-                                </h4>
-                                <div className="flex items-end gap-1 h-32 mb-2">
-                                  {weeklySummer.map((w, i) => (
-                                    <div key={i} className="flex-1 flex flex-col items-center">
-                                      <div 
-                                        className="w-full bg-orange-400 rounded-t min-h-[4px] relative group"
-                                        style={{ height: `${(w.kg / maxKgSummer) * 100}%` }}
-                                      >
-                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-gray-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10">
-                                          T{w.week}: {w.kg} kg<br/>{w.workers} os. / {w.hours}h
-                                        </div>
-                                      </div>
-                                      <span className="text-xs text-gray-500 mt-1">T{w.week}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                                <div className="text-xs text-gray-500 text-center">
-                                  Szczyt: T{weeklySummer.find(w => w.kg === maxKgSummer)?.week} ({maxKgSummer.toLocaleString('pl-PL')} kg)
-                                </div>
-                              </div>
-
-                              {/* JESIEŃ */}
-                              <div>
-                                <h4 className="font-medium text-amber-700 mb-3 flex items-center gap-2">
-                                  <LeafIcon className="w-4 h-4" /> Prognoza tygodniowa - JESIEŃ
-                                </h4>
-                                <div className="flex items-end gap-1 h-32 mb-2">
-                                  {weeklyAutumn.map((w, i) => (
-                                    <div key={i} className="flex-1 flex flex-col items-center">
-                                      <div 
-                                        className="w-full bg-amber-400 rounded-t min-h-[4px] relative group"
-                                        style={{ height: `${(w.kg / maxKgAutumn) * 100}%` }}
-                                      >
-                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block bg-gray-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10">
-                                          T{w.week}: {w.kg} kg<br/>{w.workers} os. / {w.hours}h
-                                        </div>
-                                      </div>
-                                      <span className="text-xs text-gray-500 mt-1">T{w.week}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                                <div className="text-xs text-gray-500 text-center">
-                                  Szczyt: T{weeklyAutumn.find(w => w.kg === maxKgAutumn)?.week} ({maxKgAutumn.toLocaleString('pl-PL')} kg)
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Tabela tygodniowa */}
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="bg-gray-100">
-                                    <th className="px-2 py-1 text-left">Sezon</th>
-                                    <th className="px-2 py-1 text-left">Tydzień</th>
-                                    <th className="px-2 py-1 text-right">Prognoza</th>
-                                    <th className="px-2 py-1 text-right">Pracownicy</th>
-                                    <th className="px-2 py-1 text-right">Roboczogodziny</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {weeklySummer.slice(0, 4).map((w, i) => (
-                                    <tr key={`s-${i}`} className="border-b hover:bg-orange-50">
-                                      <td className="px-2 py-1"><span className="text-orange-600">LATO</span></td>
-                                      <td className="px-2 py-1">T{w.week} ({w.date})</td>
-                                      <td className="px-2 py-1 text-right font-medium">{w.kg.toLocaleString('pl-PL')} kg</td>
-                                      <td className="px-2 py-1 text-right">{w.workers} os.</td>
-                                      <td className="px-2 py-1 text-right">{w.hours}h</td>
-                                    </tr>
-                                  ))}
-                                  {weeklyAutumn.slice(0, 3).map((w, i) => (
-                                    <tr key={`a-${i}`} className="border-b hover:bg-amber-50">
-                                      <td className="px-2 py-1"><span className="text-amber-600">JESIEŃ</span></td>
-                                      <td className="px-2 py-1">T{w.week} ({w.date})</td>
-                                      <td className="px-2 py-1 text-right font-medium">{w.kg.toLocaleString('pl-PL')} kg</td>
-                                      <td className="px-2 py-1 text-right">{w.workers} os.</td>
-                                      <td className="px-2 py-1 text-right">{w.hours}h</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <p className="text-gray-500 text-center py-4">Brak sekcji w tym bloku</p>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-
-        {blocks.length === 0 && (
-          <Card>
-            <CardContent className="py-8">
-              <p className="text-center text-gray-500">Brak bloków. Kliknij "Dodaj blok" żeby rozpocząć.</p>
-            </CardContent>
-          </Card>
-        )}
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Ostatnie 7 dni</p>
+                <p className="text-2xl font-bold">+{last7DaysGDH} GDH</p>
+                <p className="text-sm text-gray-500">
+                  średnio {last7Days.length > 0 ? Math.round(last7DaysGDH / last7Days.length) : 0}/dzień
+                </p>
+              </div>
+              <div className="p-3 bg-blue-100 rounded-full">
+                <Cloud className="w-8 h-8 text-blue-500" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Info o źródłach */}
+      <Card className="bg-gray-50">
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <span className="font-medium">Źródła danych:</span>
+            <span className="flex items-center gap-1">
+              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">API</span>
+              Open-Meteo (historyczne)
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">Prognoza</span>
+              Open-Meteo (7 dni)
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-xs rounded">Ręczny</span>
+              Twoje wpisy
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabela danych */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Historia pomiarów ({weatherData.length} dni)</span>
+            {weatherData.length > 0 && (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => {
+                  if (confirm('Czy na pewno chcesz wyczyścić wszystkie dane?')) {
+                    setWeatherData([])
+                    localStorage.removeItem('weatherData')
+                  }
+                }}
+              >
+                Wyczyść dane
+              </Button>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {weatherData.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <Cloud className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <p className="mb-2">Brak danych pogodowych</p>
+              <p className="text-sm">Kliknij "Pobierz pogodę" aby pobrać dane od początku roku</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-h-96">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="border-b bg-gray-50">
+                    <th className="text-left py-3 px-4 font-medium text-gray-600">Data</th>
+                    <th className="text-center py-3 px-4 font-medium text-gray-600">Min °C</th>
+                    <th className="text-center py-3 px-4 font-medium text-gray-600">Max °C</th>
+                    <th className="text-center py-3 px-4 font-medium text-gray-600">GDH dnia</th>
+                    <th className="text-right py-3 px-4 font-medium text-gray-600">GDH suma</th>
+                    <th className="text-center py-3 px-4 font-medium text-gray-600">Źródło</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weatherData.map((day) => (
+                    <tr key={day.id} className={`border-b hover:bg-gray-50 ${
+                      day.source === 'Prognoza' ? 'bg-purple-50/50' : ''
+                    }`}>
+                      <td className="py-3 px-4 font-medium">{formatDate(day.date)}</td>
+                      <td className="text-center py-3 px-4">
+                        <span className="text-blue-600">{day.tempMin}°</span>
+                      </td>
+                      <td className="text-center py-3 px-4">
+                        <span className="text-red-600">{day.tempMax}°</span>
+                      </td>
+                      <td className="text-center py-3 px-4">
+                        <span className={`px-2 py-1 rounded font-medium ${
+                          day.gdhDaily > 0 
+                            ? 'bg-green-100 text-green-700' 
+                            : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {day.gdhDaily > 0 ? '+' : ''}{day.gdhDaily}
+                        </span>
+                      </td>
+                      <td className="text-right py-3 px-4 font-semibold">{day.gdhCumulative.toLocaleString()}</td>
+                      <td className="text-center py-3 px-4">{getSourceBadge(day.source)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== TENANTS ====================
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  users     User[]
+  farms     Farm[]
+  varieties Variety[]
+  
+  @@map("tenants")
+}
+
+// ==================== USERS ====================
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  role         String   @default("MANAGER")
+  
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@map("users")
+}
+
+// ==================== FARMS ====================
+model Farm {
+  id              String    @id @default(cuid())
+  name            String
+  location        String?
+  latitude        Float?
+  longitude       Float?
+  seasonStartDate DateTime?
+  
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id])
+  
+  blocks          Block[]
+  workers         Worker[]
+  weatherData     WeatherData[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@map("farms")
+}
+
+// ==================== BLOCKS ====================
+model Block {
+  id       String    @id @default(cuid())
+  name     String
+  areaHa   Float?
+  
+  farmId   String
+  farm     Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  
+  sections Section[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("blocks")
+}
+
+// ==================== VARIETIES ====================
+model Variety {
+  id                    String    @id @default(cuid())
+  name                  String
+  origin                String?
+  description           String?
+  
+  // Normy produkcyjne (domyślne)
+  yieldSummerPerShoot   Float?    // kg/pęd LATO
+  yieldAutumnPerShoot   Float?    // kg/pęd JESIEŃ
+  
+  // GDH do zbioru (domyślne)
+  gdhSummer             Int?      // GDH do zbioru LATO
+  gdhAutumn             Int?      // GDH do zbioru JESIEŃ
+  
+  // Krzywe zbioru (% na tydzień)
+  harvestCurveSummer    Json?     // np. [2, 6, 12, 16, 15, 13, 11, 9, 7, 5, 3, 1]
+  harvestCurveAutumn    Json?     // np. [5, 15, 25, 25, 15, 10, 5]
+  
+  // Statystyki zbierania
+  pickingEfficiency     Float?    // kg/h - domyślna wydajność
+  wastePercent          Float?    // % odpadu
+  secondCategoryPercent Float?    // % II kategorii
+  
+  isCustom              Boolean   @default(false)
+  
+  tenantId              String?
+  tenant                Tenant?   @relation(fields: [tenantId], references: [id])
+  
+  sections              Section[]
+  
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@map("varieties")
+}
+
+// ==================== SECTIONS ====================
+model Section {
+  id                    String    @id @default(cuid())
+  name                  String?
+  
+  // Dane podstawowe
+  metersLength          Float     // metry bieżące
+  potsPerMeter          Float     // doniczek na metr
+  shootsPerPot          Float     // pędów w doniczce
+  
+  // Lata
+  plantingYear          Int?      // rok nasadzenia
+  productionYear        Int?      // rok produkcyjny (1, 2, 3...)
+  
+  // Typ materiału roślinnego
+  plantMaterialType     String?   // SMALL_POT, ROOT, LONGCANE, PLUG
+  
+  // Normy (override z odmiany)
+  yieldSummerPerShoot   Float?    // kg/pęd LATO (jeśli inne niż odmiana)
+  yieldAutumnPerShoot   Float?    // kg/pęd JESIEŃ (jeśli inne niż odmiana)
+  
+  // GDH (override z odmiany)
+  gdhSummer             Int?      // GDH LATO (jeśli inne niż odmiana)
+  gdhAutumn             Int?      // GDH JESIEŃ (jeśli inne niż odmiana)
+  
+  // Dokumenty
+  certificateUrl        String?   // URL do certyfikatu
+  deliveryProofUrl      String?   // URL do dowodu dostawy
+  
+  // Relacje
+  blockId               String
+  block                 Block     @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  
+  varietyId             String
+  variety               Variety   @relation(fields: [varietyId], references: [id])
+  
+  harvests              Harvest[]
+  weeklyOverrides       WeeklyOverride[]
+  
+  winteredInTunnel      Boolean   @default(false)
+  plantingDate          DateTime?
+  winterShootsDate      DateTime?
+  harvestCurveSummer    Float[]   @default([])
+  harvestCurveAutumn    Float[]   @default([])
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@map("sections")
+}
+
+// ==================== WEEKLY OVERRIDES ====================
+// Nadpisanie wydajności dla konkretnego tygodnia
+model WeeklyOverride {
+  id                String   @id @default(cuid())
+  
+  weekNumber        Int      // numer tygodnia w roku
+  year              Int      // rok
+  pickingEfficiency Float?   // nadpisana wydajność kg/h
+  notes             String?  // uwagi
+  
+  sectionId         String
+  section           Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@unique([sectionId, weekNumber, year])
+  @@map("weekly_overrides")
+}
+
+// ==================== WEATHER ====================
+model WeatherData {
+  id            String   @id @default(cuid())
+  date          DateTime @db.Date
+  tempMin       Float
+  tempMax       Float
+  tempAvg       Float?
+  gdhDaily      Float    // GDH tego dnia
+  gdhCumulative Float    // suma GDH od początku roku
+  source        String?  // API, MANUAL, HISTORICAL
+  
+  farmId        String
+  farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime @default(now())
+  
+  @@unique([farmId, date])
+  @@map("weather_data")
+}
+
+// ==================== HISTORICAL GDH ====================
+// Średnie GDH z poprzednich lat do estymacji
+model HistoricalGdh {
+  id            String   @id @default(cuid())
+  dayOfYear     Int      // 1-366
+  avgGdh        Float    // średnia GDH dla tego dnia
+  minGdh        Float?   // minimum
+  maxGdh        Float?   // maksimum
+  yearsCount    Int?     // z ilu lat średnia
+  
+  farmId        String
+  
+  @@unique([farmId, dayOfYear])
+  @@map("historical_gdh")
+}
+
+// ==================== WORKERS ====================
+model Worker {
+  id            String   @id @default(cuid())
+  name          String
+  phone         String?
+  efficiencyKgH Float    // domyślna wydajność
+  isActive      Boolean  @default(true)
+  
+  farmId        String
+  farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@map("workers")
+}
+
+// ==================== HARVESTS ====================
+model Harvest {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  yieldKg   Float
+  notes     String?
+  
+  sectionId String
+  section   Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@map("harvests")
+}

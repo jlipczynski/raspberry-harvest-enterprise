@@ -28,6 +28,11 @@ export async function PATCH(
         varietyId: body.varietyId,
         certificateUrl: body.certificateUrl || null,
         deliveryProofUrl: body.deliveryProofUrl || null,
+        winteredInTunnel: body.winteredInTunnel || false,
+        plantingDate: body.plantingDate ? new Date(body.plantingDate) : null,
+        winterShootsDate: body.winterShootsDate ? new Date(body.winterShootsDate) : null,
+        harvestCurveSummer: body.harvestCurveSummer || [],
+        harvestCurveAutumn: body.harvestCurveAutumn || [],
       }
     })
 

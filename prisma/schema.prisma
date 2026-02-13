@@ -84,22 +84,18 @@ model Variety {
   origin                String?
   description           String?
   
-  // Normy produkcyjne (domyślne)
-  yieldSummerPerShoot   Float?    // kg/pęd LATO
-  yieldAutumnPerShoot   Float?    // kg/pęd JESIEŃ
+  yieldSummerPerShoot   Float?
+  yieldAutumnPerShoot   Float?
   
-  // GDH do zbioru (domyślne)
-  gdhSummer             Int?      // GDH do zbioru LATO
-  gdhAutumn             Int?      // GDH do zbioru JESIEŃ
+  gdhSummer             Int?
+  gdhAutumn             Int?
   
-  // Krzywe zbioru (% na tydzień)
-  harvestCurveSummer    Json?     // np. [2, 6, 12, 16, 15, 13, 11, 9, 7, 5, 3, 1]
-  harvestCurveAutumn    Json?     // np. [5, 15, 25, 25, 15, 10, 5]
+  harvestCurveSummer    Json?
+  harvestCurveAutumn    Json?
   
-  // Statystyki zbierania
-  pickingEfficiency     Float?    // kg/h - domyślna wydajność
-  wastePercent          Float?    // % odpadu
-  secondCategoryPercent Float?    // % II kategorii
+  pickingEfficiency     Float?
+  wastePercent          Float?
+  secondCategoryPercent Float?
   
   isCustom              Boolean   @default(false)
   
@@ -107,7 +103,8 @@ model Variety {
   tenant                Tenant?   @relation(fields: [tenantId], references: [id])
   
   sections              Section[]
-  
+  harvestCurves         HarvestCurve[]
+  templates             ProductionCurveTemplate[] @relation("TemplateVariety")  
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   
@@ -119,31 +116,24 @@ model Section {
   id                    String    @id @default(cuid())
   name                  String?
   
-  // Dane podstawowe
-  metersLength          Float     // metry bieżące
-  potsPerMeter          Float     // doniczek na metr
-  shootsPerPot          Float     // pędów w doniczce
+  metersLength          Float
+  potsPerMeter          Float
+  shootsPerPot          Float
   
-  // Lata
-  plantingYear          Int?      // rok nasadzenia
-  productionYear        Int?      // rok produkcyjny (1, 2, 3...)
+  plantingYear          Int?
+  productionYear        Int?
   
-  // Typ materiału roślinnego
-  plantMaterialType     String?   // SMALL_POT, ROOT, LONGCANE, PLUG
+  plantMaterialType     String?
   
-  // Normy (override z odmiany)
-  yieldSummerPerShoot   Float?    // kg/pęd LATO (jeśli inne niż odmiana)
-  yieldAutumnPerShoot   Float?    // kg/pęd JESIEŃ (jeśli inne niż odmiana)
+  yieldSummerPerShoot   Float?
+  yieldAutumnPerShoot   Float?
   
-  // GDH (override z odmiany)
-  gdhSummer             Int?      // GDH LATO (jeśli inne niż odmiana)
-  gdhAutumn             Int?      // GDH JESIEŃ (jeśli inne niż odmiana)
+  gdhSummer             Int?
+  gdhAutumn             Int?
   
-  // Dokumenty
-  certificateUrl        String?   // URL do certyfikatu
-  deliveryProofUrl      String?   // URL do dowodu dostawy
+  certificateUrl        String?
+  deliveryProofUrl      String?
   
-  // Relacje
   blockId               String
   block                 Block     @relation(fields: [blockId], references: [id], onDelete: Cascade)
   
@@ -152,6 +142,14 @@ model Section {
   
   harvests              Harvest[]
   weeklyOverrides       WeeklyOverride[]
+  harvestCurves         HarvestCurve[]
+  
+  winteredInTunnel      Boolean   @default(false)
+  templateAssignments   SectionTemplateAssignment[]
+  plantingDate          DateTime?
+  winterShootsDate      DateTime?
+  harvestCurveSummer    Float[]   @default([])
+  harvestCurveAutumn    Float[]   @default([])
   
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
@@ -159,15 +157,40 @@ model Section {
   @@map("sections")
 }
 
+// ==================== HARVEST CURVES ====================
+model HarvestCurve {
+  id            String   @id @default(cuid())
+  year          Int                          // rok danych (2023, 2024, 2025)
+  season        String                       // 'summer' | 'autumn'
+  curve         Float[]                      // % na tydzień [5, 12, 18, 22, 20, 13, 7, 3]
+  dailyCurve    Float[]                      // kg na dzień
+  startDate     String?                      // data startu zbioru
+  totalKg       Float                        // suma kg w sezonie
+  startWeek     Int                          // tydzień startu zbioru
+  
+  sectionId     String?
+  section       Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  
+  varietyId     String?
+  variety       Variety? @relation(fields: [varietyId], references: [id], onDelete: SetNull)
+  
+  sourceFile    String?                      // nazwa pliku MaxCrop
+  importedAt    DateTime @default(now())
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@map("harvest_curves")
+}
+
 // ==================== WEEKLY OVERRIDES ====================
-// Nadpisanie wydajności dla konkretnego tygodnia
 model WeeklyOverride {
   id                String   @id @default(cuid())
   
-  weekNumber        Int      // numer tygodnia w roku
-  year              Int      // rok
-  pickingEfficiency Float?   // nadpisana wydajność kg/h
-  notes             String?  // uwagi
+  weekNumber        Int
+  year              Int
+  pickingEfficiency Float?
+  notes             String?
   
   sectionId         String
   section           Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
@@ -186,9 +209,9 @@ model WeatherData {
   tempMin       Float
   tempMax       Float
   tempAvg       Float?
-  gdhDaily      Float    // GDH tego dnia
-  gdhCumulative Float    // suma GDH od początku roku
-  source        String?  // API, MANUAL, HISTORICAL
+  gdhDaily      Float
+  gdhCumulative Float
+  source        String?
   
   farmId        String
   farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
@@ -200,14 +223,13 @@ model WeatherData {
 }
 
 // ==================== HISTORICAL GDH ====================
-// Średnie GDH z poprzednich lat do estymacji
 model HistoricalGdh {
   id            String   @id @default(cuid())
-  dayOfYear     Int      // 1-366
-  avgGdh        Float    // średnia GDH dla tego dnia
-  minGdh        Float?   // minimum
-  maxGdh        Float?   // maksimum
-  yearsCount    Int?     // z ilu lat średnia
+  dayOfYear     Int
+  avgGdh        Float
+  minGdh        Float?
+  maxGdh        Float?
+  yearsCount    Int?
   
   farmId        String
   
@@ -220,7 +242,7 @@ model Worker {
   id            String   @id @default(cuid())
   name          String
   phone         String?
-  efficiencyKgH Float    // domyślna wydajność
+  efficiencyKgH Float
   isActive      Boolean  @default(true)
   
   farmId        String
@@ -245,4 +267,76 @@ model Harvest {
   createdAt DateTime @default(now())
   
   @@map("harvests")
+}
+
+// ==================== PRODUCTION CURVE TEMPLATES ====================
+model ProductionCurveTemplate {
+  id                  String   @id @default(cuid())
+  name                String
+  description         String?
+  
+  varietyId            String?
+  variety              Variety? @relation("TemplateVariety", fields: [varietyId], references: [id], onDelete: SetNull)
+  
+  productionYear      Int                          // year of data (2024, 2025)
+  productionCycle     Int      @default(1)          // 1st/2nd/3rd year of production
+  season              String                        // 'summer' | 'autumn'
+  
+  plantingDate        String?                       // when planted
+  winteredInTunnel    Boolean  @default(false)
+  plantSource         String?                       // 'long_canes' | 'tray_plants' | 'nursery'
+  
+  // Production curve data
+  dailyCurve          Float[]                       // kg per day from MaxCrop
+  weeklyCurve         Float[]                       // % per week (aggregated)
+  startDate           String?                       // first harvest day
+  endDate             String?                       // last harvest day
+  startWeek           Int?
+  totalKg             Float    @default(0)
+  
+  // Historical temperature data
+  outsideTemps        Json?                         // [{date, min, max, avg}]
+  insideTunnelTemps   Json?                         // [{date, min, max, avg}]
+  tempAdjustmentFactor Float?                       // inside/outside ratio
+  
+  // GDH data
+  gdhData             Json?                         // [{date, gdh, cumulativeGdh}]
+  gdhToFlowering      Float?                        // cumulative GDH at flowering
+  gdhToFirstFruit     Float?                        // cumulative GDH at first fruit
+  
+  // Temperature data sources
+  tempSources         String[]                      // ['MANUAL','API','SENSORS']
+  
+  sourceFile          String?
+  notes               String?
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  // Sections using this template
+  sectionAssignments  SectionTemplateAssignment[]
+  
+  @@map("production_curve_templates")
+}
+
+model SectionTemplateAssignment {
+  id                  String   @id @default(cuid())
+  
+  sectionId           String
+  section             Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  
+  templateId          String
+  template            ProductionCurveTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  
+  targetYear          Int                          // which year this assignment is for (2026)
+  adjustmentPercent   Float    @default(0)          // +/- % adjustment to curve
+  adjustedCurve       Float[]                       // final adjusted daily curve
+  
+  plantingDate        String?                       // actual planting date for this assignment
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  @@unique([sectionId, templateId, targetYear])
+  @@map("section_template_assignments")
 }

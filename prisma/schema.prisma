@@ -16,7 +16,8 @@ model Tenant {
   
   users     User[]
   farms     Farm[]
-  varieties Variety[]
+  varieties  Variety[]
+  templates  ProductionCurveTemplate[]
   
   @@map("tenants")
 }
@@ -290,6 +291,9 @@ model ProductionCurveTemplate {
   id                  String   @id @default(cuid())
   name                String
   description         String?
+  
+  tenantId            String?
+  tenant              Tenant?  @relation(fields: [tenantId], references: [id])
   
   varietyId            String?
   variety              Variety? @relation("TemplateVariety", fields: [varietyId], references: [id], onDelete: SetNull)

@@ -1,3 +1,4 @@
+import { requireTenantId } from '@/lib/tenant'
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
@@ -5,7 +6,8 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const where: any = {}
+    const tenantId = await requireTenantId()
+    const where: any = { tenantId }
     if (searchParams.get('varietyId')) where.varietyId = searchParams.get('varietyId')
     if (searchParams.get('season')) where.season = searchParams.get('season')
     if (searchParams.get('cycle')) where.productionCycle = parseInt(searchParams.get('cycle')!)
@@ -25,7 +27,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const data: any = {
-      name: body.name, description: body.description || null,
+      name: body.name, description: body.description || null, tenantId: await requireTenantId(),
       productionYear: body.productionYear, productionCycle: body.productionCycle || 1,
       season: body.season, plantingDate: body.plantingDate || null,
       winteredInTunnel: body.winteredInTunnel || false, plantSource: body.plantSource || null,

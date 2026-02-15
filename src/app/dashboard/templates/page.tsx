@@ -22,6 +22,7 @@ const RaspberryIcon = ({ size = 16, className = '' }: { size?: number; className
 )
 
 // ===== TYPES =====
+interface Variety { id: string; name: string; baseTemp?: number; gdhWinteredFlower?: number; gdhWinteredFruit?: number; gdhLcFlower?: number; gdhLcFruit?: number; gdhAutumnFlower?: number; gdhAutumnFruit?: number; autumnShootsDay?: number }
 interface Template {
   id: string; name: string; description?: string; productionYear: number; productionCycle: number
   season: string; plantingDate?: string; winteredInTunnel: boolean; plantSource?: string
@@ -492,14 +493,6 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
           </g>
         )}
 
-        {/* Variety GDH thresholds - Flowering */}
-          <g>
-          </g>
-        )}
-        {/* Variety GDH thresholds - Fruiting */}
-          <g>
-          </g>
-        )}
         {/* Actual GDH at first harvest */}
         {layers.gdh && gdhAtFirstHarvest && (
           <g>
@@ -815,14 +808,6 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
           <div className="bg-amber-50 rounded-lg px-4 py-3 border border-amber-200 flex items-center gap-3">
             <Calendar className="w-5 h-5 text-amber-600"/>
             <div><div className="text-xs text-amber-600">Dni do owocowania</div><div className="font-bold text-amber-800">{daysToHarvest} dni</div></div>
-          </div>
-        )}
-          <div className="bg-pink-50 rounded-lg px-4 py-3 border border-pink-200 flex items-center gap-3">
-            <span className="text-lg">🌸</span>
-          </div>
-        )}
-          <div className="bg-red-50 rounded-lg px-4 py-3 border border-red-200 flex items-center gap-3">
-            <RaspberryIcon size={20} />
           </div>
         )}
         {gdhAtFirstHarvest && (

@@ -86,11 +86,6 @@ export default function VarietiesPage() {
       yieldSummerPerShoot: variety.yieldSummerPerShoot || 1.5,
       yieldAutumnPerShoot: variety.yieldAutumnPerShoot || 0.5,
       baseTemp: variety.baseTemp || 6.0, gdhWinteredFlower: variety.gdhWinteredFlower || 0, gdhWinteredFruit: variety.gdhWinteredFruit || 0, gdhLcFlower: variety.gdhLcFlower || 0, gdhLcFruit: variety.gdhLcFruit || 0, gdhAutumnFlower: variety.gdhAutumnFlower || 0, gdhAutumnFruit: variety.gdhAutumnFruit || 0,
-      gdhSummer: variety.gdhSummer || 20000,
-      gdhToFlowering: variety.gdhToFlowering || 0,
-      gdhToFruit: variety.gdhToFruit || 0,
-      baseTemp: variety.baseTemp || 6.0,
-      gdhAutumn: variety.gdhAutumn || 25000,
       harvestCurveSummer: (variety.harvestCurveSummer || defaultCurveSummer).join(', '),
       harvestCurveAutumn: (variety.harvestCurveAutumn || defaultCurveAutumn).join(', '),
       pickingEfficiency: variety.pickingEfficiency || 8,
@@ -555,9 +550,7 @@ export default function VarietiesPage() {
                   <div className="text-green-600 text-xs">GDH LATO</div>
                   <div className="font-semibold">{variety.gdhSummer?.toLocaleString('pl-PL') || '–'}</div>
                 </div>
-                  
-                  
-                  
+
                 <div className="bg-blue-50 p-3 rounded">
                   <div className="text-blue-600 text-xs">GDH JESIEŃ</div>
                   <div className="font-semibold">{variety.gdhAutumn?.toLocaleString('pl-PL') || '–'}</div>

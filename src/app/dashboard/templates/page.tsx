@@ -1159,7 +1159,7 @@ export default function TemplatesPage() {
     try {
       const [tRes, vRes] = await Promise.all([fetch('/api/templates'), fetch('/api/varieties')])
       const tData = await tRes.json(); const vData = await vRes.json()
-      setTemplates(tData.templates || []); setVarieties(vData.varieties || [])
+      setTemplates((tData.templates || []).map((t: any) => ({ ...t, tenantName: t.tenant?.name || null }))); setVarieties(vData.varieties || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }
 
@@ -1355,7 +1355,7 @@ export default function TemplatesPage() {
                     {t.season==='summer'?'☀️':'🍂'}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold truncate">{t.name}</div>
+                    <div className="font-bold truncate flex items-center gap-2">{t.name}{t.tenantName && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-normal">{t.tenantName}</span>}</div>
                     <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
                       <span>{t.variety?.name||'—'}</span><span>•</span><span>{t.productionYear}</span>
                       <span>•</span><span>{t.productionCycle}. rok</span>

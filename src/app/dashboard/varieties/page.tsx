@@ -379,7 +379,7 @@ export default function VarietiesPage() {
                     </div>
                     <p className="text-xs text-gray-400 mt-2">Lub wpisz ręcznie (oddzielone przecinkami):</p>
                     <input className="w-full border rounded px-3 py-2 text-sm mt-1" placeholder="np. 1.15, 16.04, 26.07, 27.16, 21.38, 8.20"
-                      value={typeof formData.harvestCurveSummer === 'string' ? formData.harvestCurveSummer : (formData.harvestCurveSummer || []).join(', ')}
+                      value={typeof formData.harvestCurveSummer === 'string' ? formData.harvestCurveSummer : (Array.isArray(formData.harvestCurveSummer) ? formData.harvestCurveSummer.join(', ') : String(formData.harvestCurveSummer || ''))}
                       onChange={(e) => setFormData({...formData, harvestCurveSummer: e.target.value})}
                     />
                   </div>
@@ -440,7 +440,7 @@ export default function VarietiesPage() {
                     </div>
                     <p className="text-xs text-gray-400 mt-2">Lub wpisz ręcznie (oddzielone przecinkami):</p>
                     <input className="w-full border rounded px-3 py-2 text-sm mt-1" placeholder="np. 5, 15, 25, 25, 15, 10, 5"
-                      value={typeof formData.harvestCurveAutumn === 'string' ? formData.harvestCurveAutumn : (formData.harvestCurveAutumn || []).join(', ')}
+                      value={typeof formData.harvestCurveAutumn === 'string' ? formData.harvestCurveAutumn : (Array.isArray(formData.harvestCurveAutumn) ? formData.harvestCurveAutumn.join(', ') : String(formData.harvestCurveAutumn || ''))}
                       onChange={(e) => setFormData({...formData, harvestCurveAutumn: e.target.value})}
                     />
                   </div>

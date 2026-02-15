@@ -25,7 +25,7 @@ export async function GET() {
       return NextResponse.json({ blocks: [], farm: null, varieties: [] })
     }
 
-    const varieties = await prisma.variety.findMany({ where: { tenantId }, orderBy: { name: 'asc' } })
+    const varieties = await prisma.variety.findMany({ orderBy: { name: 'asc' } })
     return NextResponse.json({ blocks: farm.blocks, varieties, farm })
   } catch (error) {
     console.error('Error fetching plantation data:', error)

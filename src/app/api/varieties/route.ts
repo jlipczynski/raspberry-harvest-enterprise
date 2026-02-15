@@ -1,14 +1,12 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
-import { requireTenantId } from '@/lib/tenant'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const tenantId = await requireTenantId()
+    // Varieties are GLOBAL - shared across all tenants
     const varieties = await prisma.variety.findMany({
-      where: { tenantId },
       orderBy: { name: 'asc' }
     })
     return NextResponse.json({ varieties })
@@ -20,7 +18,6 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const tenantId = await requireTenantId()
     const body = await request.json()
     const { variety } = body
     const newVariety = await prisma.variety.create({
@@ -42,7 +39,6 @@ export async function POST(request: NextRequest) {
         pickingEfficiency: variety.pickingEfficiency ? parseFloat(variety.pickingEfficiency) : null,
         firstCategoryPercent: variety.firstCategoryPercent ? parseFloat(variety.firstCategoryPercent) : null,
         secondCategoryPercent: variety.secondCategoryPercent ? parseFloat(variety.secondCategoryPercent) : null,
-        tenantId,
       }
     })
     return NextResponse.json({ variety: newVariety })

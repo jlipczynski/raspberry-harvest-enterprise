@@ -8,20 +8,15 @@ import { Label } from "@/components/ui/label"
 import { Plus, Leaf, X, Pencil, Trash2, Save, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface Variety {
-  id: string
-  name: string
-  origin?: string
-  description?: string
-  yieldSummerPerShoot?: number
-  yieldAutumnPerShoot?: number
-  gdhSummer?: number
-  gdhAutumn?: number
-  harvestCurveSummer?: number[]
-  harvestCurveAutumn?: number[]
-  pickingEfficiency?: number
-  wastePercent?: number
-  secondCategoryPercent?: number
-  isCustom: boolean
+  id: string; name: string; origin?: string; description?: string
+  yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number
+  baseTemp?: number
+  gdhWinteredFlower?: number; gdhWinteredFruit?: number
+  gdhLcFlower?: number; gdhLcFruit?: number
+  gdhAutumnFlower?: number; gdhAutumnFruit?: number
+  harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]
+  pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number
+  isCustom?: boolean
 }
 
 const defaultCurveSummer = [2, 6, 12, 16, 15, 13, 11, 9, 7, 5, 3, 1]
@@ -40,8 +35,7 @@ export default function VarietiesPage() {
     description: '',
     yieldSummerPerShoot: 1.5,
     yieldAutumnPerShoot: 0.5,
-    gdhSummer: 20000,
-    gdhAutumn: 25000,
+    baseTemp: 6.0, gdhWinteredFlower: 0, gdhWinteredFruit: 0, gdhLcFlower: 0, gdhLcFruit: 0, gdhAutumnFlower: 0, gdhAutumnFruit: 0,
     harvestCurveSummer: defaultCurveSummer.join(', '),
     harvestCurveAutumn: defaultCurveAutumn.join(', '),
     pickingEfficiency: 8,
@@ -72,8 +66,7 @@ export default function VarietiesPage() {
       description: '',
       yieldSummerPerShoot: 1.5,
       yieldAutumnPerShoot: 0.5,
-      gdhSummer: 20000,
-      gdhAutumn: 25000,
+    baseTemp: 6.0, gdhWinteredFlower: 0, gdhWinteredFruit: 0, gdhLcFlower: 0, gdhLcFruit: 0, gdhAutumnFlower: 0, gdhAutumnFruit: 0,
       harvestCurveSummer: defaultCurveSummer.join(', '),
       harvestCurveAutumn: defaultCurveAutumn.join(', '),
       pickingEfficiency: 8,
@@ -92,7 +85,11 @@ export default function VarietiesPage() {
       description: variety.description || '',
       yieldSummerPerShoot: variety.yieldSummerPerShoot || 1.5,
       yieldAutumnPerShoot: variety.yieldAutumnPerShoot || 0.5,
+      baseTemp: variety.baseTemp || 6.0, gdhWinteredFlower: variety.gdhWinteredFlower || 0, gdhWinteredFruit: variety.gdhWinteredFruit || 0, gdhLcFlower: variety.gdhLcFlower || 0, gdhLcFruit: variety.gdhLcFruit || 0, gdhAutumnFlower: variety.gdhAutumnFlower || 0, gdhAutumnFruit: variety.gdhAutumnFruit || 0,
       gdhSummer: variety.gdhSummer || 20000,
+      gdhToFlowering: variety.gdhToFlowering || 0,
+      gdhToFruit: variety.gdhToFruit || 0,
+      baseTemp: variety.baseTemp || 6.0,
       gdhAutumn: variety.gdhAutumn || 25000,
       harvestCurveSummer: (variety.harvestCurveSummer || defaultCurveSummer).join(', '),
       harvestCurveAutumn: (variety.harvestCurveAutumn || defaultCurveAutumn).join(', '),
@@ -116,8 +113,7 @@ export default function VarietiesPage() {
       description: formData.description,
       yieldSummerPerShoot: formData.yieldSummerPerShoot,
       yieldAutumnPerShoot: formData.yieldAutumnPerShoot,
-      gdhSummer: formData.gdhSummer,
-      gdhAutumn: formData.gdhAutumn,
+      baseTemp: formData.baseTemp || null, gdhWinteredFlower: formData.gdhWinteredFlower || null, gdhWinteredFruit: formData.gdhWinteredFruit || null, gdhLcFlower: formData.gdhLcFlower || null, gdhLcFruit: formData.gdhLcFruit || null, gdhAutumnFlower: formData.gdhAutumnFlower || null, gdhAutumnFruit: formData.gdhAutumnFruit || null,
       harvestCurveSummer: parseCurve(formData.harvestCurveSummer),
       harvestCurveAutumn: parseCurve(formData.harvestCurveAutumn),
       pickingEfficiency: formData.pickingEfficiency,
@@ -127,7 +123,7 @@ export default function VarietiesPage() {
     
     try {
       if (editingVariety) {
-        await fetch(`/api/varieties/${editingVariety.id}`, {
+        await fetch('/api/varieties/' + editingVariety.id, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -225,82 +221,241 @@ export default function VarietiesPage() {
                   />
                 </div>
               </div>
-            </div>
+            <h3 className="font-semibold text-gray-700 mt-6 mb-3">Normy produkcyjne</h3>
 
-            {/* Normy produkcyjne */}
-            <div>
-              <h3 className="font-medium mb-3 text-gray-700">Normy produkcyjne (domyślne)</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div>
-                  <Label>Norma LATO (kg/pęd)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.yieldSummerPerShoot}
-                    onChange={(e) => setFormData({...formData, yieldSummerPerShoot: parseFloat(e.target.value) || 0})}
-                  />
-                </div>
-                <div>
-                  <Label>Norma JESIEŃ (kg/pęd)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.yieldAutumnPerShoot}
-                    onChange={(e) => setFormData({...formData, yieldAutumnPerShoot: parseFloat(e.target.value) || 0})}
-                  />
-                </div>
-                <div>
-                  <Label>GDH do zbioru LATO</Label>
-                  <Input
-                    type="number"
-                    value={formData.gdhSummer}
-                    onChange={(e) => setFormData({...formData, gdhSummer: parseInt(e.target.value) || 0})}
-                  />
-                </div>
-                <div>
-                  <Label>GDH do zbioru JESIEŃ</Label>
-                  <Input
-                    type="number"
-                    value={formData.gdhAutumn}
-                    onChange={(e) => setFormData({...formData, gdhAutumn: parseInt(e.target.value) || 0})}
-                  />
-                </div>
-              </div>
-            </div>
+                  {/* Temp bazowa */}
+                  <div className="bg-gray-50 rounded-lg p-4 mb-4 border">
+                    <div className="grid grid-cols-1 gap-4" style={{maxWidth:'200px'}}>
+                      <div>
+                        <label className="text-xs text-gray-500 font-medium">🌡️ Temperatura bazowa GDH (°C)</label>
+                        <input type="number" step="0.5" className="w-full border rounded px-3 py-2 text-sm mt-1"
+                          value={formData.baseTemp || ''}
+                          onChange={(e) => setFormData({...formData, baseTemp: parseFloat(e.target.value) || 6.0})}
+                          placeholder="6.0"
+                        />
+                      </div>
+                    </div>
+                  </div>
 
-            {/* Krzywe zbioru */}
-            <div>
-              <h3 className="font-medium mb-3 text-gray-700">Krzywe zbioru (% na tydzień, suma = 100)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label>Krzywa LATO (oddzielone przecinkami)</Label>
-                  <Input
-                    placeholder="2, 6, 12, 16, 15, 13, 11, 9, 7, 5, 3, 1"
-                    value={formData.harvestCurveSummer}
-                    onChange={(e) => setFormData({...formData, harvestCurveSummer: e.target.value})}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Suma: {parseCurve(formData.harvestCurveSummer).reduce((a, b) => a + b, 0)}%
-                  </p>
-                </div>
-                <div>
-                  <Label>Krzywa JESIEŃ (oddzielone przecinkami)</Label>
-                  <Input
-                    placeholder="5, 15, 25, 25, 15, 10, 5"
-                    value={formData.harvestCurveAutumn}
-                    onChange={(e) => setFormData({...formData, harvestCurveAutumn: e.target.value})}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Suma: {parseCurve(formData.harvestCurveAutumn).reduce((a, b) => a + b, 0)}%
-                  </p>
-                </div>
-              </div>
-            </div>
+                  {/* LATO */}
+                  <div className="bg-orange-50 rounded-lg p-4 mb-4 border border-orange-200">
+                    <p className="text-sm font-semibold text-orange-800 mb-3">☀️ Sezon letni</p>
+                    <div className="grid grid-cols-1 gap-4 mb-3">
+                      <div style={{maxWidth:'200px'}}>
+                        <label className="text-xs text-gray-500 font-medium">Norma LATO (kg/pęd)</label>
+                        <input type="number" step="0.01" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
+                          value={formData.yieldSummerPerShoot}
+                          onChange={(e) => setFormData({...formData, yieldSummerPerShoot: parseFloat(e.target.value) || 0})}
+                        />
+                      </div>
+                    </div>
+                    <div className="bg-orange-100/50 rounded-lg p-3 mb-3">
+                      <p className="text-xs font-medium text-orange-700 mb-2">❄️ Zimowane w tunelu</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs text-gray-500">🌸 GDH do kwitnienia</label>
+                          <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
+                            value={formData.gdhWinteredFlower || ''}
+                            onChange={(e) => setFormData({...formData, gdhWinteredFlower: parseInt(e.target.value) || 0})}
+                            placeholder="np. 7000"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500">🍒 GDH do pierwszego zbioru</label>
+                          <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
+                            value={formData.gdhWinteredFruit || ''}
+                            onChange={(e) => setFormData({...formData, gdhWinteredFruit: parseInt(e.target.value) || 0})}
+                            placeholder="np. 10000"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-orange-100/50 rounded-lg p-3">
+                      <p className="text-xs font-medium text-orange-700 mb-2">🚚 Long Canes ze szkółki</p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-xs text-gray-500">🌸 GDH do kwitnienia</label>
+                          <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
+                            value={formData.gdhLcFlower || ''}
+                            onChange={(e) => setFormData({...formData, gdhLcFlower: parseInt(e.target.value) || 0})}
+                            placeholder="np. 8000"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500">🍒 GDH do pierwszego zbioru</label>
+                          <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
+                            value={formData.gdhLcFruit || ''}
+                            onChange={(e) => setFormData({...formData, gdhLcFruit: parseInt(e.target.value) || 0})}
+                            placeholder="np. 10500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* JESIEŃ */}
+                  <div className="bg-red-50 rounded-lg p-4 mb-4 border border-red-200">
+                    <p className="text-sm font-semibold text-red-800 mb-3">🍂 Sezon jesienny (od wypuszczenia pędów)</p>
+                    <div className="grid grid-cols-1 gap-4 mb-3">
+                      <div style={{maxWidth:'200px'}}>
+                        <label className="text-xs text-gray-500 font-medium">Norma JESIEŃ (kg/pęd)</label>
+                        <input type="number" step="0.01" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
+                          value={formData.yieldAutumnPerShoot}
+                          onChange={(e) => setFormData({...formData, yieldAutumnPerShoot: parseFloat(e.target.value) || 0})}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      
+                      <div>
+                        <label className="text-xs text-gray-500 font-medium">🌸 GDH od pędów do kwitnienia</label>
+                        <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
+                          value={formData.gdhAutumnFlower || ''}
+                          onChange={(e) => setFormData({...formData, gdhAutumnFlower: parseInt(e.target.value) || 0})}
+                          placeholder="np. 10000"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 font-medium">🍒 GDH od pędów do owoców</label>
+                        <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
+                          value={formData.gdhAutumnFruit || ''}
+                          onChange={(e) => setFormData({...formData, gdhAutumnFruit: parseInt(e.target.value) || 0})}
+                          placeholder="np. 13000"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <h3 className="font-semibold text-gray-700 mt-6 mb-3">Wzorcowy rozkład owocowania</h3>
+
+                  {/* LATO curve */}
+                  <div className="bg-orange-50 rounded-lg p-4 mb-4 border border-orange-200">
+                    <p className="text-sm font-semibold text-orange-800 mb-3">☀️ WZORCOWY ROZKŁAD OWOCOWANIA — LATO</p>
+                    <p className="text-xs text-gray-500 mb-3">Procentowy udział zbiorów w kolejnych tygodniach owocowania. Suma = 100%</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm mb-2">
+                        <thead><tr className="border-b">
+                          <th className="text-left py-1.5 px-2 text-xs text-gray-500 w-32">Tydzień</th>
+                          <th className="text-right py-1.5 px-2 text-xs text-gray-500 w-24">%</th>
+                          <th className="py-1.5 px-2 text-xs text-gray-500">Rozkład</th>
+                        </tr></thead>
+                        <tbody>
+                          {(parseCurve(formData.harvestCurveSummer) || []).map((val: number, i: number) => (
+                            <tr key={i} className="border-b hover:bg-orange-100/50">
+                              <td className="py-1 px-2 text-xs font-medium text-orange-800">{['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV'][i] || (i+1)+'.'} tydzień</td>
+                              <td className="py-1 px-2 text-right">
+                                <input type="number" step="0.01" className="w-20 border rounded px-2 py-1 text-sm text-right"
+                                  value={val}
+                                  onChange={(e) => {
+                                    const curve = parseCurve(formData.harvestCurveSummer) || []
+                                    curve[i] = parseFloat(e.target.value) || 0
+                                    setFormData({...formData, harvestCurveSummer: curve.join(', ')})
+                                  }}
+                                />
+                              </td>
+                              <td className="py-1 px-2">
+                                <div className="bg-gray-100 rounded-full h-4 overflow-hidden" style={{maxWidth:'300px'}}>
+                                  <div className="h-full bg-orange-400 rounded-full" style={{width: val + '%'}} />
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                          <tr className="bg-orange-100 font-bold">
+                            <td className="py-1.5 px-2 text-xs">SUMA</td>
+                            <td className="py-1.5 px-2 text-right text-sm">{(parseCurve(formData.harvestCurveSummer) || []).reduce((s: number, v: number) => s + v, 0).toFixed(1)}%</td>
+                            <td className="py-1.5 px-2 text-xs text-gray-500">{Math.abs((parseCurve(formData.harvestCurveSummer) || []).reduce((s: number, v: number) => s + v, 0) - 100) < 1 ? '✅' : '⚠️ Suma powinna = 100%'}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" className="text-xs text-orange-600 hover:text-orange-800 underline" onClick={() => {
+                        const curve = parseCurve(formData.harvestCurveSummer) || []
+                        curve.push(0)
+                        setFormData({...formData, harvestCurveSummer: curve.join(', ')})
+                      }}>+ Dodaj tydzień</button>
+                      {(parseCurve(formData.harvestCurveSummer) || []).length > 1 && (
+                        <button type="button" className="text-xs text-red-600 hover:text-red-800 underline" onClick={() => {
+                          const curve = parseCurve(formData.harvestCurveSummer) || []
+                          curve.pop()
+                          setFormData({...formData, harvestCurveSummer: curve.join(', ')})
+                        }}>- Usuń ostatni</button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-2">Lub wpisz ręcznie (oddzielone przecinkami):</p>
+                    <input className="w-full border rounded px-3 py-2 text-sm mt-1" placeholder="np. 1.15, 16.04, 26.07, 27.16, 21.38, 8.20"
+                      value={typeof formData.harvestCurveSummer === 'string' ? formData.harvestCurveSummer : (formData.harvestCurveSummer || []).join(', ')}
+                      onChange={(e) => setFormData({...formData, harvestCurveSummer: e.target.value})}
+                    />
+                  </div>
+
+                  {/* JESIEŃ curve */}
+                  <div className="bg-red-50 rounded-lg p-4 mb-4 border border-red-200">
+                    <p className="text-sm font-semibold text-red-800 mb-3">🍂 WZORCOWY ROZKŁAD OWOCOWANIA — JESIEŃ</p>
+                    <p className="text-xs text-gray-500 mb-3">Procentowy udział zbiorów w kolejnych tygodniach owocowania jesiennego. Suma = 100%</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm mb-2">
+                        <thead><tr className="border-b">
+                          <th className="text-left py-1.5 px-2 text-xs text-gray-500 w-32">Tydzień</th>
+                          <th className="text-right py-1.5 px-2 text-xs text-gray-500 w-24">%</th>
+                          <th className="py-1.5 px-2 text-xs text-gray-500">Rozkład</th>
+                        </tr></thead>
+                        <tbody>
+                          {(parseCurve(formData.harvestCurveAutumn) || []).map((val: number, i: number) => (
+                            <tr key={i} className="border-b hover:bg-red-100/50">
+                              <td className="py-1 px-2 text-xs font-medium text-red-800">{['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV'][i] || (i+1)+'.'} tydzień</td>
+                              <td className="py-1 px-2 text-right">
+                                <input type="number" step="0.01" className="w-20 border rounded px-2 py-1 text-sm text-right"
+                                  value={val}
+                                  onChange={(e) => {
+                                    const curve = parseCurve(formData.harvestCurveAutumn) || []
+                                    curve[i] = parseFloat(e.target.value) || 0
+                                    setFormData({...formData, harvestCurveAutumn: curve.join(', ')})
+                                  }}
+                                />
+                              </td>
+                              <td className="py-1 px-2">
+                                <div className="bg-gray-100 rounded-full h-4 overflow-hidden" style={{maxWidth:'300px'}}>
+                                  <div className="h-full bg-red-400 rounded-full" style={{width: val + '%'}} />
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                          <tr className="bg-red-100 font-bold">
+                            <td className="py-1.5 px-2 text-xs">SUMA</td>
+                            <td className="py-1.5 px-2 text-right text-sm">{(parseCurve(formData.harvestCurveAutumn) || []).reduce((s: number, v: number) => s + v, 0).toFixed(1)}%</td>
+                            <td className="py-1.5 px-2 text-xs text-gray-500">{Math.abs((parseCurve(formData.harvestCurveAutumn) || []).reduce((s: number, v: number) => s + v, 0) - 100) < 1 ? '✅' : '⚠️ Suma powinna = 100%'}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" className="text-xs text-red-600 hover:text-red-800 underline" onClick={() => {
+                        const curve = parseCurve(formData.harvestCurveAutumn) || []
+                        curve.push(0)
+                        setFormData({...formData, harvestCurveAutumn: curve.join(', ')})
+                      }}>+ Dodaj tydzień</button>
+                      {(parseCurve(formData.harvestCurveAutumn) || []).length > 1 && (
+                        <button type="button" className="text-xs text-red-600 hover:text-red-800 underline" onClick={() => {
+                          const curve = parseCurve(formData.harvestCurveAutumn) || []
+                          curve.pop()
+                          setFormData({...formData, harvestCurveAutumn: curve.join(', ')})
+                        }}>- Usuń ostatni</button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-2">Lub wpisz ręcznie (oddzielone przecinkami):</p>
+                    <input className="w-full border rounded px-3 py-2 text-sm mt-1" placeholder="np. 5, 15, 25, 25, 15, 10, 5"
+                      value={typeof formData.harvestCurveAutumn === 'string' ? formData.harvestCurveAutumn : (formData.harvestCurveAutumn || []).join(', ')}
+                      onChange={(e) => setFormData({...formData, harvestCurveAutumn: e.target.value})}
+                    />
+                  </div>
+
+                  </div>
 
             {/* Statystyki zbierania */}
             <div>
               <h3 className="font-medium mb-3 text-gray-700">Statystyki zbierania</h3>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Wydajność zbierania (kg/h)</Label>
                   <Input
@@ -400,6 +555,9 @@ export default function VarietiesPage() {
                   <div className="text-green-600 text-xs">GDH LATO</div>
                   <div className="font-semibold">{variety.gdhSummer?.toLocaleString('pl-PL') || '–'}</div>
                 </div>
+                  
+                  
+                  
                 <div className="bg-blue-50 p-3 rounded">
                   <div className="text-blue-600 text-xs">GDH JESIEŃ</div>
                   <div className="font-semibold">{variety.gdhAutumn?.toLocaleString('pl-PL') || '–'}</div>

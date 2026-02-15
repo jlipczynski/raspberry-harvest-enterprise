@@ -89,6 +89,14 @@ model Variety {
   
   gdhSummer             Int?
   gdhAutumn             Int?
+  baseTemp              Float?    @default(6.0)
+  
+  gdhWinteredFlower     Int?      // GDH do kwitnienia (zimowane w tunelu)
+  gdhWinteredFruit      Int?      // GDH do pierwszego zbioru (zimowane)
+  gdhLcFlower           Int?      // GDH do kwitnienia (LC ze szkółki)
+  gdhLcFruit            Int?      // GDH do pierwszego zbioru (LC)
+  gdhAutumnFlower       Int?      // GDH od pędów do kwitnienia (jesień)
+  gdhAutumnFruit        Int?      // GDH od pędów do owoców (jesień)
   
   harvestCurveSummer    Json?
   harvestCurveAutumn    Json?
@@ -130,6 +138,14 @@ model Section {
   
   gdhSummer             Int?
   gdhAutumn             Int?
+  baseTemp              Float?    @default(6.0)
+  
+  gdhWinteredFlower     Int?      // GDH do kwitnienia (zimowane w tunelu)
+  gdhWinteredFruit      Int?      // GDH do pierwszego zbioru (zimowane)
+  gdhLcFlower           Int?      // GDH do kwitnienia (LC ze szkółki)
+  gdhLcFruit            Int?      // GDH do pierwszego zbioru (LC)
+  gdhAutumnFlower       Int?      // GDH od pędów do kwitnienia (jesień)
+  gdhAutumnFruit        Int?      // GDH od pędów do owoców (jesień)
   
   certificateUrl        String?
   deliveryProofUrl      String?

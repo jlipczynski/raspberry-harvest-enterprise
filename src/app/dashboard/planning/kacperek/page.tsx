@@ -101,7 +101,7 @@ export default function KacperekReport() {
       const summerCurve = sectionCurves.find(c => c.season === 'summer')
       const autumnCurve = sectionCurves.find(c => c.season === 'autumn')
 
-      const summerYield = section.yieldSummerPerShoot || v?.yieldSummerPerShoot || 0
+      const summerYield = section.yieldSummerPerShoot || (v as any)?.yieldSummerPerShoot || 0
       const totalSummer = shoots * summerYield
       if (summerCurve && summerCurve.curve.length > 0) {
         summerCurve.curve.forEach((pct, i) => { const wk = summerCurve.startWeek + i; if (!weeklyMap[wk]) weeklyMap[wk] = { kg: 0, summerKg: 0, autumnKg: 0 }; weeklyMap[wk].kg += (pct / 100) * totalSummer; weeklyMap[wk].summerKg += (pct / 100) * totalSummer })
@@ -109,7 +109,7 @@ export default function KacperekReport() {
         section.harvestCurveSummer.forEach((pct, i) => { const wk = 22 + i; if (!weeklyMap[wk]) weeklyMap[wk] = { kg: 0, summerKg: 0, autumnKg: 0 }; weeklyMap[wk].kg += (pct / 100) * totalSummer; weeklyMap[wk].summerKg += (pct / 100) * totalSummer })
       }
 
-      const autumnYield = section.yieldAutumnPerShoot || v?.yieldAutumnPerShoot || 0
+      const autumnYield = section.yieldAutumnPerShoot || (v as any)?.yieldAutumnPerShoot || 0
       const totalAutumn = shoots * autumnYield
       if (autumnCurve && autumnCurve.curve.length > 0) {
         autumnCurve.curve.forEach((pct, i) => { const wk = autumnCurve.startWeek + i; if (!weeklyMap[wk]) weeklyMap[wk] = { kg: 0, summerKg: 0, autumnKg: 0 }; weeklyMap[wk].kg += (pct / 100) * totalAutumn; weeklyMap[wk].autumnKg += (pct / 100) * totalAutumn })
@@ -145,8 +145,8 @@ export default function KacperekReport() {
         if (curve.dailyCurve && curve.dailyCurve.length > 0 && curve.startDate) {
           // Use actual daily data - scale from historical to projected
           const yieldPerShoot = curve.season === 'summer'
-            ? (section.yieldSummerPerShoot || v?.yieldSummerPerShoot || 0)
-            : (section.yieldAutumnPerShoot || v?.yieldAutumnPerShoot || 0)
+            ? (section.yieldSummerPerShoot || (v as any)?.yieldSummerPerShoot || 0)
+            : (section.yieldAutumnPerShoot || (v as any)?.yieldAutumnPerShoot || 0)
           const projectedTotal = shoots * yieldPerShoot
           const historicalTotal = curve.dailyCurve.reduce((s, kg) => s + kg, 0)
           const scale = historicalTotal > 0 ? projectedTotal / historicalTotal : 0

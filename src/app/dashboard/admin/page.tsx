@@ -2,19 +2,21 @@
 import { useState, useEffect } from "react"
 import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
-import { Shield, UserPlus, Users, Building2, Eye, Trash2, RefreshCw } from "lucide-react"
+import { Shield, UserPlus, Users, Building2, Pencil, Trash2, RefreshCw, X, Save, Key } from "lucide-react"
 
 interface UserData {
-  id: string; email: string; name: string; role: string; 
-  tenant?: { name: string }; createdAt: string
+  id: string; email: string; name: string; role: string
+  tenantId?: string; tenant?: { id: string; name: string }; createdAt: string
 }
 
 export default function AdminPage() {
   const { data: session } = useSession()
   const role = (session?.user as any)?.role
+  const userId = (session?.user as any)?.userId
   const [users, setUsers] = useState<UserData[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editingUser, setEditingUser] = useState<UserData | null>(null)
   const [form, setForm] = useState({ email: "", password: "", name: "", farmName: "", role: "MANAGER" })
   const [saving, setSaving] = useState(false)
 
@@ -22,37 +24,55 @@ export default function AdminPage() {
     setLoading(true)
     try {
       const res = await fetch("/api/admin/users")
-      if (res.ok) {
-        const data = await res.json()
-        setUsers(data.users)
-      }
+      if (res.ok) { const data = await res.json(); setUsers(data.users) }
     } catch (e) { console.error(e) }
     setLoading(false)
   }
 
   useEffect(() => { loadUsers() }, [])
 
-  const createUser = async () => {
-    if (!form.email || !form.password || !form.name || !form.farmName) {
-      alert("Wypełnij wszystkie pola"); return
-    }
+  const resetForm = () => {
+    setForm({ email: "", password: "", name: "", farmName: "", role: "MANAGER" })
+    setEditingUser(null)
+    setShowForm(false)
+  }
+
+  const startEdit = (u: UserData) => {
+    setEditingUser(u)
+    setForm({ email: u.email, password: "", name: u.name || "", farmName: u.tenant?.name || "", role: u.role })
+    setShowForm(true)
+  }
+
+  const saveUser = async () => {
+    if (!form.name || !form.email) { alert("Wypełnij imię i email"); return }
+    if (!editingUser && !form.password) { alert("Podaj hasło"); return }
+    if (!form.farmName) { alert("Podaj nazwę gospodarstwa"); return }
     setSaving(true)
     try {
+      const method = editingUser ? "PUT" : "POST"
+      const body = editingUser
+        ? { id: editingUser.id, ...form, password: form.password || undefined }
+        : form
       const res = await fetch("/api/admin/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form)
+        method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
       })
-      if (res.ok) {
-        setShowForm(false)
-        setForm({ email: "", password: "", name: "", farmName: "", role: "MANAGER" })
-        loadUsers()
-      } else {
-        const err = await res.json()
-        alert("Błąd: " + err.error)
-      }
+      if (res.ok) { resetForm(); loadUsers() }
+      else { const err = await res.json(); alert("Błąd: " + err.error) }
     } catch (e) { alert("Błąd: " + e) }
     setSaving(false)
+  }
+
+  const deleteUser = async (u: UserData) => {
+    if (u.id === userId) { alert("Nie możesz usunąć siebie"); return }
+    if (!confirm("Usunąć użytkownika " + u.name + " (" + u.email + ")?")) return
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: u.id })
+      })
+      if (res.ok) loadUsers()
+      else { const err = await res.json(); alert("Błąd: " + err.error) }
+    } catch (e) { alert("Błąd: " + e) }
   }
 
   if (role !== "SUPER_ADMIN") {
@@ -78,9 +98,9 @@ export default function AdminPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={loadUsers} disabled={loading}>
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} /> Odśwież
+            <RefreshCw className={"w-4 h-4 mr-2 " + (loading ? "animate-spin" : "")} /> Odśwież
           </Button>
-          <Button onClick={() => setShowForm(!showForm)} className="bg-green-600 hover:bg-green-700">
+          <Button onClick={() => { resetForm(); setShowForm(true) }} className="bg-green-600 hover:bg-green-700">
             <UserPlus className="w-4 h-4 mr-2" /> Nowe konto
           </Button>
         </div>
@@ -93,10 +113,7 @@ export default function AdminPage() {
             <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
               <Users className="w-5 h-5 text-blue-600" />
             </div>
-            <div>
-              <p className="text-2xl font-bold">{users.length}</p>
-              <p className="text-xs text-gray-500">Użytkowników</p>
-            </div>
+            <div><p className="text-2xl font-bold">{users.length}</p><p className="text-xs text-gray-500">Użytkowników</p></div>
           </div>
         </div>
         <div className="bg-white rounded-xl p-5 border shadow-sm">
@@ -104,10 +121,7 @@ export default function AdminPage() {
             <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
               <Building2 className="w-5 h-5 text-green-600" />
             </div>
-            <div>
-              <p className="text-2xl font-bold">{new Set(users.map(u => u.tenant?.name)).size}</p>
-              <p className="text-xs text-gray-500">Gospodarstw</p>
-            </div>
+            <div><p className="text-2xl font-bold">{new Set(users.map(u => u.tenant?.name)).size}</p><p className="text-xs text-gray-500">Gospodarstw</p></div>
           </div>
         </div>
         <div className="bg-white rounded-xl p-5 border shadow-sm">
@@ -115,20 +129,21 @@ export default function AdminPage() {
             <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
               <Shield className="w-5 h-5 text-amber-600" />
             </div>
-            <div>
-              <p className="text-2xl font-bold">{users.filter(u => u.role === "SUPER_ADMIN").length}</p>
-              <p className="text-xs text-gray-500">Adminów</p>
-            </div>
+            <div><p className="text-2xl font-bold">{users.filter(u => u.role === "SUPER_ADMIN").length}</p><p className="text-xs text-gray-500">Adminów</p></div>
           </div>
         </div>
       </div>
 
-      {/* New user form */}
+      {/* Form - create or edit */}
       {showForm && (
         <div className="bg-white rounded-xl border shadow-sm p-6">
-          <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <UserPlus className="w-5 h-5 text-green-600" /> Utwórz nowe konto
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+              {editingUser ? <Pencil className="w-5 h-5 text-blue-600" /> : <UserPlus className="w-5 h-5 text-green-600" />}
+              {editingUser ? "Edytuj: " + editingUser.name : "Utwórz nowe konto"}
+            </h3>
+            <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">Imię i nazwisko</label>
@@ -141,9 +156,14 @@ export default function AdminPage() {
                 value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">Hasło</label>
-              <input type="text" className="w-full border rounded-lg px-3 py-2.5" placeholder="min. 8 znaków"
-                value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                {editingUser ? "Nowe hasło (puste = bez zmian)" : "Hasło"}
+              </label>
+              <div className="relative">
+                <input type="text" className="w-full border rounded-lg px-3 py-2.5 pr-8" placeholder={editingUser ? "pozostaw puste..." : "min. 8 znaków"}
+                  value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
+                <Key className="w-4 h-4 text-gray-300 absolute right-3 top-3" />
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">Nazwa gospodarstwa</label>
@@ -160,10 +180,11 @@ export default function AdminPage() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <Button onClick={createUser} disabled={saving} className="bg-green-600 hover:bg-green-700">
-              {saving ? "Tworzenie..." : "Utwórz konto"}
+            <Button onClick={saveUser} disabled={saving} className="bg-green-600 hover:bg-green-700">
+              {saving ? "Zapisywanie..." : editingUser ? "Zapisz zmiany" : "Utwórz konto"}
+              {!saving && (editingUser ? <Save className="w-4 h-4 ml-2" /> : <UserPlus className="w-4 h-4 ml-2" />)}
             </Button>
-            <Button variant="outline" onClick={() => setShowForm(false)}>Anuluj</Button>
+            <Button variant="outline" onClick={resetForm}>Anuluj</Button>
           </div>
         </div>
       )}
@@ -201,11 +222,9 @@ export default function AdminPage() {
                   </span>
                 </td>
                 <td className="px-6 py-4">
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                    u.role === "SUPER_ADMIN" 
-                      ? "bg-amber-100 text-amber-700" 
-                      : "bg-blue-100 text-blue-700"
-                  }`}>
+                  <span className={"px-2.5 py-1 rounded-full text-xs font-medium " + (
+                    u.role === "SUPER_ADMIN" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+                  )}>
                     {u.role === "SUPER_ADMIN" ? "Super Admin" : "Zarządca"}
                   </span>
                 </td>
@@ -213,9 +232,16 @@ export default function AdminPage() {
                   {new Date(u.createdAt).toLocaleDateString("pl-PL")}
                 </td>
                 <td className="px-6 py-4 text-right">
-                  <button className="text-gray-400 hover:text-blue-600 p-1" title="Podgląd">
-                    <Eye className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center justify-end gap-1">
+                    <button onClick={() => startEdit(u)} className="text-gray-400 hover:text-blue-600 p-1.5 rounded hover:bg-blue-50" title="Edytuj">
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    {u.id !== userId && (
+                      <button onClick={() => deleteUser(u)} className="text-gray-400 hover:text-red-600 p-1.5 rounded hover:bg-red-50" title="Usuń">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

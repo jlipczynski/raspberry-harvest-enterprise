@@ -6,14 +6,13 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const tenantId = await requireTenantId()
-    const where: any = { tenantId }
+    const where: any = {}
     if (searchParams.get('varietyId')) where.varietyId = searchParams.get('varietyId')
     if (searchParams.get('season')) where.season = searchParams.get('season')
     if (searchParams.get('cycle')) where.productionCycle = parseInt(searchParams.get('cycle')!)
     if (searchParams.get('tunnel')) where.winteredInTunnel = searchParams.get('tunnel') === 'true'
     const templates = await prisma.productionCurveTemplate.findMany({
-      where, include: { variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, _count: { select: { sectionAssignments: true } } },
+      where, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, _count: { select: { sectionAssignments: true } } },
       orderBy: [{ productionYear: 'desc' }, { name: 'asc' }],
     })
     return NextResponse.json({ templates })
@@ -42,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
     if (body.varietyId) data.variety = { connect: { id: body.varietyId } }
     const template = await prisma.productionCurveTemplate.create({
-      data, include: { variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } } },
+      data, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } } },
     })
     return NextResponse.json({ template })
   } catch (error) {

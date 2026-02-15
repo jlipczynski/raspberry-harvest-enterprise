@@ -24,6 +24,7 @@ const RaspberryIcon = ({ size = 16, className = '' }: { size?: number; className
 // ===== TYPES =====
 interface Variety { id: string; name: string; baseTemp?: number; gdhWinteredFlower?: number; gdhWinteredFruit?: number; gdhLcFlower?: number; gdhLcFruit?: number; gdhAutumnFlower?: number; gdhAutumnFruit?: number; autumnShootsDay?: number }
 interface Template {
+  tenantName?: string
   id: string; name: string; description?: string; productionYear: number; productionCycle: number
   season: string; plantingDate?: string; winteredInTunnel: boolean; plantSource?: string
   dailyCurve: number[]; weeklyCurve: number[]; startDate?: string; endDate?: string; startWeek?: number

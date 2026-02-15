@@ -1,107 +1,66 @@
-'use client'
-
-import { useState } from 'react'
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Leaf } from 'lucide-react'
+"use client"
+import { signIn } from "next-auth/react"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 export default function LoginPage() {
-  const [isLoading, setIsLoading] = useState(false)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+  const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
-    setTimeout(() => {
-      window.location.href = '/dashboard'
-    }, 1000)
+    setLoading(true)
+    setError("")
+    const res = await signIn("credentials", { email, password, redirect: false })
+    setLoading(false)
+    if (res?.error) {
+      setError("Nieprawidłowy email lub hasło")
+    } else {
+      router.push("/dashboard")
+    }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-500 to-green-700">
-      <div className="w-full max-w-md px-4">
-        {/* Logo */}
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-white/20 rounded-2xl mb-4 backdrop-blur">
-            <Leaf className="w-12 h-12 text-white" />
+          <div className="w-16 h-16 bg-green-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">🌿</span>
           </div>
-          <h1 className="text-3xl font-bold text-white">Planer Zbiorów</h1>
-          <p className="text-green-100 mt-1">System zarządzania plantacją malin</p>
+          <h1 className="text-2xl font-bold text-gray-800">Planer Zbiorów</h1>
+          <p className="text-gray-500 mt-1">Raspberry Harvest Enterprise</p>
+          <p className="text-xs text-gray-400 mt-1">beta</p>
         </div>
-
-        {/* Karta logowania */}
-        <Card className="shadow-2xl border-0">
-          <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-xl text-center">Zaloguj się</CardTitle>
-            <CardDescription className="text-center">
-              Wprowadź swoje dane aby uzyskać dostęp
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="jan@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="h-11"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Hasło</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="h-11"
-                />
-              </div>
-              <Button 
-                type="submit" 
-                className="w-full h-11 bg-green-600 hover:bg-green-700"
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <span className="flex items-center gap-2">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                      <circle 
-                        className="opacity-25" 
-                        cx="12" 
-                        cy="12" 
-                        r="10" 
-                        stroke="currentColor" 
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <path 
-                        className="opacity-75" 
-                        fill="currentColor" 
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                      />
-                    </svg>
-                    Logowanie...
-                  </span>
-                ) : (
-                  'Zaloguj się'
-                )}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        {/* Footer */}
-        <p className="text-center text-sm text-green-100 mt-6">
-          © 2026 Planer Zbiorów Malin
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg text-sm border border-red-200">
+              {error}
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+              placeholder="jan@example.com" required />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Hasło</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+              placeholder="••••••••" required />
+          </div>
+          <button type="submit" disabled={loading}
+            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50">
+            {loading ? "Logowanie..." : "Zaloguj się"}
+          </button>
+        </form>
+        
+        <p className="text-center text-xs text-gray-400 mt-6">
+          Konto tworzy administrator systemu
         </p>
       </div>
     </div>

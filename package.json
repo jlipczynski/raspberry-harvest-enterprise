@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "seed": "npx tsx prisma/seed.ts",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
@@ -33,6 +34,7 @@
     "react-dom": "19.2.3",
     "recharts": "^3.7.0",
     "tailwind-merge": "^3.4.0",
+    "tsx": "^4.21.0",
     "xlsx": "^0.18.5",
     "zod": "^4.3.6"
   },

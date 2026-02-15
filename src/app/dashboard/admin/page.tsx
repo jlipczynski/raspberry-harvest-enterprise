@@ -1,0 +1,227 @@
+"use client"
+import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
+import { Button } from "@/components/ui/button"
+import { Shield, UserPlus, Users, Building2, Eye, Trash2, RefreshCw } from "lucide-react"
+
+interface UserData {
+  id: string; email: string; name: string; role: string; 
+  tenant?: { name: string }; createdAt: string
+}
+
+export default function AdminPage() {
+  const { data: session } = useSession()
+  const role = (session?.user as any)?.role
+  const [users, setUsers] = useState<UserData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ email: "", password: "", name: "", farmName: "", role: "MANAGER" })
+  const [saving, setSaving] = useState(false)
+
+  const loadUsers = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch("/api/admin/users")
+      if (res.ok) {
+        const data = await res.json()
+        setUsers(data.users)
+      }
+    } catch (e) { console.error(e) }
+    setLoading(false)
+  }
+
+  useEffect(() => { loadUsers() }, [])
+
+  const createUser = async () => {
+    if (!form.email || !form.password || !form.name || !form.farmName) {
+      alert("Wypełnij wszystkie pola"); return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      })
+      if (res.ok) {
+        setShowForm(false)
+        setForm({ email: "", password: "", name: "", farmName: "", role: "MANAGER" })
+        loadUsers()
+      } else {
+        const err = await res.json()
+        alert("Błąd: " + err.error)
+      }
+    } catch (e) { alert("Błąd: " + e) }
+    setSaving(false)
+  }
+
+  if (role !== "SUPER_ADMIN") {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <Shield className="w-16 h-16 text-red-300 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-gray-600">Brak dostępu</h2>
+          <p className="text-gray-400 mt-2">Ta strona jest dostępna tylko dla Super Admina</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
+            <Shield className="w-7 h-7 text-amber-500" /> Admin Panel
+          </h1>
+          <p className="text-gray-500 mt-1">Zarządzanie gospodarstwami i użytkownikami</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={loadUsers} disabled={loading}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} /> Odśwież
+          </Button>
+          <Button onClick={() => setShowForm(!showForm)} className="bg-green-600 hover:bg-green-700">
+            <UserPlus className="w-4 h-4 mr-2" /> Nowe konto
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl p-5 border shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+              <Users className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{users.length}</p>
+              <p className="text-xs text-gray-500">Użytkowników</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-5 border shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+              <Building2 className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{new Set(users.map(u => u.tenant?.name)).size}</p>
+              <p className="text-xs text-gray-500">Gospodarstw</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl p-5 border shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+              <Shield className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{users.filter(u => u.role === "SUPER_ADMIN").length}</p>
+              <p className="text-xs text-gray-500">Adminów</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* New user form */}
+      {showForm && (
+        <div className="bg-white rounded-xl border shadow-sm p-6">
+          <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-green-600" /> Utwórz nowe konto
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Imię i nazwisko</label>
+              <input className="w-full border rounded-lg px-3 py-2.5" placeholder="Jan Kowalski"
+                value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Email</label>
+              <input type="email" className="w-full border rounded-lg px-3 py-2.5" placeholder="jan@firma.pl"
+                value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Hasło</label>
+              <input type="text" className="w-full border rounded-lg px-3 py-2.5" placeholder="min. 8 znaków"
+                value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Nazwa gospodarstwa</label>
+              <input className="w-full border rounded-lg px-3 py-2.5" placeholder="Gospodarstwo Rolne XYZ"
+                value={form.farmName} onChange={e => setForm({...form, farmName: e.target.value})} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Rola</label>
+              <select className="w-full border rounded-lg px-3 py-2.5"
+                value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
+                <option value="MANAGER">Zarządca</option>
+                <option value="SUPER_ADMIN">Super Admin</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-4">
+            <Button onClick={createUser} disabled={saving} className="bg-green-600 hover:bg-green-700">
+              {saving ? "Tworzenie..." : "Utwórz konto"}
+            </Button>
+            <Button variant="outline" onClick={() => setShowForm(false)}>Anuluj</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Users table */}
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b bg-gray-50">
+          <h3 className="font-semibold text-gray-700">Użytkownicy i gospodarstwa</h3>
+        </div>
+        <table className="w-full">
+          <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+            <tr>
+              <th className="text-left px-6 py-3">Użytkownik</th>
+              <th className="text-left px-6 py-3">Gospodarstwo</th>
+              <th className="text-left px-6 py-3">Rola</th>
+              <th className="text-left px-6 py-3">Utworzony</th>
+              <th className="text-right px-6 py-3">Akcje</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {loading ? (
+              <tr><td colSpan={5} className="text-center py-8 text-gray-400">Ładowanie...</td></tr>
+            ) : users.length === 0 ? (
+              <tr><td colSpan={5} className="text-center py-8 text-gray-400">Brak użytkowników</td></tr>
+            ) : users.map(u => (
+              <tr key={u.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4">
+                  <div className="font-medium text-gray-800">{u.name || "—"}</div>
+                  <div className="text-xs text-gray-500">{u.email}</div>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="inline-flex items-center gap-1.5 text-sm">
+                    <Building2 className="w-3.5 h-3.5 text-green-500" />
+                    {u.tenant?.name || "—"}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                    u.role === "SUPER_ADMIN" 
+                      ? "bg-amber-100 text-amber-700" 
+                      : "bg-blue-100 text-blue-700"
+                  }`}>
+                    {u.role === "SUPER_ADMIN" ? "Super Admin" : "Zarządca"}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-500">
+                  {new Date(u.createdAt).toLocaleDateString("pl-PL")}
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <button className="text-gray-400 hover:text-blue-600 p-1" title="Podgląd">
+                    <Eye className="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}

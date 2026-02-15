@@ -32,7 +32,6 @@ interface Template {
   variety?: { id: string; name: string; baseTemp?: number; gdhWinteredFlower?: number; gdhWinteredFruit?: number; gdhLcFlower?: number; gdhLcFruit?: number; gdhAutumnFlower?: number; gdhAutumnFruit?: number; autumnShootsDay?: number }
   _count?: { sectionAssignments: number }
 }
-interface Variety { id: string; name: string; baseTemp?: number; gdhToFlowering?: number; gdhToFruit?: number }
 interface WeekRow { week: number; kg: number; dates: string; season: 'summer' | 'autumn' }
 interface DayData { date: string; kg: number; dayOfWeek: number }
 interface AreaImport { area: string; totalKg: number; weeks: WeekRow[]; days: DayData[] }
@@ -365,12 +364,6 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
         <button onClick={() => toggleLayer('markers')} className={'flex items-center gap-1 px-2 py-1 rounded-full border transition-all ' + (layers.markers ? 'bg-green-50 border-green-300 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-400 line-through')}>
           🌱 Markery
         </button>
-        {t.variety?.gdhToFlowering && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-pink-500 inline-block" style={{borderTop:'2px dashed #ec4899'}} /> 🌸 Kwitnienie ({t.variety.gdhToFlowering.toLocaleString('pl-PL')})</span>}
-        {t.variety?.gdhToFruit && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-red-500 inline-block" style={{borderTop:'2px dashed #dc2626'}} /> Owocowanie ({t.variety.gdhToFruit.toLocaleString('pl-PL')})</span>}
-        {t.variety?.gdhToFlowering && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-pink-500 inline-block" style={{borderTop:'2px dashed #ec4899'}} /> 🌸 Kwitnienie ({t.variety.gdhToFlowering.toLocaleString('pl-PL')})</span>}
-        {t.variety?.gdhToFruit && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-red-500 inline-block" style={{borderTop:'2px dashed #dc2626'}} /> Owocowanie ({t.variety.gdhToFruit.toLocaleString('pl-PL')})</span>}
-        {t.variety?.gdhToFlowering && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-pink-500 inline-block" style={{borderTop:'2px dashed #ec4899'}} /> 🌸 Kwitnienie ({t.variety.gdhToFlowering.toLocaleString('pl-PL')})</span>}
-        {t.variety?.gdhToFruit && <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-red-500 inline-block" style={{borderTop:'2px dashed #dc2626'}} /> Owocowanie ({t.variety.gdhToFruit.toLocaleString('pl-PL')})</span>}
         {plantDate && <span className="flex items-center gap-1">🌱 Nasadzenie</span>}
         {firstHarvest && <span className="flex items-center gap-1"><RaspberryIcon size={14} /> Pierwszy zbiór</span>}
       </div>
@@ -500,19 +493,11 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
         )}
 
         {/* Variety GDH thresholds - Flowering */}
-        {t.variety?.gdhToFlowering && t.variety.gdhToFlowering < maxGdh && (
           <g>
-            <line x1={PAD.left} x2={W - PAD.right} y1={gdhToY(t.variety.gdhToFlowering)} y2={gdhToY(t.variety.gdhToFlowering)} stroke="#ec4899" strokeWidth={1.5} strokeDasharray="6,3" opacity={0.7} />
-            <rect x={PAD.left} y={gdhToY(t.variety.gdhToFlowering) - 8} width={90} height={16} rx={3} fill="#fdf2f8" stroke="#ec4899" strokeWidth={0.5} />
-            <text x={PAD.left + 45} y={gdhToY(t.variety.gdhToFlowering) + 3} textAnchor="middle" fontSize="8" fill="#be185d" fontWeight="bold">🌸 Kwitnienie {t.variety.gdhToFlowering.toLocaleString('pl-PL')}</text>
           </g>
         )}
         {/* Variety GDH thresholds - Fruiting */}
-        {t.variety?.gdhToFruit && t.variety.gdhToFruit < maxGdh && (
           <g>
-            <line x1={PAD.left} x2={W - PAD.right} y1={gdhToY(t.variety.gdhToFruit)} y2={gdhToY(t.variety.gdhToFruit)} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="6,3" opacity={0.7} />
-            <rect x={PAD.left} y={gdhToY(t.variety.gdhToFruit) - 8} width={100} height={16} rx={3} fill="#fef2f2" stroke="#dc2626" strokeWidth={0.5} />
-            <text x={PAD.left + 50} y={gdhToY(t.variety.gdhToFruit) + 3} textAnchor="middle" fontSize="8" fill="#991b1b" fontWeight="bold">🫐 Owocowanie {t.variety.gdhToFruit.toLocaleString('pl-PL')}</text>
           </g>
         )}
         {/* Actual GDH at first harvest */}
@@ -832,16 +817,12 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
             <div><div className="text-xs text-amber-600">Dni do owocowania</div><div className="font-bold text-amber-800">{daysToHarvest} dni</div></div>
           </div>
         )}
-        {t.variety?.gdhToFlowering && (
           <div className="bg-pink-50 rounded-lg px-4 py-3 border border-pink-200 flex items-center gap-3">
             <span className="text-lg">🌸</span>
-            <div><div className="text-xs text-pink-600">GDH do kwitnienia (odmiana)</div><div className="font-bold text-pink-800">{t.variety.gdhToFlowering.toLocaleString('pl-PL')} GDH</div></div>
           </div>
         )}
-        {t.variety?.gdhToFruit && (
           <div className="bg-red-50 rounded-lg px-4 py-3 border border-red-200 flex items-center gap-3">
             <RaspberryIcon size={20} />
-            <div><div className="text-xs text-red-600">GDH do owocowania (odmiana)</div><div className="font-bold text-red-800">{t.variety.gdhToFruit.toLocaleString('pl-PL')} GDH</div></div>
           </div>
         )}
         {gdhAtFirstHarvest && (
@@ -850,7 +831,6 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
             <div>
               <div className="text-xs text-green-600">GDH rzeczywiste do 1. zbioru (baza {baseTemp}°C)</div>
               <div className="font-bold text-green-800">{gdhAtFirstHarvest.toLocaleString('pl-PL')} GDH</div>
-              {t.variety?.gdhToFruit && <div className="text-xs text-gray-500">Δ {gdhAtFirstHarvest > t.variety.gdhToFruit ? '+' : ''}{(gdhAtFirstHarvest - t.variety.gdhToFruit).toLocaleString('pl-PL')} vs odmiana</div>}
             </div>
           </div>
         )}

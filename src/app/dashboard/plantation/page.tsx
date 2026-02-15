@@ -96,7 +96,7 @@ export default function PlantationPage() {
 
       {showBlockForm && (
         <div className="bg-gray-50 rounded-xl p-5 border">
-          <div className="flex items-center justify-between mb-4"><h3 className="font-semibold">{editingBlock ? 'Edytuj blok' : 'Nowy blok'}</h3><Button variant="ghost" size="icon" className="hover:cursor-pointer" className="hover:cursor-pointer" onClick={resetBlock}><X className="w-4 h-4" /></Button></div>
+          <div className="flex items-center justify-between mb-4"><h3 className="font-semibold">{editingBlock ? 'Edytuj blok' : 'Nowy blok'}</h3><Button variant="ghost" size="icon" className="hover:cursor-pointer" onClick={resetBlock}><X className="w-4 h-4" /></Button></div>
           <div className="flex gap-3"><Input placeholder="Nazwa bloku" value={blockName} onChange={e => setBlockName(e.target.value)} className="flex-1" /><Button onClick={saveBlock} className="bg-green-600 hover:bg-green-700">{editingBlock ? 'Zapisz' : 'Dodaj'}</Button></div>
         </div>
       )}
@@ -115,9 +115,9 @@ export default function PlantationPage() {
                 <div className="flex items-center gap-4">
                   <div className="text-right text-sm"><span className="text-orange-600 font-medium">{(blockStats.fs/1000).toFixed(1)}t</span><span className="text-gray-400 mx-1">+</span><span className="text-red-600 font-medium">{(blockStats.fa/1000).toFixed(1)}t</span></div>
                   {isExpanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
-                  <Button variant="ghost" size="icon" className="hover:cursor-pointer" className="hover:cursor-pointer" onClick={e => { e.stopPropagation(); startAddSection(block.id) }}><Plus className="w-4 h-4" /></Button>
-                  <Button variant="ghost" size="icon" className="hover:cursor-pointer" className="hover:cursor-pointer" onClick={e => { e.stopPropagation(); setEditingBlock(block); setBlockName(block.name); setShowBlockForm(true) }}><Pencil className="w-4 h-4" /></Button>
-                  <Button variant="ghost" size="icon" className="hover:cursor-pointer" className="hover:cursor-pointer" onClick={e => { e.stopPropagation(); delBlock(block.id) }} className="text-red-500"><Trash2 className="w-4 h-4" /></Button>
+                  <Button variant="ghost" size="icon" className="hover:cursor-pointer" onClick={e => { e.stopPropagation(); startAddSection(block.id) }}><Plus className="w-4 h-4" /></Button>
+                  <Button variant="ghost" size="icon" className="hover:cursor-pointer" onClick={e => { e.stopPropagation(); setEditingBlock(block); setBlockName(block.name); setShowBlockForm(true) }}><Pencil className="w-4 h-4" /></Button>
+                  <Button variant="ghost" size="icon" className="hover:cursor-pointer text-red-500" onClick={e => { e.stopPropagation(); delBlock(block.id) }}><Trash2 className="w-4 h-4" /></Button>
                 </div>
               </div>
               {isExpanded && (
@@ -153,7 +153,7 @@ export default function PlantationPage() {
                     {block.sections.map(section => { const st = calcStats(section); return (
                       <div key={section.id} className="px-5 py-3 flex items-center justify-between hover:bg-gray-50">
                         <div className="flex items-center gap-4"><div className="w-1 h-10 rounded-full bg-gradient-to-b from-orange-400 to-red-400" /><div><p className="font-medium">{section.name}</p><p className="text-xs text-gray-500">{section.variety?.name} • {section.metersLength}m • {st.pots.toLocaleString('pl-PL')} don. • Rok {section.productionYear}</p></div></div>
-                        <div className="flex items-center gap-4"><div className="text-sm text-right"><span className="text-orange-600">{st.fs.toLocaleString('pl-PL')}</span><span className="text-gray-400 mx-1">+</span><span className="text-red-600">{st.fa.toLocaleString('pl-PL')}</span><span className="text-gray-500 ml-1">kg</span></div><Button variant="ghost" size="icon" className="hover:cursor-pointer" className="hover:cursor-pointer" className="cursor-pointer" onClick={() => startEditSection(block.id, section)}><Pencil className="w-4 h-4" /></Button><Button variant="ghost" size="icon" className="hover:cursor-pointer" className="hover:cursor-pointer" onClick={() => delSection(section.id)} className="text-red-500"><Trash2 className="w-4 h-4" /></Button></div>
+                        <div className="flex items-center gap-4"><div className="text-sm text-right"><span className="text-orange-600">{st.fs.toLocaleString('pl-PL')}</span><span className="text-gray-400 mx-1">+</span><span className="text-red-600">{st.fa.toLocaleString('pl-PL')}</span><span className="text-gray-500 ml-1">kg</span></div><Button variant="ghost" size="icon" className="hover:cursor-pointer cursor-pointer" onClick={() => startEditSection(block.id, section)}><Pencil className="w-4 h-4" /></Button><Button variant="ghost" size="icon" className="hover:cursor-pointer text-red-500" onClick={() => delSection(section.id)}><Trash2 className="w-4 h-4" /></Button></div>
                       </div>
                     )})}
                     {block.sections.length === 0 && <div className="px-5 py-8 text-center text-gray-400">Brak sekcji. Kliknij + aby dodać.</div>}

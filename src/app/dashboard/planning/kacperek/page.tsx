@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, FileDown, Sun, Leaf, Printer, ChevronDown, ChevronUp } from 'lucide-react'
 
-interface Variety { id: string; name: string; pickingEfficiency?: number }
+interface Variety { id: string; name: string; pickingEfficiency?: number; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number }
 interface Section {
   id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number
   yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; varietyId: string; variety?: Variety

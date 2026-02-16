@@ -360,3 +360,16 @@ model SectionTemplateAssignment {
   @@unique([sectionId, templateId, targetYear])
   @@map("section_template_assignments")
 }
+
+
+// ==================== FEEDBACK ====================
+model Feedback {
+  id        String   @id @default(cuid())
+  message   String
+  category  String   @default("general")
+  page      String?
+  userName  String?
+  userEmail String?
+  tenantName String?
+  createdAt DateTime @default(now())
+}

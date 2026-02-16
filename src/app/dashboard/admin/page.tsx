@@ -19,6 +19,18 @@ export default function AdminPage() {
   const [editingUser, setEditingUser] = useState<UserData | null>(null)
   const [form, setForm] = useState({ email: "", password: "", name: "", farmName: "", role: "MANAGER" })
   const [saving, setSaving] = useState(false)
+  const [tab, setTab] = useState<'users'|'feedback'>('users')
+  const [feedbacks, setFeedbacks] = useState<any[]>([])
+  const [fbLoading, setFbLoading] = useState(false)
+
+  const loadFeedback = async () => {
+    setFbLoading(true)
+    try {
+      const res = await fetch("/api/feedback")
+      if (res.ok) { const d = await res.json(); setFeedbacks(d.feedback || []) }
+    } catch (e) { console.error(e) }
+    setFbLoading(false)
+  }
 
   const loadUsers = async () => {
     setLoading(true)
@@ -106,6 +118,49 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-2">
+        <button onClick={() => setTab('users')} className={"px-4 py-2 rounded-lg text-sm font-medium " + (tab === 'users' ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+          <Users className="w-4 h-4 inline mr-1.5" />Użytkownicy
+        </button>
+        <button onClick={() => { setTab('feedback'); loadFeedback() }} className={"px-4 py-2 rounded-lg text-sm font-medium " + (tab === 'feedback' ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+          💬 Feedback {feedbacks.length > 0 && <span className="ml-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{feedbacks.length}</span>}
+        </button>
+      </div>
+
+      {tab === 'feedback' && (
+        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b bg-gray-50 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-700">Feedback od testerów</h3>
+            <button onClick={loadFeedback} className="text-sm text-gray-500 hover:text-gray-700">🔄 Odśwież</button>
+          </div>
+          {fbLoading ? <p className="text-center py-8 text-gray-400">Ładowanie...</p> : feedbacks.length === 0 ? <p className="text-center py-8 text-gray-400">Brak feedbacku</p> : (
+            <div className="divide-y">
+              {feedbacks.map((fb: any) => (
+                <div key={fb.id} className="px-6 py-4">
+                  <div className="flex items-center gap-3 mb-1">
+                    <span className={"text-xs px-2 py-0.5 rounded-full " + (
+                      fb.category === 'bug' ? "bg-red-100 text-red-700" :
+                      fb.category === 'ux' ? "bg-blue-100 text-blue-700" :
+                      fb.category === 'krzywe' ? "bg-orange-100 text-orange-700" :
+                      fb.category === 'dane' ? "bg-purple-100 text-purple-700" :
+                      fb.category === 'pomysl' ? "bg-green-100 text-green-700" :
+                      "bg-gray-100 text-gray-700"
+                    )}>{fb.category}</span>
+                    <span className="text-sm font-medium text-gray-800">{fb.userName}</span>
+                    <span className="text-xs text-gray-400">{fb.userEmail}</span>
+                    <span className="text-xs text-gray-400 ml-auto">{new Date(fb.createdAt).toLocaleString("pl-PL")}</span>
+                  </div>
+                  <p className="text-sm text-gray-700">{fb.message}</p>
+                  {fb.page && <span className="text-[10px] text-gray-400">Strona: {fb.page}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'users' && <>
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl p-5 border shadow-sm">
@@ -248,6 +303,7 @@ export default function AdminPage() {
           </tbody>
         </table>
       </div>
+    </>}
     </div>
   )
 }

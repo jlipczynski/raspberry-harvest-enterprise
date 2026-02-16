@@ -34,6 +34,8 @@ const menuItems = [
   { title: 'Ustawienia', href: '/dashboard/settings', icon: Settings },
 ]
 
+import FeedbackButton from "@/components/FeedbackButton"
+
 export default function DashboardLayout({
   children,
 }: {
@@ -188,7 +190,8 @@ export default function DashboardLayout({
       <div className="lg:ml-64 pt-14 lg:pt-0">
         <main className="p-4 lg:p-6">
           {children}
-        </main>
+        <FeedbackButton />
+</main>
       </div>
     </div>
   )

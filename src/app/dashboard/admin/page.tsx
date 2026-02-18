@@ -230,6 +230,7 @@ export default function AdminPage() {
               <select className="w-full border rounded-lg px-3 py-2.5"
                 value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
                 <option value="MANAGER">Zarządca</option>
+                <option value="RECRUITER">Rekruter</option>
                 <option value="SUPER_ADMIN">Super Admin</option>
               </select>
             </div>
@@ -278,9 +279,9 @@ export default function AdminPage() {
                 </td>
                 <td className="px-6 py-4">
                   <span className={"px-2.5 py-1 rounded-full text-xs font-medium " + (
-                    u.role === "SUPER_ADMIN" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+                    u.role === "SUPER_ADMIN" ? "bg-amber-100 text-amber-700" : u.role === "RECRUITER" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
                   )}>
-                    {u.role === "SUPER_ADMIN" ? "Super Admin" : "Zarządca"}
+                    {u.role === "SUPER_ADMIN" ? "Super Admin" : u.role === "RECRUITER" ? "Rekruter" : "Zarządca"}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-500">

@@ -66,7 +66,12 @@ export default function DashboardLayout({
 
         {/* Menu */}
         <nav className="p-3 space-y-1 flex-1">
-          {menuItems.map((item) => {
+          {menuItems
+            .filter((item) => {
+              if (role === 'RECRUITER') return item.href === '/dashboard/workers'
+              return true
+            })
+            .map((item) => {
             const isActive = pathname === item.href || 
               (item.href !== '/dashboard' && pathname.startsWith(item.href))
             return (
@@ -107,7 +112,7 @@ export default function DashboardLayout({
             <div className="px-3 py-2">
               <p className="text-white text-sm font-medium truncate">{session.user.name}</p>
               <p className="text-green-200 text-xs truncate">{tenantName || session.user.email}</p>
-              <p className="text-green-300/60 text-[10px] mt-0.5">{role === 'SUPER_ADMIN' ? 'Super Admin' : 'Zarządca'}</p>
+              <p className="text-green-300/60 text-[10px] mt-0.5">{role === 'SUPER_ADMIN' ? 'Super Admin' : role === 'RECRUITER' ? 'Rekruter' : 'Zarządca'}</p>
             </div>
           )}
           <button
@@ -151,7 +156,12 @@ export default function DashboardLayout({
           />
           <aside className="fixed left-0 top-14 z-50 h-[calc(100vh-3.5rem)] w-64 bg-gradient-to-b from-green-600 to-green-700 lg:hidden flex flex-col">
             <nav className="p-3 space-y-1 flex-1">
-              {menuItems.map((item) => {
+              {menuItems
+              .filter((item) => {
+                if (role === 'RECRUITER') return item.href === '/dashboard/workers'
+                return true
+              })
+              .map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <Link

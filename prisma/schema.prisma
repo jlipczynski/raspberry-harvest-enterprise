@@ -256,18 +256,40 @@ model HistoricalGdh {
 
 // ==================== WORKERS ====================
 model Worker {
-  id            String   @id @default(cuid())
-  name          String
-  phone         String?
-  efficiencyKgH Float
-  isActive      Boolean  @default(true)
-  
-  farmId        String
-  farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
+  id                String   @id @default(cuid())
+  firstName         String
+  lastName          String
+  passport          String?
+  passportFileUrl   String?
+
+  availableFrom     DateTime? @db.Date
+  availableTo       DateTime? @db.Date
+  suggestedArrival  DateTime? @db.Date
+  confirmedArrival  DateTime? @db.Date
+
+  referredBy        String?
+  yearsAtPlantation Int       @default(0)
+
+  status            String    @default("new")
+
+  acceptedToList    Boolean   @default(false)
+  acceptedToListMsg String?
+  arrivalConfirmed  Boolean   @default(false)
+  arrivalConfirmMsg String?
+
+  whatsapp          String?
+  viber             String?
+  phone             String?
+
+  efficiencyKgH     Float     @default(8.0)
+  isActive          Boolean   @default(true)
+
+  farmId            String
+  farm              Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
   @@map("workers")
 }
 

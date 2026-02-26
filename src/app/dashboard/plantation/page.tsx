@@ -1,15 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp, Upload, FileText, Thermometer, Loader2 } from 'lucide-react'
 
 interface Variety { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number }
-interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; plantingYear?: number; productionYear?: number; plantMaterialType?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string }
+interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; plantingYear?: number; productionYear?: number; plantMaterialType?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string; _tempCount?: number }
 interface Block { id: string; name: string; sections: Section[] }
 interface Farm { id: string; name: string }
+interface TempReading { id: string; timestamp: string; temperature: number; sourceFile?: string }
+interface UploadResult { success?: boolean; error?: string; blockName?: string; totalReadings?: number; sections?: Array<{ sectionId: string; sectionName: string | null; inserted: number }> }
 
 const PLANT_TYPES = [{ value: 'SMALL_POT', label: 'Doniczka' }, { value: 'ROOT', label: 'Korzeń' }, { value: 'LONGCANE', label: 'Longcane' }, { value: 'PLUG', label: 'Plug' }]
 
@@ -26,6 +28,19 @@ export default function PlantationPage() {
   const [expandedBlock, setExpandedBlock] = useState<string | null>(null)
   const [sectionForm, setSectionForm] = useState({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' })
 
+  // PDF upload state
+  const [isDragging, setIsDragging] = useState(false)
+  const [uploadingPdfs, setUploadingPdfs] = useState(false)
+  const [uploadResults, setUploadResults] = useState<UploadResult[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Temperature readings state (per section)
+  const [tempReadings, setTempReadings] = useState<Record<string, TempReading[]>>({})
+  const [tempCounts, setTempCounts] = useState<Record<string, number>>({})
+  const [loadingTemps, setLoadingTemps] = useState<string | null>(null)
+  const [tempPage, setTempPage] = useState<Record<string, number>>({})
+  const [tempTotalPages, setTempTotalPages] = useState<Record<string, number>>({})
+
   useEffect(() => { fetchData() }, [])
 
   const fetchData = async () => {
@@ -34,6 +49,80 @@ export default function PlantationPage() {
       const data = await res.json()
       setBlocks(data.blocks || []); setVarieties(data.varieties || []); setFarm(data.farm)
     } catch (e) { console.error(e) } finally { setLoading(false) }
+  }
+
+  // PDF upload handlers
+  const handlePdfUpload = useCallback(async (files: FileList | File[]) => {
+    if (!farm) return
+    setUploadingPdfs(true)
+    setUploadResults([])
+    const results: UploadResult[] = []
+
+    for (const file of Array.from(files)) {
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        results.push({ error: `${file.name}: nie jest plikiem PDF` })
+        continue
+      }
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('farmId', farm.id)
+      try {
+        const res = await fetch('/api/plantation/temperature-upload', { method: 'POST', body: formData })
+        const data = await res.json()
+        if (!res.ok) results.push({ error: `${file.name}: ${data.error}` })
+        else results.push({ ...data, success: true })
+      } catch {
+        results.push({ error: `${file.name}: błąd uploadu` })
+      }
+    }
+    setUploadResults(results)
+    setUploadingPdfs(false)
+    // Refresh temp counts
+    fetchTempCounts()
+  }, [farm])
+
+  const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }, [])
+  const onDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false) }, [])
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); setIsDragging(false)
+    if (e.dataTransfer.files.length > 0) handlePdfUpload(e.dataTransfer.files)
+  }, [handlePdfUpload])
+
+  // Fetch temp counts for all sections
+  const fetchTempCounts = useCallback(async () => {
+    if (blocks.length === 0) return
+    const sectionIds = blocks.flatMap(b => b.sections.map(s => s.id))
+    const counts: Record<string, number> = {}
+    await Promise.all(sectionIds.map(async (id) => {
+      try {
+        const res = await fetch(`/api/plantation/section/${id}/temperatures?limit=1`)
+        const data = await res.json()
+        counts[id] = data.total || 0
+      } catch { counts[id] = 0 }
+    }))
+    setTempCounts(counts)
+  }, [blocks])
+
+  useEffect(() => { fetchTempCounts() }, [blocks, fetchTempCounts])
+
+  // Fetch temp readings for a specific section
+  const fetchTempReadings = async (sectionId: string, page = 1) => {
+    setLoadingTemps(sectionId)
+    try {
+      const res = await fetch(`/api/plantation/section/${sectionId}/temperatures?page=${page}&limit=50`)
+      const data = await res.json()
+      setTempReadings(prev => ({ ...prev, [sectionId]: data.readings }))
+      setTempPage(prev => ({ ...prev, [sectionId]: data.page }))
+      setTempTotalPages(prev => ({ ...prev, [sectionId]: data.totalPages }))
+    } catch (e) { console.error(e) }
+    setLoadingTemps(null)
+  }
+
+  const clearTempReadings = async (sectionId: string) => {
+    if (!confirm('Usunąć wszystkie pomiary temperatury dla tej sekcji?')) return
+    await fetch(`/api/plantation/section/${sectionId}/temperatures`, { method: 'DELETE' })
+    setTempReadings(prev => ({ ...prev, [sectionId]: [] }))
+    setTempCounts(prev => ({ ...prev, [sectionId]: 0 }))
   }
 
   const calcStats = (s: Section) => {
@@ -94,6 +183,51 @@ export default function PlantationPage() {
         <div className="bg-red-50 rounded-xl p-4 border border-red-200 text-center"><p className="text-2xl font-bold text-red-600">{(totals.fa / 1000).toFixed(1)}t</p><p className="text-xs text-red-600">Jesień 🍂</p></div>
       </div>
 
+      {/* PDF Drag & Drop Zone */}
+      <div
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className={`relative rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}`}
+      >
+        <input ref={fileInputRef} type="file" accept=".pdf" multiple className="hidden" onChange={e => { if (e.target.files) handlePdfUpload(e.target.files); e.target.value = '' }} />
+        {uploadingPdfs ? (
+          <div className="flex items-center justify-center gap-3">
+            <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+            <span className="text-blue-600 font-medium">Przetwarzanie PDF...</span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center gap-3">
+            <Upload className="w-6 h-6 text-gray-400" />
+            <div className="text-sm">
+              <span className="font-medium text-gray-700">Przeciągnij pliki PDF z pomiarami temperatury</span>
+              <span className="text-gray-400 ml-1">lub kliknij, aby wybrać</span>
+            </div>
+            <FileText className="w-5 h-5 text-gray-300" />
+          </div>
+        )}
+      </div>
+
+      {/* Upload results */}
+      {uploadResults.length > 0 && (
+        <div className="space-y-2">
+          {uploadResults.map((r, i) => (
+            <div key={i} className={`rounded-lg px-4 py-3 text-sm ${r.success ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
+              {r.success ? (
+                <div className="flex items-center gap-2">
+                  <Thermometer className="w-4 h-4" />
+                  <span>Blok <strong>{r.blockName}</strong>: {r.totalReadings} pomiarów zaimportowano do {r.sections?.length} sekcji ({r.sections?.map(s => s.sectionName).join(', ')})</span>
+                </div>
+              ) : (
+                <span>{r.error}</span>
+              )}
+            </div>
+          ))}
+          <Button variant="ghost" size="sm" className="text-gray-400" onClick={() => setUploadResults([])}>Zamknij</Button>
+        </div>
+      )}
+
       {showBlockForm && (
         <div className="bg-gray-50 rounded-xl p-5 border">
           <div className="flex items-center justify-between mb-4"><h3 className="font-semibold">{editingBlock ? 'Edytuj blok' : 'Nowy blok'}</h3><Button variant="ghost" size="icon" className="hover:cursor-pointer" onClick={resetBlock}><X className="w-4 h-4" /></Button></div>
@@ -142,6 +276,66 @@ export default function PlantationPage() {
                         <div className="bg-red-100 p-3 rounded-lg"><p className="text-xs text-red-700 font-medium mb-2">🍂 Sezon jesienny</p><div className="grid grid-cols-2 gap-2"><div><Label className="text-xs">kg/pęd</Label><Input type="number" step="0.01" value={sectionForm.yieldAutumnPerShoot} onChange={e => setSectionForm({...sectionForm, yieldAutumnPerShoot: +e.target.value})} className="bg-white" /></div><div><Label className="text-xs">GDH</Label><Input type="number" value={sectionForm.gdhAutumn} onChange={e => setSectionForm({...sectionForm, gdhAutumn: +e.target.value})} className="bg-white" /></div></div></div>
                       </div>
                       <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4"><p className="text-xs text-blue-700 font-medium mb-2">🌱 Wzrost i owocowanie</p><div className="space-y-3"><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={sectionForm.winteredInTunnel} onChange={e => setSectionForm({...sectionForm, winteredInTunnel: e.target.checked})} className="w-4 h-4 rounded" /><span className="text-sm">Zimowana w tunelu (GDH od 1.01)</span></label><div className="grid grid-cols-2 gap-3">{!sectionForm.winteredInTunnel && <div><Label className="text-xs">Data wysadzenia</Label><Input type="date" value={sectionForm.plantingDate} onChange={e => setSectionForm({...sectionForm, plantingDate: e.target.value})} className="bg-white" /></div>}<div><Label className="text-xs">Dzień wypuszczenia pędów jesiennych</Label><Input type="date" value={sectionForm.winterShootsDate} onChange={e => setSectionForm({...sectionForm, winterShootsDate: e.target.value})} className="bg-white" /></div></div></div></div>
+                      {/* Temperature readings table */}
+                      {editingSection && (
+                        <div className="bg-white border border-blue-200 rounded-lg p-3 mb-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Thermometer className="w-4 h-4 text-blue-600" />
+                              <p className="text-xs text-blue-700 font-medium">Pomiary temperatury</p>
+                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{tempCounts[editingSection.id] || 0} pomiarów</span>
+                            </div>
+                            <div className="flex gap-2">
+                              {!tempReadings[editingSection.id] && (
+                                <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => fetchTempReadings(editingSection.id)}>
+                                  {loadingTemps === editingSection.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                                  Pokaż dane
+                                </Button>
+                              )}
+                              {(tempCounts[editingSection.id] || 0) > 0 && (
+                                <Button variant="outline" size="sm" className="text-xs h-7 text-red-500 hover:text-red-700" onClick={() => clearTempReadings(editingSection.id)}>Wyczyść</Button>
+                              )}
+                            </div>
+                          </div>
+                          {tempReadings[editingSection.id] && (
+                            <>
+                              <div className="max-h-60 overflow-y-auto border rounded">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-gray-50 sticky top-0">
+                                    <tr>
+                                      <th className="text-left px-3 py-2 font-medium text-gray-600">Data i czas</th>
+                                      <th className="text-right px-3 py-2 font-medium text-gray-600">Temperatura (°C)</th>
+                                      <th className="text-right px-3 py-2 font-medium text-gray-600">Plik źródłowy</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y">
+                                    {tempReadings[editingSection.id].map(r => (
+                                      <tr key={r.id} className="hover:bg-gray-50">
+                                        <td className="px-3 py-1.5 text-gray-700">{new Date(r.timestamp).toLocaleString('pl-PL')}</td>
+                                        <td className={`px-3 py-1.5 text-right font-mono ${r.temperature < 0 ? 'text-blue-600' : r.temperature > 30 ? 'text-red-600' : 'text-gray-900'}`}>{r.temperature.toFixed(1)}</td>
+                                        <td className="px-3 py-1.5 text-right text-gray-400 truncate max-w-[150px]">{r.sourceFile || '-'}</td>
+                                      </tr>
+                                    ))}
+                                    {tempReadings[editingSection.id].length === 0 && (
+                                      <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">Brak pomiarów. Przeciągnij PDF z danymi temperatury.</td></tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                              {(tempTotalPages[editingSection.id] || 1) > 1 && (
+                                <div className="flex items-center justify-between mt-2">
+                                  <span className="text-xs text-gray-500">Strona {tempPage[editingSection.id] || 1} z {tempTotalPages[editingSection.id]}</span>
+                                  <div className="flex gap-1">
+                                    <Button variant="outline" size="sm" className="text-xs h-6 px-2" disabled={(tempPage[editingSection.id] || 1) <= 1} onClick={() => fetchTempReadings(editingSection.id, (tempPage[editingSection.id] || 1) - 1)}>Poprz.</Button>
+                                    <Button variant="outline" size="sm" className="text-xs h-6 px-2" disabled={(tempPage[editingSection.id] || 1) >= (tempTotalPages[editingSection.id] || 1)} onClick={() => fetchTempReadings(editingSection.id, (tempPage[editingSection.id] || 1) + 1)}>Nast.</Button>
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+
                       <div className="bg-gray-900 text-white p-3 rounded-lg flex justify-between items-center mb-4">
                         <div className="flex gap-6 text-sm"><div><span className="text-gray-400">Doniczki:</span> <strong>{pv.pots.toLocaleString('pl-PL')}</strong></div><div><span className="text-gray-400">Pędy:</span> <strong>{pv.shoots.toLocaleString('pl-PL')}</strong></div></div>
                         <div className="flex gap-4 text-sm"><div><span className="text-orange-400">Lato:</span> <strong>{pv.fs.toLocaleString('pl-PL')} kg</strong></div><div><span className="text-red-400">Jesień:</span> <strong>{pv.fa.toLocaleString('pl-PL')} kg</strong></div><div><span className="text-green-400">Razem:</span> <strong>{pv.total.toLocaleString('pl-PL')} kg</strong></div></div>
@@ -153,7 +347,11 @@ export default function PlantationPage() {
                     {block.sections.map(section => { const st = calcStats(section); return (
                       <div key={section.id} className="px-5 py-3 flex items-center justify-between hover:bg-gray-50">
                         <div className="flex items-center gap-4"><div className="w-1 h-10 rounded-full bg-gradient-to-b from-orange-400 to-red-400" /><div><p className="font-medium">{section.name}</p><p className="text-xs text-gray-500">{section.variety?.name} • {section.metersLength}m • {st.pots.toLocaleString('pl-PL')} don. • Rok {section.productionYear}</p></div></div>
-                        <div className="flex items-center gap-4"><div className="text-sm text-right"><span className="text-orange-600">{st.fs.toLocaleString('pl-PL')}</span><span className="text-gray-400 mx-1">+</span><span className="text-red-600">{st.fa.toLocaleString('pl-PL')}</span><span className="text-gray-500 ml-1">kg</span></div><Button variant="ghost" size="icon" className="hover:cursor-pointer cursor-pointer" onClick={() => startEditSection(block.id, section)}><Pencil className="w-4 h-4" /></Button><Button variant="ghost" size="icon" className="hover:cursor-pointer text-red-500" onClick={() => delSection(section.id)}><Trash2 className="w-4 h-4" /></Button></div>
+                        <div className="flex items-center gap-4">
+                          {(tempCounts[section.id] || 0) > 0 && (
+                            <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1"><Thermometer className="w-3 h-3" />{tempCounts[section.id]}</span>
+                          )}
+                          <div className="text-sm text-right"><span className="text-orange-600">{st.fs.toLocaleString('pl-PL')}</span><span className="text-gray-400 mx-1">+</span><span className="text-red-600">{st.fa.toLocaleString('pl-PL')}</span><span className="text-gray-500 ml-1">kg</span></div><Button variant="ghost" size="icon" className="hover:cursor-pointer cursor-pointer" onClick={() => startEditSection(block.id, section)}><Pencil className="w-4 h-4" /></Button><Button variant="ghost" size="icon" className="hover:cursor-pointer text-red-500" onClick={() => delSection(section.id)}><Trash2 className="w-4 h-4" /></Button></div>
                       </div>
                     )})}
                     {block.sections.length === 0 && <div className="px-5 py-8 text-center text-gray-400">Brak sekcji. Kliknij + aby dodać.</div>}

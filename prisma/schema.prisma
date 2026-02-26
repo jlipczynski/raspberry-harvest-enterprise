@@ -161,6 +161,7 @@ model Section {
   weeklyOverrides       WeeklyOverride[]
   harvestCurves         HarvestCurve[]
   
+  temperatureReadings   TemperatureReading[]
   winteredInTunnel      Boolean   @default(false)
   templateAssignments   SectionTemplateAssignment[]
   plantingDate          DateTime?
@@ -383,6 +384,24 @@ model SectionTemplateAssignment {
   @@map("section_template_assignments")
 }
 
+
+// ==================== TEMPERATURE READINGS (from PDF loggers) ====================
+model TemperatureReading {
+  id            String   @id @default(cuid())
+
+  timestamp     DateTime                      // date+time of the reading
+  temperature   Float                         // temperature in °C
+
+  sectionId     String
+  section       Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  sourceFile    String?                       // PDF filename for traceability
+  importedAt    DateTime @default(now())
+
+  @@unique([sectionId, timestamp])
+  @@index([sectionId, timestamp])
+  @@map("temperature_readings")
+}
 
 // ==================== FEEDBACK ====================
 model Feedback {

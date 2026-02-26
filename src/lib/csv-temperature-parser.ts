@@ -1,4 +1,4 @@
-import type { TemperatureRecord } from './pdf-temperature-parser'
+import type { TemperatureRecord } from './temperature-utils'
 
 export interface ParsedTemperatureCsv {
   blockName: string | null

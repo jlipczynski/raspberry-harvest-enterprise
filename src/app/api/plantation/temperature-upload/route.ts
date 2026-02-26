@@ -1,10 +1,14 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
-import { parseTemperaturePdf, matchBlockToSections } from '@/lib/pdf-temperature-parser'
+import { matchBlockToSections } from '@/lib/temperature-utils'
 import { parseTemperatureCsv } from '@/lib/csv-temperature-parser'
-import type { TemperatureRecord } from '@/lib/pdf-temperature-parser'
 
 export const dynamic = 'force-dynamic'
+
+interface TemperatureRecord {
+  timestamp: Date
+  temperature: number
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -35,6 +39,8 @@ export async function POST(request: NextRequest) {
     let readings: TemperatureRecord[]
 
     if (isPdf) {
+      // Dynamic import - pdf-parse only loads when actually needed
+      const { parseTemperaturePdf } = await import('@/lib/pdf-temperature-parser')
       const arrayBuffer = await file.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
       const parsed = await parseTemperaturePdf(buffer, file.name)
@@ -49,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     if (!blockName) {
       return NextResponse.json(
-        { error: 'Nie znaleziono nazwy bloku. Dla PDF: pole Title z numerem bloku. Dla CSV: nazwa pliku powinna zawierać numer bloku (np. "9C.csv").' },
+        { error: 'Nie znaleziono nazwy bloku. Dla CSV z Testo: plik musi zawierać sekcję "Parametry pomiarowe" z polem Title. Dla zwykłego CSV: nazwa pliku powinna zawierać numer bloku (np. "9C.csv").' },
         { status: 422 }
       )
     }

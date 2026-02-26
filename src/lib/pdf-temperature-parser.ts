@@ -1,9 +1,9 @@
 import { PDFParse } from 'pdf-parse'
+import type { TemperatureRecord } from './temperature-utils'
 
-export interface TemperatureRecord {
-  timestamp: Date
-  temperature: number
-}
+// Re-export for backwards compat with tests
+export type { TemperatureRecord } from './temperature-utils'
+export { matchBlockToSections } from './temperature-utils'
 
 export interface ParsedTemperaturePdf {
   blockName: string | null
@@ -98,22 +98,12 @@ function extractReadings(lines: string[]): TemperatureRecord[] {
   return readings
 }
 
-/**
- * Tries to parse a single line as a temperature reading.
- * Supports multiple date/time formats commonly used by loggers:
- * - "01/02/2025 14:30 22.5"
- * - "2025-01-02 14:30:00 22.5"
- * - "01.02.2025 14:30 22.5°C"
- */
 function parseLine(line: string): TemperatureRecord | null {
   const normalized = line.replace(/\t/g, ' ').replace(/\s+/g, ' ').trim()
 
   const datePatterns = [
-    // DD/MM/YYYY or DD.MM.YYYY
     /(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})\s+(\d{1,2}:\d{2}(?::\d{2})?)\s+(-?\d+[.,]\d+)/,
-    // YYYY-MM-DD
     /(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}:\d{2}(?::\d{2})?)\s+(-?\d+[.,]\d+)/,
-    // DD-MM-YYYY
     /(\d{1,2})-(\d{1,2})-(\d{4})\s+(\d{1,2}:\d{2}(?::\d{2})?)\s+(-?\d+[.,]\d+)/,
   ]
 
@@ -153,33 +143,4 @@ function parseLine(line: string): TemperatureRecord | null {
   }
 
   return null
-}
-
-/**
- * Matches a block name from PDF to sections.
- * The block name (e.g. "9C") maps to Block.name containing "9C".
- */
-export function matchBlockToSections(
-  blockName: string,
-  blocks: Array<{ id: string; name: string; sections: Array<{ id: string; name: string | null }> }>
-): Array<{ sectionId: string; sectionName: string | null; blockId: string; blockName: string }> {
-  const matches: Array<{ sectionId: string; sectionName: string | null; blockId: string; blockName: string }> = []
-
-  for (const block of blocks) {
-    const blockNameUpper = block.name.toUpperCase()
-    const targetUpper = blockName.toUpperCase()
-
-    if (blockNameUpper === targetUpper || blockNameUpper.includes(targetUpper) || targetUpper.includes(blockNameUpper)) {
-      for (const section of block.sections) {
-        matches.push({
-          sectionId: section.id,
-          sectionName: section.name,
-          blockId: block.id,
-          blockName: block.name,
-        })
-      }
-    }
-  }
-
-  return matches
 }

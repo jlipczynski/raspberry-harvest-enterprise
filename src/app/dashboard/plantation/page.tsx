@@ -95,7 +95,7 @@ export default function PlantationPage() {
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setIsDragging(false)
     if (e.dataTransfer.files.length > 0) handleFileUpload(e.dataTransfer.files)
-  }, [handlePdfUpload])
+  }, [handleFileUpload])
 
   // Fetch temp counts for all sections
   const fetchTempCounts = useCallback(async () => {

@@ -10,6 +10,7 @@ export interface ParsedTemperatureCsv {
     lineCount: number
     tokenCount?: number
     testoReadingsFound?: number
+    parsedBlockName?: string | null
   }
 }
 
@@ -91,6 +92,7 @@ function parseTesto(content: string, fileName: string): ParsedTemperatureCsv {
       lineCount: content.split('\n').length,
       tokenCount: tokens.length,
       testoReadingsFound: rawReadings.length,
+      parsedBlockName: blockName,
     },
   }
 }
@@ -249,10 +251,19 @@ function parseStandardCsv(content: string, fileName: string): ParsedTemperatureC
 
 function extractBlockNameFromFilename(fileName: string): string | null {
   const base = fileName.replace(/\.[^.]+$/, '').trim()
-  // "Tunel 4B" -> "4B", "9C" -> "9C", "blok_12A_temp" -> "12A"
+
+  // Skip timestamp-only filenames like "2026-02-26-10-35-14"
+  if (/^\d{4}-\d{2}-\d{2}[-_T]\d{2}[-_]\d{2}[-_]\d{2}$/.test(base)) return null
+
+  // "Tunel 4B" -> "Tunel 4B" (keep full for matching)
+  const tunnelMatch = base.match(/[Tt]unel\s*(\d+[A-Za-z])/i)
+  if (tunnelMatch) return `Tunel ${tunnelMatch[1].toUpperCase()}`
+
+  // "9C" -> "9C", "blok_12A_temp" -> "12A"
   const match = base.match(/(\d+[A-Za-z])/i)
   if (match) return match[1].toUpperCase()
-  if (base.length <= 20) return base
+
+  if (base.length <= 20 && !/^\d+$/.test(base)) return base
   return null
 }
 

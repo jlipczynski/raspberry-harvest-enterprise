@@ -11,7 +11,7 @@ interface Section { id: string; name: string; metersLength: number; potsPerMeter
 interface Block { id: string; name: string; sections: Section[] }
 interface Farm { id: string; name: string }
 interface TempReading { id: string; timestamp: string; temperature: number; sourceFile?: string }
-interface UploadResult { success?: boolean; error?: string; blockName?: string; totalReadings?: number; sections?: Array<{ sectionId: string; sectionName: string | null; inserted: number }>; debug?: { format?: string; contentPreview?: string; lineCount?: number; tokenCount?: number; testoReadingsFound?: number } }
+interface UploadResult { success?: boolean; error?: string; blockName?: string; totalReadings?: number; sections?: Array<{ sectionId: string; sectionName: string | null; inserted: number }>; debug?: { format?: string; contentPreview?: string; lineCount?: number; tokenCount?: number; testoReadingsFound?: number; parsedBlockName?: string | null } }
 
 const PLANT_TYPES = [{ value: 'SMALL_POT', label: 'Doniczka' }, { value: 'ROOT', label: 'Korzeń' }, { value: 'LONGCANE', label: 'Longcane' }, { value: 'PLUG', label: 'Plug' }]
 
@@ -236,6 +236,7 @@ export default function PlantationPage() {
                       <summary className="cursor-pointer">Diagnostyka</summary>
                       <pre className="mt-1 p-2 bg-red-100 rounded overflow-x-auto whitespace-pre-wrap break-all">
 {`Format: ${r.debug.format || '?'}
+Blok (parsed): ${r.debug.parsedBlockName || '(nie znaleziono)'}
 Linii: ${r.debug.lineCount || '?'}
 Tokenów: ${r.debug.tokenCount || '-'}
 Odczytów Testo: ${r.debug.testoReadingsFound ?? '-'}

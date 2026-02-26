@@ -141,43 +141,44 @@ describe("matchBlockToSections", () => {
   const blocks = [
     {
       id: "b1",
-      name: "9C",
+      name: "C",
       sections: [
-        { id: "s1", name: "Sekcja 1" },
-        { id: "s2", name: "Sekcja 2" },
+        { id: "s1", name: "C01-C05" },
+        { id: "s2", name: "C06-C11" },
       ],
     },
     {
       id: "b2",
-      name: "12A",
-      sections: [{ id: "s3", name: "Sekcja 3" }],
+      name: "A",
+      sections: [{ id: "s3", name: "A01-A12" }],
     },
     {
       id: "b3",
-      name: "Blok 5B",
-      sections: [{ id: "s4", name: "Sekcja 4" }],
+      name: "B",
+      sections: [{ id: "s4", name: "B01-B05" }],
     },
   ];
 
-  it("matches exact block name", () => {
+  it("matches tunnel number to correct section range", () => {
     const matches = matchBlockToSections("9C", blocks);
-    expect(matches).toHaveLength(2);
-    expect(matches[0].sectionId).toBe("s1");
-    expect(matches[1].sectionId).toBe("s2");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].sectionId).toBe("s2");
+    expect(matches[0].sectionName).toBe("C06-C11");
   });
 
   it("matches case-insensitively", () => {
     const matches = matchBlockToSections("9c", blocks);
-    expect(matches).toHaveLength(2);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].sectionId).toBe("s2");
   });
 
-  it("matches partial block name (contains)", () => {
+  it("matches tunnel in block B", () => {
     const matches = matchBlockToSections("5B", blocks);
     expect(matches).toHaveLength(1);
     expect(matches[0].sectionId).toBe("s4");
   });
 
-  it("returns empty for unknown block", () => {
+  it("returns empty for unknown block letter", () => {
     const matches = matchBlockToSections("99Z", blocks);
     expect(matches).toHaveLength(0);
   });

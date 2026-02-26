@@ -37,9 +37,9 @@ export async function POST(request: NextRequest) {
     // Parse the file
     let blockName: string | null
     let readings: TemperatureRecord[]
+    let debug: Record<string, unknown> | undefined
 
     if (isPdf) {
-      // Dynamic import - pdf-parse only loads when actually needed
       const { parseTemperaturePdf } = await import('@/lib/pdf-temperature-parser')
       const arrayBuffer = await file.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
@@ -51,18 +51,25 @@ export async function POST(request: NextRequest) {
       const parsed = parseTemperatureCsv(text, file.name)
       blockName = parsed.blockName
       readings = parsed.readings
+      debug = parsed.debug as Record<string, unknown> | undefined
     }
 
     if (!blockName) {
       return NextResponse.json(
-        { error: 'Nie znaleziono nazwy bloku. Dla CSV z Testo: plik musi zawierać sekcję "Parametry pomiarowe" z polem Title. Dla zwykłego CSV: nazwa pliku powinna zawierać numer bloku (np. "9C.csv").' },
+        {
+          error: 'Nie znaleziono nazwy bloku. Dla CSV z Testo: plik musi zawierać sekcję "Parametry pomiarowe" z polem Title. Dla zwykłego CSV: nazwa pliku powinna zawierać numer bloku (np. "9C.csv").',
+          debug,
+        },
         { status: 422 }
       )
     }
 
     if (readings.length === 0) {
       return NextResponse.json(
-        { error: 'Nie znaleziono pomiarów temperatury w pliku. Sprawdź format danych.' },
+        {
+          error: `Nie znaleziono pomiarów temperatury w pliku. Wykryto blok "${blockName}" ale brak danych.`,
+          debug,
+        },
         { status: 422 }
       )
     }

@@ -4,6 +4,13 @@ export interface ParsedTemperatureCsv {
   blockName: string | null
   readings: TemperatureRecord[]
   fileName: string
+  debug?: {
+    format: 'testo' | 'standard'
+    contentPreview: string
+    lineCount: number
+    tokenCount?: number
+    testoReadingsFound?: number
+  }
 }
 
 /**
@@ -16,14 +23,20 @@ export function parseTemperatureCsv(
   content: string,
   fileName: string
 ): ParsedTemperatureCsv {
-  const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  // Strip BOM (UTF-8, UTF-16 LE/BE)
+  let cleaned = content
+  if (cleaned.charCodeAt(0) === 0xFEFF) cleaned = cleaned.slice(1)
+  if (cleaned.charCodeAt(0) === 0xFFFE) cleaned = cleaned.slice(1)
+
+  // Normalize line endings
+  cleaned = cleaned.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 
   // Detect Testo format by looking for characteristic sections
-  if (isTestoFormat(normalized)) {
-    return parseTesto(normalized, fileName)
+  if (isTestoFormat(cleaned)) {
+    return parseTesto(cleaned, fileName)
   }
 
-  return parseStandardCsv(normalized, fileName)
+  return parseStandardCsv(cleaned, fileName)
 }
 
 // ============================================================
@@ -31,22 +44,24 @@ export function parseTemperatureCsv(
 // ============================================================
 
 function isTestoFormat(content: string): boolean {
-  return content.includes('< Parametry pomiarowe >') ||
-    content.includes('< Podstawowe informacje >') ||
+  return content.includes('Parametry pomiarowe') ||
+    content.includes('Podstawowe informacje') ||
     content.includes('Przekrój całkowity') ||
     content.includes('Cykl pomiarowy') ||
-    content.includes('Rejestrator danych')
+    content.includes('Rejestrator danych') ||
+    content.includes('Naruszenia limitów') ||
+    content.includes('Konfiguracja alarmu')
 }
 
 function parseTesto(content: string, fileName: string): ParsedTemperatureCsv {
   // The entire file may be on one or multiple lines, all semicolon-delimited
   const flat = content.replace(/\n/g, ';')
-  const tokens = flat.split(';').map(t => t.trim())
+  const tokens = flat.split(';').map(t => t.trim()).filter(t => t !== '')
 
   // Extract Title from "< Parametry pomiarowe >" section
-  let blockName = extractTestoTitle(tokens) || extractBlockNameFromFilename(fileName)
+  const blockName = extractTestoTitle(tokens) || extractBlockNameFromFilename(fileName)
 
-  // Extract datetime;value pairs from the data section (before first "<" section)
+  // Extract datetime;value pairs
   const rawReadings = extractTestoReadings(tokens)
 
   // Detect if values need division by 10
@@ -66,77 +81,29 @@ function parseTesto(content: string, fileName: string): ParsedTemperatureCsv {
   }
 
   readings.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
-  return { blockName, readings, fileName }
+  return {
+    blockName,
+    readings,
+    fileName,
+    debug: {
+      format: 'testo',
+      contentPreview: content.slice(0, 500),
+      lineCount: content.split('\n').length,
+      tokenCount: tokens.length,
+      testoReadingsFound: rawReadings.length,
+    },
+  }
 }
 
 function extractTestoTitle(tokens: string[]): string | null {
-  // Look for "Title" token followed by a value
-  for (let i = 0; i < tokens.length - 1; i++) {
-    if (tokens[i].toLowerCase() === 'title') {
-      // The Title value is at a fixed offset in the Parametry pomiarowe section
-      // Pattern: ...;Title;Czas rozpoczęcia;...;value_tryb;value_cykl;VALUE_TITLE;...
-      // We need to find the values section which comes after the headers
-      // Look forward for the section structure - headers first, then values
-      // In Testo format: header1;header2;Title;header4;...;value1;value2;TITLE_VALUE;value4;...
-      // The values start after all headers, at the same offset
-
-      // Find the section start "< Parametry pomiarowe >"
-      let sectionStart = -1
-      for (let j = Math.max(0, i - 20); j <= i; j++) {
-        if (tokens[j].includes('Parametry pomiarowe')) {
-          sectionStart = j + 1
-          break
-        }
-      }
-
-      if (sectionStart === -1) continue
-
-      // Count position of Title in header row
-      const titlePos = i - sectionStart
-
-      // Find the start of the values (after all header tokens, typically separated by a row pattern)
-      // In Testo export, headers and values alternate in groups
-      // Headers: Tryb pomiaru;Cykl pomiarowy;Title;Czas rozpoczęcia;Koniec;Czas trwania
-      // Values:  Czasowy;15 min 0 sek.;Tunel 4B;25.02.2026 8:51:00;26.02.2026 10:51:00;1 d...
-
-      // Count headers from sectionStart to find where a non-header value appears
-      // Simple approach: find the total header count and the value at same offset
-      let headerCount = 0
-      for (let j = sectionStart; j < tokens.length; j++) {
-        headerCount++
-        if (tokens[j].toLowerCase() === 'title') break
-      }
-
-      // After all headers, the values start. Find the matching value.
-      // Count remaining headers after Title
-      let remainingHeaders = 0
-      for (let j = i + 1; j < tokens.length; j++) {
-        remainingHeaders++
-        // Headers end when we hit something that looks like a value (Czasowy, number, etc.)
-        // Look for a known Testo value pattern or next section
-        if (tokens[j].includes('<') || tokens[j] === '') break
-        // Check if all headers are listed (usually the header count matches)
-      }
-
-      // The value for Title is at position: i + remainingHeaders + 1 + titlePos
-      // Actually, simpler: scan forward from Title for the value
-      // In the data: ...Title;Czas rozpoczęcia;Koniec;Czas trwania;Czasowy;15 min 0 sek.;Tunel 4B;...
-      // "Title" is at position titlePos in headers, so look titlePos positions after the first value
-      break
-    }
-  }
-
-  // Simpler approach: just find ";Title;" and look for the corresponding value
-  // The Testo format puts headers and values in two groups:
-  // Header1;Header2;Title;Header4;...;Value1;Value2;TitleValue;Value4;...
-  // So find the section, count fields, and map
+  // Find "Parametry pomiarowe" section and extract Title value
   for (let i = 0; i < tokens.length; i++) {
     if (!tokens[i].includes('Parametry pomiarowe')) continue
 
-    // Collect all tokens in this section until next section
+    // Collect all tokens in this section until next section marker
     const sectionTokens: string[] = []
     for (let j = i + 1; j < tokens.length; j++) {
-      if (tokens[j].startsWith('<') || tokens[j].startsWith('< ')) break
+      if (tokens[j].startsWith('<') || tokens[j].includes('< ')) break
       sectionTokens.push(tokens[j])
     }
 
@@ -145,7 +112,6 @@ function extractTestoTitle(tokens: string[]): string | null {
     if (titleIdx === -1) continue
 
     // In Testo, the section has N header fields followed by N value fields
-    // We find where headers end - headers are text descriptions, values follow
     // Heuristic: count total tokens, divide by 2, the second half is values
     const halfLen = Math.ceil(sectionTokens.length / 2)
 
@@ -167,6 +133,7 @@ interface RawReading {
 
 function extractTestoReadings(tokens: string[]): RawReading[] {
   const readings: RawReading[] = []
+  // DD.MM.YYYY H:MM:SS or DD.MM.YYYY HH:MM:SS
   const dateTimeRegex = /^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})$/
 
   for (let i = 0; i < tokens.length - 1; i++) {
@@ -174,8 +141,8 @@ function extractTestoReadings(tokens: string[]): RawReading[] {
     if (!match) continue
 
     const valueStr = tokens[i + 1]
-    // Skip empty values or non-numeric metadata
-    if (!valueStr || !/^-?\d+$/.test(valueStr)) continue
+    // Accept integers and also decimals (some Testo models export with decimal point)
+    if (!valueStr || !/^-?\d+([.,]\d+)?$/.test(valueStr)) continue
 
     const day = parseInt(match[1])
     const month = parseInt(match[2])
@@ -188,7 +155,8 @@ function extractTestoReadings(tokens: string[]): RawReading[] {
     if (hours > 23 || minutes > 59 || seconds > 59) continue
 
     const timestamp = new Date(year, month - 1, day, hours, minutes, seconds)
-    const rawValue = parseInt(valueStr)
+    const rawValue = parseFloat(valueStr.replace(',', '.'))
+    if (isNaN(rawValue)) continue
     readings.push({ timestamp, rawValue })
 
     i++ // skip the value token
@@ -200,6 +168,10 @@ function extractTestoReadings(tokens: string[]): RawReading[] {
 function detectTenths(values: number[]): boolean {
   if (values.length === 0) return false
 
+  // If values already have decimals, they're real temperatures (not tenths)
+  const hasDecimals = values.some(v => !Number.isInteger(v))
+  if (hasDecimals) return false
+
   // If any value exceeds normal °C range but would be fine as tenths, divide
   const hasOutOfRange = values.some(v => v > 70 || v < -50)
   const allFitAsTenths = values.every(v => v / 10 >= -50 && v / 10 <= 70)
@@ -208,13 +180,11 @@ function detectTenths(values: number[]): boolean {
 
   // Also check: if ALL values are integers and max-min spread is typical for tenths
   const allIntegers = values.every(v => Number.isInteger(v))
-  if (allIntegers) {
+  if (allIntegers && values.length >= 3) {
     const max = Math.max(...values)
     const min = Math.min(...values)
     const spread = max - min
-    // If spread > 100, it's likely tenths (100 = 10°C spread, normal for a day)
     if (spread > 100) return true
-    // If the absolute max/min look like tenths
     if (max > 50 || min < -40) return true
   }
 
@@ -230,7 +200,14 @@ function parseStandardCsv(content: string, fileName: string): ParsedTemperatureC
   const lines = content.split('\n').map(l => l.trim()).filter(Boolean)
 
   if (lines.length < 2) {
-    return { blockName, readings: [], fileName }
+    return {
+      blockName, readings: [], fileName,
+      debug: {
+        format: 'standard',
+        contentPreview: content.slice(0, 500),
+        lineCount: lines.length,
+      },
+    }
   }
 
   const delimiter = detectDelimiter(lines[0])
@@ -260,7 +237,14 @@ function parseStandardCsv(content: string, fileName: string): ParsedTemperatureC
   }
 
   readings.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
-  return { blockName, readings, fileName }
+  return {
+    blockName, readings, fileName,
+    debug: {
+      format: 'standard',
+      contentPreview: content.slice(0, 500),
+      lineCount: lines.length,
+    },
+  }
 }
 
 function extractBlockNameFromFilename(fileName: string): string | null {

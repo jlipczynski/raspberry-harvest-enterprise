@@ -68,11 +68,18 @@ export default function PlantationPage() {
       formData.append('farmId', farm.id)
       try {
         const res = await fetch('/api/plantation/temperature-upload', { method: 'POST', body: formData })
-        const data = await res.json()
-        if (!res.ok) results.push({ error: `${file.name}: ${data.error}` })
+        let data: Record<string, unknown>
+        try {
+          data = await res.json()
+        } catch {
+          const text = await res.text().catch(() => '')
+          results.push({ error: `${file.name}: serwer zwrócił błąd ${res.status}${text ? ` - ${text.slice(0, 200)}` : ''}` })
+          continue
+        }
+        if (!res.ok) results.push({ error: `${file.name}: ${data.error || `błąd ${res.status}`}` })
         else results.push({ ...data, success: true })
-      } catch {
-        results.push({ error: `${file.name}: błąd uploadu` })
+      } catch (err) {
+        results.push({ error: `${file.name}: ${err instanceof Error ? err.message : 'błąd połączenia'}` })
       }
     }
     setUploadResults(results)

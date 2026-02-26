@@ -20,10 +20,16 @@ export async function parseTemperaturePdf(
   buffer: Buffer,
   fileName: string
 ): Promise<ParsedTemperaturePdf> {
-  const parser = new PDFParse({ data: new Uint8Array(buffer) })
+  const parser = new PDFParse({ data: buffer })
 
-  // Get metadata (Title field)
-  const info = await parser.getInfo()
+  // Get metadata (Title field) - may fail on some PDFs
+  let pdfInfo: Record<string, unknown> | undefined
+  try {
+    const info = await parser.getInfo()
+    pdfInfo = info?.info as Record<string, unknown> | undefined
+  } catch {
+    // metadata not available - will fall back to text extraction
+  }
 
   // Get text content
   const textResult = await parser.getText()
@@ -34,7 +40,7 @@ export async function parseTemperaturePdf(
   await parser.destroy()
 
   // 1. Extract block name from Title
-  const blockName = extractBlockName(lines, info.info)
+  const blockName = extractBlockName(lines, pdfInfo)
 
   // 2. Extract temperature readings
   const readings = extractReadings(lines)

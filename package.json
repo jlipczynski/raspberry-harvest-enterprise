@@ -2,6 +2,9 @@
   "name": "raspberry-harvest-enterprise",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "seed": "npx tsx prisma/seed.ts",

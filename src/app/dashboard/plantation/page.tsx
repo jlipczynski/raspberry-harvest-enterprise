@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp, Upload, FileText, Thermometer, Loader2 } from 'lucide-react'
+import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp, Upload, FileText, Thermometer, Loader2, TrendingUp } from 'lucide-react'
+import GDHModule from './gdh-module'
 
 interface Variety { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number }
 interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; plantingYear?: number; productionYear?: number; plantMaterialType?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string; _tempCount?: number }
@@ -40,6 +41,7 @@ export default function PlantationPage() {
   const [loadingTemps, setLoadingTemps] = useState<string | null>(null)
   const [tempPage, setTempPage] = useState<Record<string, number>>({})
   const [tempTotalPages, setTempTotalPages] = useState<Record<string, number>>({})
+  const [showGDH, setShowGDH] = useState(true)
 
   useEffect(() => { fetchData() }, [])
 
@@ -190,6 +192,25 @@ export default function PlantationPage() {
         <div className="bg-white rounded-xl p-4 border text-center"><p className="text-2xl font-bold">{totals.pots.toLocaleString('pl-PL')}</p><p className="text-xs text-gray-500">Doniczek</p></div>
         <div className="bg-orange-50 rounded-xl p-4 border border-orange-200 text-center"><p className="text-2xl font-bold text-orange-600">{(totals.fs / 1000).toFixed(1)}t</p><p className="text-xs text-orange-600">Lato ☀️</p></div>
         <div className="bg-red-50 rounded-xl p-4 border border-red-200 text-center"><p className="text-2xl font-bold text-red-600">{(totals.fa / 1000).toFixed(1)}t</p><p className="text-xs text-red-600">Jesień 🍂</p></div>
+      </div>
+
+      {/* GDH Module */}
+      <div>
+        <button
+          onClick={() => setShowGDH(!showGDH)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-xl hover:from-green-100 hover:to-blue-100 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-green-600" />
+            <span className="font-semibold text-gray-800">Moduł GDH — Godziny Wzrostu</span>
+          </div>
+          {showGDH ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+        </button>
+        {showGDH && (
+          <div className="mt-3">
+            <GDHModule />
+          </div>
+        )}
       </div>
 
       {/* PDF Drag & Drop Zone */}

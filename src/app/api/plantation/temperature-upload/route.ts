@@ -1,6 +1,8 @@
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 import { parseTemperaturePdf, matchBlockToSections } from '@/lib/pdf-temperature-parser'
+import { parseTemperatureCsv } from '@/lib/csv-temperature-parser'
+import type { TemperatureRecord } from '@/lib/pdf-temperature-parser'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,28 +19,44 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
+    const fileName = file.name.toLowerCase()
+    const isPdf = fileName.endsWith('.pdf')
+    const isCsv = fileName.endsWith('.csv') || fileName.endsWith('.txt')
+
+    if (!isPdf && !isCsv) {
       return NextResponse.json(
-        { error: 'Only PDF files are accepted' },
+        { error: 'Akceptowane formaty: PDF, CSV, TXT' },
         { status: 400 }
       )
     }
 
-    // Parse the PDF
-    const arrayBuffer = await file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-    const parsed = await parseTemperaturePdf(buffer, file.name)
+    // Parse the file
+    let blockName: string | null
+    let readings: TemperatureRecord[]
 
-    if (!parsed.blockName) {
+    if (isPdf) {
+      const arrayBuffer = await file.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+      const parsed = await parseTemperaturePdf(buffer, file.name)
+      blockName = parsed.blockName
+      readings = parsed.readings
+    } else {
+      const text = await file.text()
+      const parsed = parseTemperatureCsv(text, file.name)
+      blockName = parsed.blockName
+      readings = parsed.readings
+    }
+
+    if (!blockName) {
       return NextResponse.json(
-        { error: 'Could not find block name (Title) in the PDF. Make sure the PDF has a Title field with the block number.' },
+        { error: 'Nie znaleziono nazwy bloku. Dla PDF: pole Title z numerem bloku. Dla CSV: nazwa pliku powinna zawierać numer bloku (np. "9C.csv").' },
         { status: 422 }
       )
     }
 
-    if (parsed.readings.length === 0) {
+    if (readings.length === 0) {
       return NextResponse.json(
-        { error: 'No temperature readings found in the PDF. Check the file format.' },
+        { error: 'Nie znaleziono pomiarów temperatury w pliku. Sprawdź format danych.' },
         { status: 422 }
       )
     }
@@ -49,13 +67,13 @@ export async function POST(request: NextRequest) {
       include: { sections: { select: { id: true, name: true } } },
     })
 
-    const matches = matchBlockToSections(parsed.blockName, blocks)
+    const matches = matchBlockToSections(blockName, blocks)
 
     if (matches.length === 0) {
       return NextResponse.json(
         {
-          error: `No sections found for block "${parsed.blockName}". Available blocks: ${blocks.map(b => b.name).join(', ')}`,
-          parsedBlockName: parsed.blockName,
+          error: `Nie znaleziono sekcji dla bloku "${blockName}". Dostępne bloki: ${blocks.map(b => b.name).join(', ')}`,
+          parsedBlockName: blockName,
         },
         { status: 422 }
       )
@@ -66,9 +84,8 @@ export async function POST(request: NextRequest) {
     const results: Array<{ sectionId: string; sectionName: string | null; inserted: number }> = []
 
     for (const match of matches) {
-      // Use upsert to avoid duplicates (same section + timestamp)
       let inserted = 0
-      for (const reading of parsed.readings) {
+      for (const reading of readings) {
         await prisma.temperatureReading.upsert({
           where: {
             sectionId_timestamp: {
@@ -99,22 +116,22 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      blockName: parsed.blockName,
-      totalReadings: parsed.readings.length,
+      blockName,
+      totalReadings: readings.length,
       totalInserted,
       sections: results,
-      dateRange: parsed.readings.length > 0
+      dateRange: readings.length > 0
         ? {
-            from: parsed.readings[0].timestamp,
-            to: parsed.readings[parsed.readings.length - 1].timestamp,
+            from: readings[0].timestamp,
+            to: readings[readings.length - 1].timestamp,
           }
         : null,
     })
   } catch (error) {
-    console.error('Error processing temperature PDF:', error)
+    console.error('Error processing temperature file:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { error: `Błąd przetwarzania PDF: ${message}` },
+      { error: `Błąd przetwarzania pliku: ${message}` },
       { status: 500 }
     )
   }

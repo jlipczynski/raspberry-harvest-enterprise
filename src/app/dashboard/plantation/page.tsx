@@ -51,16 +51,18 @@ export default function PlantationPage() {
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }
 
-  // PDF upload handlers
-  const handlePdfUpload = useCallback(async (files: FileList | File[]) => {
+  // File upload handlers (PDF + CSV)
+  const handleFileUpload = useCallback(async (files: FileList | File[]) => {
     if (!farm) return
     setUploadingPdfs(true)
     setUploadResults([])
     const results: UploadResult[] = []
+    const allowedExts = ['.pdf', '.csv', '.txt']
 
     for (const file of Array.from(files)) {
-      if (!file.name.toLowerCase().endsWith('.pdf')) {
-        results.push({ error: `${file.name}: nie jest plikiem PDF` })
+      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
+      if (!allowedExts.includes(ext)) {
+        results.push({ error: `${file.name}: nieobsługiwany format (akceptowane: PDF, CSV, TXT)` })
         continue
       }
       const formData = new FormData()
@@ -92,7 +94,7 @@ export default function PlantationPage() {
   const onDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false) }, [])
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setIsDragging(false)
-    if (e.dataTransfer.files.length > 0) handlePdfUpload(e.dataTransfer.files)
+    if (e.dataTransfer.files.length > 0) handleFileUpload(e.dataTransfer.files)
   }, [handlePdfUpload])
 
   // Fetch temp counts for all sections
@@ -198,17 +200,17 @@ export default function PlantationPage() {
         onClick={() => fileInputRef.current?.click()}
         className={`relative rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}`}
       >
-        <input ref={fileInputRef} type="file" accept=".pdf" multiple className="hidden" onChange={e => { if (e.target.files) handlePdfUpload(e.target.files); e.target.value = '' }} />
+        <input ref={fileInputRef} type="file" accept=".pdf,.csv,.txt" multiple className="hidden" onChange={e => { if (e.target.files) handleFileUpload(e.target.files); e.target.value = '' }} />
         {uploadingPdfs ? (
           <div className="flex items-center justify-center gap-3">
             <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-            <span className="text-blue-600 font-medium">Przetwarzanie PDF...</span>
+            <span className="text-blue-600 font-medium">Przetwarzanie plików...</span>
           </div>
         ) : (
           <div className="flex items-center justify-center gap-3">
             <Upload className="w-6 h-6 text-gray-400" />
             <div className="text-sm">
-              <span className="font-medium text-gray-700">Przeciągnij pliki PDF z pomiarami temperatury</span>
+              <span className="font-medium text-gray-700">Przeciągnij pliki PDF lub CSV z pomiarami temperatury</span>
               <span className="text-gray-400 ml-1">lub kliknij, aby wybrać</span>
             </div>
             <FileText className="w-5 h-5 text-gray-300" />
@@ -324,7 +326,7 @@ export default function PlantationPage() {
                                       </tr>
                                     ))}
                                     {tempReadings[editingSection.id].length === 0 && (
-                                      <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">Brak pomiarów. Przeciągnij PDF z danymi temperatury.</td></tr>
+                                      <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">Brak pomiarów. Przeciągnij PDF lub CSV z danymi temperatury.</td></tr>
                                     )}
                                   </tbody>
                                 </table>

@@ -169,7 +169,7 @@ export function matchBlockToSections(
     const blockNameUpper = block.name.toUpperCase()
     const targetUpper = blockName.toUpperCase()
 
-    if (blockNameUpper === targetUpper || blockNameUpper.includes(targetUpper) || blockNameUpper.endsWith(targetUpper)) {
+    if (blockNameUpper === targetUpper || blockNameUpper.includes(targetUpper) || targetUpper.includes(blockNameUpper)) {
       for (const section of block.sections) {
         matches.push({
           sectionId: section.id,

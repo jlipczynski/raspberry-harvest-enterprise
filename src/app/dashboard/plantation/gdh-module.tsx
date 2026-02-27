@@ -6,7 +6,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine, ReferenceArea
 } from 'recharts'
-import { TrendingUp, Thermometer, Target, Loader2, CloudSun, CalendarDays } from 'lucide-react'
+import { TrendingUp, Thermometer, Target, Loader2, CloudSun, CalendarDays, Info, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface SectionGdh {
   id: string
@@ -61,6 +61,7 @@ export default function GDHModule() {
   const [selectedSectionId, setSelectedSectionId] = useState('')
   const [tunnelOffset, setTunnelOffset] = useState(4)
   const [loading, setLoading] = useState(true)
+  const [showMethodology, setShowMethodology] = useState(false)
 
   useEffect(() => {
     async function fetchData() {
@@ -258,6 +259,86 @@ export default function GDHModule() {
         </p>
       </CardHeader>
       <CardContent className="space-y-6 pt-6">
+        {/* Methodology info box */}
+        <div className="border border-blue-200 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setShowMethodology(!showMethodology)}
+            className="w-full flex items-center gap-2 px-4 py-2.5 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
+          >
+            <Info className="w-4 h-4 text-blue-600 shrink-0" />
+            <span className="text-sm font-medium text-blue-800">Jak obliczamy GDH? (metodologia)</span>
+            {showMethodology
+              ? <ChevronUp className="w-4 h-4 text-blue-500 ml-auto" />
+              : <ChevronDown className="w-4 h-4 text-blue-500 ml-auto" />}
+          </button>
+          {showMethodology && (
+            <div className="px-4 py-3 bg-white text-xs text-gray-700 space-y-3 border-t border-blue-100">
+              <div>
+                <p className="font-semibold text-gray-800 mb-1">1. Formuła GDH (wg Fall Creek Nursery)</p>
+                <p>Dla każdego odczytu temperatury (co 15 min z loggera Testo w tunelu):</p>
+                <p className="font-mono bg-gray-50 px-2 py-1 rounded mt-1">
+                  GDH = max(0, min(T_odczyt, 26°C) - 4.5°C) &times; 0.25h
+                </p>
+                <ul className="mt-1 ml-4 list-disc text-gray-600">
+                  <li><strong>T_baz = 4.5°C</strong> — poniżej tej temperatury roślina nie rośnie</li>
+                  <li><strong>T_max = 26°C</strong> — powyżej tej temperatury roślina jest w stresie cieplnym (nie liczymy więcej)</li>
+                  <li><strong>&times; 0.25h</strong> — każdy odczyt co 15 min = 0.25 godziny wzrostu</li>
+                  <li>Suma tych wartości = skumulowane GDH (godziny wzrostu)</li>
+                </ul>
+                <p className="mt-1 text-gray-500 italic">
+                  Źródło: Fall Creek Nursery — &quot;Insider Insights: Growing Degree Hours&quot;.
+                  Uwaga: różnica 3°C = ~25% różnicy w GDH. Dlatego odczyty co 15 min są dużo dokładniejsze niż średnia dzienna.
+                </p>
+              </div>
+
+              <div>
+                <p className="font-semibold text-gray-800 mb-1">2. Wykres — 3 strefy danych</p>
+                <div className="space-y-1.5">
+                  <div className="flex items-start gap-2">
+                    <div className="w-10 h-1 bg-emerald-600 rounded mt-1.5 shrink-0" />
+                    <p><strong className="text-emerald-700">Zielona ciągła</strong> — realne GDH z odczytów CSV (logger Testo w tunelu). To prawdziwe dane.</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="w-10 h-1 mt-1.5 shrink-0" style={{ background: 'repeating-linear-gradient(90deg, #3b82f6 0, #3b82f6 4px, transparent 4px, transparent 7px)' }} />
+                    <p><strong className="text-blue-600">Niebieska przerywana</strong> — prognoza na 16 dni z Open-Meteo (dane godzinowe). Temperatura zewnętrzna jest przeliczona na tunelową przez model inercji.</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="w-10 h-1 mt-1.5 shrink-0" style={{ background: 'repeating-linear-gradient(90deg, #8b5cf6 0, #8b5cf6 3px, transparent 3px, transparent 6px)' }} />
+                    <p><strong className="text-purple-600">Fioletowa przerywana</strong> — szacunek na dalsze dni ze średnich temperatur z lat ubiegłych (2023-2025) dla tych samych dni kalendarzowych. Krzywa naturalnie przyspiesza bo im bliżej lata, tym cieplej = więcej GDH dziennie.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <p className="font-semibold text-gray-800 mb-1">3. Model inercji tunelu (dla predykcji)</p>
+                <p>Prognoza pogody podaje temperaturę <strong>zewnętrzną</strong>. Tunel reaguje wolniej na zmiany temperatury (inercja cieplna) i jest cieplejszy (efekt szklarniowy):</p>
+                <p className="font-mono bg-gray-50 px-2 py-1 rounded mt-1">
+                  T_tunel(t) = &alpha; &times; (T_zewn(t) + offset) + (1-&alpha;) &times; T_tunel(t-1)
+                </p>
+                <ul className="mt-1 ml-4 list-disc text-gray-600">
+                  <li><strong>&alpha; = 0.3</strong> — tunel reaguje na 30% zmiany temp. zewnętrznej na godzinę (inercja)</li>
+                  <li><strong>offset = +{tunnelOffset}°C</strong> — stałe ocieplenie od efektu szklarniowego (suwak powyżej)</li>
+                  <li>Spadek temperatury na zewnątrz <strong>nie powoduje</strong> natychmiastowego spadku w tunelu</li>
+                  <li>Np. mróz nocą -2°C, tunel dzień wcześniej 15°C → tunel spada do: 0.3&times;(-2+4) + 0.7&times;15 = <strong>11.1°C</strong></li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="font-semibold text-gray-800 mb-1">4. Progi kwitnienia i owocowania</p>
+                <p>Każda odmiana ma ustalone progi GDH (w zakładce Odmiany). Gdy skumulowane GDH przekroczą próg:</p>
+                <ul className="mt-1 ml-4 list-disc text-gray-600">
+                  <li><strong className="text-amber-600">Próg kwitnienia</strong> — roślina zaczyna kwitnąć</li>
+                  <li><strong className="text-red-600">Próg owocowania</strong> — pierwsze owoce do zbioru</li>
+                  <li>Progi zależą od typu uprawy: zimowane w tunelu / long canes / sezon jesienny</li>
+                </ul>
+                <p className="mt-1 text-gray-500 italic">
+                  Przy predykowanej dacie widać badge &quot;z prognozy meteo&quot; lub &quot;z danych historycznych&quot; — informuje jak pewna jest prognoza.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Controls */}
         <div className="flex flex-wrap gap-4 items-end">
           <div className="flex-1 min-w-[240px]">

@@ -313,6 +313,11 @@ export default function GDHModule() {
   const scenarioZoneStart = chartData.find(p => p.p50Gdh !== null && p.meteoGdh === null && p.realGdh === null)?.dateLabel
   const chartEnd = chartData.length > 0 ? chartData[chartData.length - 1].dateLabel : null
 
+  // Planting date label for vertical reference line
+  const plantingDateLabel = selectedSection?.gdhStartDate
+    ? new Date(selectedSection.gdhStartDate).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })
+    : null
+
   const zoneBadge = (zone: string | null) => {
     if (!zone || zone === 'real') return null
     const styles: Record<string, string> = {
@@ -624,6 +629,12 @@ export default function GDHModule() {
                   <Line type="monotone" dataKey="p90Gdh" name="P90 ciepły" stroke="#f97316" strokeWidth={1.5} strokeDasharray="6 3" dot={false} connectNulls={false} />
                   <Line type="monotone" dataKey="p50Gdh" name="P50 typowy" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls={false} />
                   <Line type="monotone" dataKey="p10Gdh" name="P10 zimny" stroke="#0ea5e9" strokeWidth={1.5} strokeDasharray="6 3" dot={false} connectNulls={false} />
+
+                  {/* Planting date vertical reference line */}
+                  {plantingDateLabel && (
+                    <ReferenceLine x={plantingDateLabel} stroke="#16a34a" strokeWidth={2} strokeDasharray="4 4"
+                      label={{ value: `Wysadzenie ${new Date(selectedSection!.gdhStartDate!).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })}`, fill: '#16a34a', fontSize: 11, position: 'top' }} />
+                  )}
 
                   {/* Threshold reference lines */}
                   {refLines.map((rl, i) => (

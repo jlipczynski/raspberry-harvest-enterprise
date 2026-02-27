@@ -10,7 +10,13 @@ const GDH_UPPER_TEMP = 26.0 // °C - above this, growth stops (heat stress)
 
 // Tunnel inertia model defaults
 const TUNNEL_ALPHA = 0.3     // how fast tunnel reacts to outside temp (0=no reaction, 1=instant)
-const TUNNEL_OFFSET = 4.0    // greenhouse effect offset °C
+
+// Dynamic offset model — replaces old static +4°C
+// At night: offset = 0 (no solar gain)
+// During day: offset = shortwave_radiation * k, capped at 15°C
+const MAX_RADIATION = 800    // W/m² — clear summer noon
+const MAX_OFFSET = 15        // °C — max greenhouse effect
+const RADIATION_K = MAX_OFFSET / MAX_RADIATION  // ≈ 0.01875
 
 interface DailyAgg {
   date: Date
@@ -22,6 +28,12 @@ interface DailyAgg {
 function gdhForTemp(temp: number, hours: number): number {
   const effective = Math.min(temp, GDH_UPPER_TEMP)
   return Math.max(0, effective - GDH_BASE_TEMP) * hours
+}
+
+/** Dynamic offset: radiation-based greenhouse effect */
+function calculateDynamicOffset(isDay: number, shortwaveRadiation: number): number {
+  if (isDay === 0 || shortwaveRadiation <= 0) return 0
+  return Math.min(MAX_OFFSET, shortwaveRadiation * RADIATION_K)
 }
 
 /** Tunnel inertia: T_tunnel(t) = α*(T_out + offset) + (1-α)*T_tunnel(t-1) */
@@ -161,28 +173,34 @@ export async function GET() {
 
     if (lat && lon) {
       try {
-        // === 1. Fetch 16-day hourly forecast from Open-Meteo ===
-        const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m&forecast_days=16&timezone=Europe/Warsaw`
+        // === 1. Fetch 16-day hourly forecast from Open-Meteo (with radiation for dynamic offset) ===
+        const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,is_day,shortwave_radiation&forecast_days=16&timezone=Europe/Warsaw`
         const forecastRes = await fetch(forecastUrl)
 
-        let meteoHourly: Array<{ time: string; temp: number }> = []
+        let meteoHourly: Array<{ time: string; temp: number; isDay: number; radiation: number }> = []
         if (forecastRes.ok) {
           const forecastData = await forecastRes.json()
           if (forecastData.hourly?.time) {
             meteoHourly = forecastData.hourly.time.map((t: string, i: number) => ({
               time: t,
-              temp: forecastData.hourly.temperature_2m[i] ?? 0
+              temp: forecastData.hourly.temperature_2m[i] ?? 0,
+              isDay: forecastData.hourly.is_day[i] ?? 0,
+              radiation: forecastData.hourly.shortwave_radiation[i] ?? 0,
             }))
           }
         }
 
-        // Apply tunnel inertia to meteo hourly data
+        // Apply tunnel inertia with DYNAMIC offset (radiation-based)
         const meteoDailyMap = new Map<string, number[]>()
-        let prevTunnelMeteo = meteoHourly.length > 0 ? meteoHourly[0].temp + TUNNEL_OFFSET : 10
+        const firstOffset = meteoHourly.length > 0
+          ? calculateDynamicOffset(meteoHourly[0].isDay, meteoHourly[0].radiation)
+          : 0
+        let prevTunnelMeteo = meteoHourly.length > 0 ? meteoHourly[0].temp + firstOffset : 10
         const meteoTunnelHourly: number[] = []
 
         for (const h of meteoHourly) {
-          prevTunnelMeteo = tunnelTemp(h.temp, prevTunnelMeteo, TUNNEL_ALPHA, TUNNEL_OFFSET)
+          const dynamicOffset = calculateDynamicOffset(h.isDay, h.radiation)
+          prevTunnelMeteo = tunnelTemp(h.temp, prevTunnelMeteo, TUNNEL_ALPHA, dynamicOffset)
           meteoTunnelHourly.push(prevTunnelMeteo)
 
           const day = h.time.slice(0, 10)
@@ -244,10 +262,20 @@ export async function GET() {
           const t50 = percentile(temps, 50)
           const t90 = percentile(temps, 90)
 
-          // Apply tunnel inertia to each scenario
-          tunnelP10 = tunnelTemp(t10, tunnelP10, TUNNEL_ALPHA, TUNNEL_OFFSET)
-          tunnelP50 = tunnelTemp(t50, tunnelP50, TUNNEL_ALPHA, TUNNEL_OFFSET)
-          tunnelP90 = tunnelTemp(t90, tunnelP90, TUNNEL_ALPHA, TUNNEL_OFFSET)
+          // Estimate average daily offset for scenarios (blend of day/night)
+          // Day length varies ~8h (winter) to ~16h (summer) in Poland
+          const month0 = d.getMonth() // 0-11
+          const dayHours = [8, 9, 11, 13, 15, 16, 16, 15, 13, 11, 9, 8][month0]
+          // Avg radiation: ~100 W/m² (winter) to ~400 W/m² (summer avg over day hours)
+          const avgRadiation = [100, 150, 220, 300, 380, 400, 400, 350, 280, 180, 110, 80][month0]
+          const dayOffset = calculateDynamicOffset(1, avgRadiation)
+          // Weighted: (dayHours * dayOffset + nightHours * 0) / 24
+          const avgDailyOffset = (dayHours * dayOffset) / 24
+
+          // Apply tunnel inertia to each scenario with estimated offset
+          tunnelP10 = tunnelTemp(t10, tunnelP10, TUNNEL_ALPHA, avgDailyOffset)
+          tunnelP50 = tunnelTemp(t50, tunnelP50, TUNNEL_ALPHA, avgDailyOffset)
+          tunnelP90 = tunnelTemp(t90, tunnelP90, TUNNEL_ALPHA, avgDailyOffset)
 
           // Daily GDH for 24h at this tunnel temperature
           const gdhP10 = gdhForTemp(tunnelP10, 24)
@@ -339,7 +367,7 @@ export async function GET() {
           },
           seasonalAnomaly,
           lastForecastDate: lastForecastDate.toISOString().slice(0, 10),
-          tunnelModel: { alpha: TUNNEL_ALPHA, offset: TUNNEL_OFFSET },
+          tunnelModel: { alpha: TUNNEL_ALPHA, offsetModel: 'dynamic', maxOffset: MAX_OFFSET, radiationK: RADIATION_K },
           historicalYears,
         }
       } catch (e) {

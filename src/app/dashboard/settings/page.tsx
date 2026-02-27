@@ -97,7 +97,8 @@ export default function SettingsPage() {
         body: JSON.stringify({
           latitude: parseFloat(formData.latitude),
           longitude: parseFloat(formData.longitude),
-          years: [2023, 2024, 2025, 2026]
+          // Fetch 10 full years for robust climate percentiles (P10/P50/P90)
+          years: Array.from({ length: 11 }, (_, i) => new Date().getFullYear() - 10 + i)
         })
       })
       

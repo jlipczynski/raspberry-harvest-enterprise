@@ -45,7 +45,10 @@ export async function POST(request: NextRequest) {
     if (!farm) {
       return NextResponse.json({ error: 'Farm not found' }, { status: 404 })
     }
-    const yearsToFetch = years || [2023, 2024, 2025, new Date().getFullYear()]
+    // Default: fetch 10 full years + current year for robust P10/P50/P90 percentiles
+    const currentYr = new Date().getFullYear()
+    const defaultYears = Array.from({ length: 11 }, (_, i) => currentYr - 10 + i)
+    const yearsToFetch = years || defaultYears
     let totalCount = 0
 
     for (const year of yearsToFetch) {

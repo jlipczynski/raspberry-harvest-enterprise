@@ -47,7 +47,7 @@ interface ApiResponse {
     scenarios: { p10: ForecastDay[]; p50: ForecastDay[]; p90: ForecastDay[]; best: ForecastDay[] }
     seasonalAnomaly: SeasonalAnomaly | null
     lastForecastDate: string
-    tunnelModel: { alpha: number; offset: number }
+    tunnelModel: { alpha: number; offsetModel: string; maxOffset: number; radiationK: number }
     historicalYears: number
   } | null
   gdhParams: { baseTemp: number; upperTemp: number }
@@ -79,7 +79,7 @@ interface ScenarioPrediction {
 export default function GDHModule() {
   const [data, setData] = useState<ApiResponse | null>(null)
   const [selectedSectionId, setSelectedSectionId] = useState('')
-  const [tunnelOffset, setTunnelOffset] = useState(4)
+  const [maxOffset] = useState(15)
   const [loading, setLoading] = useState(true)
   const [showMethodology, setShowMethodology] = useState(false)
 
@@ -89,9 +89,7 @@ export default function GDHModule() {
         const res = await fetch('/api/gdh')
         const json = await res.json()
         setData(json)
-        if (json.forecast?.tunnelModel?.offset) {
-          setTunnelOffset(json.forecast.tunnelModel.offset)
-        }
+        // tunnelModel now uses dynamic offset (radiation-based)
       } catch (e) {
         console.error('Error fetching GDH data:', e)
       } finally {
@@ -378,17 +376,18 @@ export default function GDHModule() {
                 <p className="font-semibold text-gray-800 mb-1">1. Formuła GDH (wg Fall Creek Nursery)</p>
                 <p>Dla każdego odczytu temperatury (co 15 min z loggera Testo):</p>
                 <p className="font-mono bg-gray-50 px-2 py-1 rounded mt-1">
-                  GDH_h = max(0, min(T, {data?.gdhParams?.upperTemp ?? 26}°C) - {data?.gdhParams?.baseTemp ?? 4.5}°C) &times; &Delta;t
+                  GDH = max(0, min(T, {data?.gdhParams?.upperTemp ?? 26}°C) - {data?.gdhParams?.baseTemp ?? 4.5}°C) &times; &Delta;t
                 </p>
                 <ul className="mt-1 ml-4 list-disc text-gray-600">
-                  <li><strong>T_baz = {data?.gdhParams?.baseTemp ?? 4.5}°C</strong> — poniżej: brak wzrostu</li>
+                  <li><strong>T_baz = {data?.gdhParams?.baseTemp ?? 4.5}°C</strong> — poniżej tej temperatury roślina nie rośnie</li>
                   <li><strong>T_opt = {data?.gdhParams?.upperTemp ?? 26}°C</strong> — powyżej: stres cieplny, wzrost nie przyspiesza</li>
                   <li>Odczyt co 15 min &times; 0.25h = precyzyjne godziny wzrostu</li>
+                  <li>Jeśli sekcja ma ustawioną <strong>datę wysadzenia</strong> (nie jest zimowana) — GDH naliczane dopiero od tej daty</li>
                 </ul>
               </div>
 
               <div>
-                <p className="font-semibold text-gray-800 mb-1">2. Wykres — 3 strefy prognozy</p>
+                <p className="font-semibold text-gray-800 mb-1">2. Wykres — strefy prognozy</p>
                 <div className="space-y-1.5">
                   <div className="flex items-start gap-2">
                     <div className="w-10 h-1 bg-emerald-600 rounded mt-1.5 shrink-0" />
@@ -396,44 +395,64 @@ export default function GDHModule() {
                   </div>
                   <div className="flex items-start gap-2">
                     <div className="w-10 h-1 mt-1.5 shrink-0" style={{ background: 'repeating-linear-gradient(90deg, #3b82f6 0, #3b82f6 4px, transparent 4px, transparent 7px)' }} />
-                    <p><strong className="text-blue-600">Niebieska przerywana (16 dni)</strong> — prognoza z Open-Meteo, dane godzinowe przeliczone przez model inercji tunelu. Wysoka pewność.</p>
+                    <p><strong className="text-blue-600">Niebieska przerywana (16 dni)</strong> — prognoza godzinowa z Open-Meteo z dynamicznym offsetem szklarniowym. Wysoka pewność.</p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="w-10 h-1 mt-1.5 shrink-0" style={{ background: 'repeating-linear-gradient(90deg, #e11d48 0, #e11d48 5px, transparent 5px, transparent 8px)' }} />
+                    <p><strong className="text-rose-600">Różowa przerywana (ECMWF 2026)</strong> — najlepsza estymacja na podstawie prognozy sezonowej ECMWF SEAS5. Interpolacja między P10/P50/P90 wg anomalii temperaturowej.</p>
                   </div>
                   <div className="flex items-start gap-2">
                     <div className="w-2 h-2 rounded-full bg-orange-500 mt-1 shrink-0" />
-                    <p><strong className="text-orange-600">P90 (ciepły rok)</strong> — średnia z 10% najcieplejszych lat historycznych. Najszybszy przyrost GDH.</p>
+                    <p><strong className="text-orange-600">P90 (ciepły rok)</strong> — 90. percentyl z {forecast?.historicalYears ?? 10} lat danych historycznych. Najszybszy przyrost GDH.</p>
                   </div>
                   <div className="flex items-start gap-2">
                     <div className="w-2 h-2 rounded-full bg-purple-500 mt-1 shrink-0" />
-                    <p><strong className="text-purple-600">P50 (przeciętny rok)</strong> — mediana klimatyczna. Najbardziej prawdopodobny scenariusz.</p>
+                    <p><strong className="text-purple-600">P50 (przeciętny rok)</strong> — mediana klimatyczna z {forecast?.historicalYears ?? 10} lat. Najbardziej prawdopodobny scenariusz.</p>
                   </div>
                   <div className="flex items-start gap-2">
                     <div className="w-2 h-2 rounded-full bg-sky-500 mt-1 shrink-0" />
-                    <p><strong className="text-sky-600">P10 (zimny rok)</strong> — średnia z 10% najchłodniejszych lat. Najwolniejszy przyrost GDH.</p>
+                    <p><strong className="text-sky-600">P10 (zimny rok)</strong> — 10. percentyl z {forecast?.historicalYears ?? 10} lat. Najwolniejszy przyrost GDH.</p>
                   </div>
                 </div>
                 <p className="mt-1 text-gray-500 italic">Obszar między P10 a P90 tworzy &quot;lejek pewności&quot; — zbiory nastąpią w tym zakresie dat.</p>
               </div>
 
               <div>
-                <p className="font-semibold text-gray-800 mb-1">3. Model inercji tunelu</p>
+                <p className="font-semibold text-gray-800 mb-1">3. Dynamiczny model inercji tunelu</p>
                 <p className="font-mono bg-gray-50 px-2 py-1 rounded mt-1">
-                  T_tunel(t) = &alpha;&times;(T_zewn + offset) + (1-&alpha;)&times;T_tunel(t-1)
+                  T_tunel(t) = &alpha; &times; (T_zewn + offset_dynamiczny) + (1-&alpha;) &times; T_tunel(t-1)
                 </p>
                 <ul className="mt-1 ml-4 list-disc text-gray-600">
-                  <li><strong>&alpha; = 0.3</strong> — tunel reaguje powoli (inercja cieplna)</li>
-                  <li><strong>offset = +{tunnelOffset}°C</strong> — efekt szklarniowy</li>
-                  <li>Np. mróz -2°C, tunel wczoraj 15°C → dziś: 0.3&times;(-2+{tunnelOffset}) + 0.7&times;15 = <strong>{(0.3*(-2+tunnelOffset) + 0.7*15).toFixed(1)}°C</strong></li>
+                  <li><strong>&alpha; = 0.3</strong> — tunel reaguje powoli (inercja cieplna folii i gleby)</li>
+                  <li><strong>offset_dynamiczny = 0°C do +{maxOffset}°C</strong> — efekt szklarniowy obliczany <strong>co godzinę</strong> na podstawie promieniowania słonecznego (W/m&sup2;) z Open-Meteo</li>
+                  <li>W nocy i przy pełnym zachmurzeniu: offset &asymp; 0°C (brak nagrzewania)</li>
+                  <li>W bezchmurne letnie południe (~800 W/m&sup2;): offset do +{maxOffset}°C</li>
                 </ul>
+                <p className="mt-1.5 text-gray-600">
+                  <strong>Przykład:</strong> Słoneczny poranek, na zewnątrz 10°C, promieniowanie 270 W/m&sup2; (offset +5°C), tunel godzinę temu miał 8°C:<br />
+                  <span className="font-mono bg-gray-50 px-1 rounded">0.3 &times; (10 + 5) + 0.7 &times; 8 = <strong>10.1°C</strong></span>
+                </p>
+                <p className="mt-1 text-gray-500 italic">Wzór: offset = min({maxOffset}, promieniowanie &times; {maxOffset}/800)</p>
               </div>
 
               <div>
                 <p className="font-semibold text-gray-800 mb-1">4. Scenariusze klimatyczne (P10/P50/P90)</p>
-                <p>Dla dni 17+ (po wyczerpaniu prognozy meteo) używamy klimatologii z {forecast?.historicalYears ?? '?'} lat:</p>
+                <p>Dla dni 17+ (po wyczerpaniu prognozy meteo) używamy klimatologii z <strong>{forecast?.historicalYears ?? 10} lat</strong> danych historycznych:</p>
                 <ul className="mt-1 ml-4 list-disc text-gray-600">
-                  <li>Dla każdego dnia kalendarzowego bierzemy temperatury z lat ubiegłych</li>
+                  <li>Dla każdego dnia kalendarzowego bierzemy temperatury z lat ubiegłych (min. 10 lat)</li>
                   <li><strong>P10</strong> = 10. percentyl (zimny rok), <strong>P50</strong> = mediana, <strong>P90</strong> = 90. percentyl (ciepły rok)</li>
-                  <li>Każdy scenariusz przechodzi przez model inercji tunelu → GDH</li>
-                  <li>Krzywe naturalnie przyspieszają (lato = cieplej = więcej GDH/dzień)</li>
+                  <li>Każdy scenariusz przechodzi przez model inercji tunelu z estymowanym promieniowaniem wg miesiąca</li>
+                  <li>Krzywe naturalnie przyspieszają (lato = cieplej + więcej słońca = więcej GDH/dzień)</li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="font-semibold text-gray-800 mb-1">5. Progi GDH per odmiana</p>
+                <ul className="mt-1 ml-4 list-disc text-gray-600">
+                  <li>Każda odmiana (Variety) ma własne progi GDH: kwitnienie i owocowanie</li>
+                  <li>Rozróżnienie: zimowane w tunelu / long canes / sezon jesienny</li>
+                  <li>Sekcja może nadpisać próg odmiany (override) — najpierw sekcja, potem odmiana</li>
+                  <li>Dzięki temu różne odmiany dają różne daty kwitnienia/owocowania na tym samym wykresie</li>
                 </ul>
               </div>
             </div>
@@ -470,20 +489,17 @@ export default function GDHModule() {
               )}
             </select>
           </div>
-          <div className="w-64">
+          <div className="w-72">
             <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
               <Thermometer className="w-4 h-4 text-green-600" />
-              Efekt tunelowy: <span className="text-green-700 font-bold">+{tunnelOffset}°C</span>
+              Efekt szklarniowy
             </label>
-            <input
-              type="range" min="0" max="10" step="0.5"
-              value={tunnelOffset}
-              onChange={e => setTunnelOffset(+e.target.value)}
-              className="w-full h-2 bg-green-200 rounded-lg appearance-none cursor-pointer accent-green-600"
-            />
-            <div className="flex justify-between text-xs text-gray-400 mt-1">
-              <span>0°C</span><span>+5°C</span><span>+10°C</span>
+            <div className="flex items-center gap-2 bg-green-50 rounded-lg px-3 py-2 border border-green-200">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-sm font-medium text-green-800">Dynamiczny (Słońce/Chmury)</span>
+              <span className="ml-auto text-xs text-green-600">0–{maxOffset}°C</span>
             </div>
+            <p className="text-[10px] text-gray-400 mt-1">Offset obliczany co godzinę z promieniowania słonecznego (Open-Meteo)</p>
           </div>
         </div>
 
@@ -509,7 +525,7 @@ export default function GDHModule() {
               {selectedSection.gdhStartDate && (
                 <div>
                   <p className="text-xs text-green-600">GDH od (wysadzenie)</p>
-                  <p className="font-medium text-green-800">{new Date(selectedSection.gdhStartDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                  <p className="font-medium text-green-800">{new Date(selectedSection.gdhStartDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
                 </div>
               )}
               <div>

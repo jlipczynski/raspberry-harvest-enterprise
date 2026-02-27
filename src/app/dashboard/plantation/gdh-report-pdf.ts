@@ -37,7 +37,7 @@ interface Forecast {
   scenarios: { p10: ForecastDay[]; p50: ForecastDay[]; p90: ForecastDay[]; best: ForecastDay[] }
   seasonalAnomaly: SeasonalAnomaly | null
   lastForecastDate: string
-  tunnelModel: { alpha: number; offset: number }
+  tunnelModel: { alpha: number; offsetModel: string; maxOffset: number; radiationK: number }
   historicalYears: number
 }
 
@@ -201,7 +201,7 @@ export function generateGdhReport(
   doc.text(`T_baz = ${gdhParams.baseTemp}°C  |  T_opt = ${gdhParams.upperTemp}°C  |  Metodologia: Fall Creek Nursery`, margin, 34)
 
   if (forecast) {
-    const fInfo = `Klimatologia: ${forecast.historicalYears} lat  |  Tunel: α=${forecast.tunnelModel.alpha}, offset=+${forecast.tunnelModel.offset}°C`
+    const fInfo = `Klimatologia: ${forecast.historicalYears} lat  |  Tunel: α=${forecast.tunnelModel.alpha}, offset dynamiczny 0–${forecast.tunnelModel.maxOffset}°C (promieniowanie)`
     doc.text(fInfo, pw / 2, 34)
 
     if (forecast.seasonalAnomaly) {

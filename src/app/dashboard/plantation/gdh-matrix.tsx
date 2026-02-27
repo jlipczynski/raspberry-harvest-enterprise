@@ -343,8 +343,8 @@ export default function GDHMatrix() {
               return fruitCell ? fruitCell.weekStart : null
             }).filter(Boolean) as string[]
 
-            const earliest = (dates: string[]) => dates.length ? new Date(dates.sort()[0]).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : '—'
-            const latest = (dates: string[]) => dates.length ? new Date(dates.sort().pop()!).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : '—'
+            const earliest = (dates: string[]) => dates.length ? new Date(dates.sort()[0]).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' }) : '—'
+            const latest = (dates: string[]) => dates.length ? new Date(dates.sort().pop()!).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' }) : '—'
 
             return (
               <>

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { GDH_BASE_TEMP, GDH_UPPER_TEMP } from '@/lib/forecast-calculator'
 export const dynamic = 'force-dynamic'
-
-const BASE_TEMP = 5
 
 export async function GET(request: NextRequest) {
   try {
@@ -68,7 +67,8 @@ export async function POST(request: NextRequest) {
         const tempMax = data.daily.temperature_2m_max[i]
         if (tempMin === null || tempMax === null) continue
         const tempAvg = (tempMin + tempMax) / 2
-        const gdhDaily = Math.max(0, tempAvg - BASE_TEMP) * 24
+        const effectiveTemp = Math.min(tempAvg, GDH_UPPER_TEMP)
+        const gdhDaily = Math.max(0, effectiveTemp - GDH_BASE_TEMP) * 24
         cumulativeGDH += gdhDaily
 
         await prisma.weatherData.upsert({

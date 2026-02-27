@@ -4,10 +4,15 @@
 export interface TemperatureDay { date: string; min: number; max: number; avg: number }
 export interface GDHDay { date: string; gdh: number; cumulativeGdh: number }
 
-// Calculate GDH from daily temperatures (base temp = 4.5°C for raspberries)
-export function calculateDailyGDH(avgTemp: number, baseTemp: number = 4.5): number {
-  if (avgTemp <= baseTemp) return 0
-  return (avgTemp - baseTemp) * 24 // Growing Degree Hours
+// GDH constants per Fall Creek Nursery methodology
+export const GDH_BASE_TEMP = 4.5   // °C - below this, no growth
+export const GDH_UPPER_TEMP = 26.0 // °C - above this, growth stops (heat stress)
+
+// Calculate GDH from daily temperatures (base 4.5°C, cap 26°C for berries)
+export function calculateDailyGDH(avgTemp: number, baseTemp: number = GDH_BASE_TEMP): number {
+  const effective = Math.min(avgTemp, GDH_UPPER_TEMP)
+  if (effective <= baseTemp) return 0
+  return (effective - baseTemp) * 24 // Growing Degree Hours
 }
 
 // Calculate cumulative GDH from temperature data

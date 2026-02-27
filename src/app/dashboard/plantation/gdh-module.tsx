@@ -4,9 +4,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, ReferenceLine
+  ResponsiveContainer, ReferenceLine, ReferenceArea
 } from 'recharts'
-import { TrendingUp, Thermometer, Target, Loader2 } from 'lucide-react'
+import { TrendingUp, Thermometer, Target, Loader2, CloudSun, CalendarDays } from 'lucide-react'
 
 interface SectionGdh {
   id: string
@@ -14,7 +14,6 @@ interface SectionGdh {
   blockName: string
   varietyId: string
   varietyName: string
-  baseTemp: number
   winteredInTunnel: boolean
   plantingDate: string | null
   plantMaterialType: string | null
@@ -26,27 +25,39 @@ interface SectionGdh {
   totalReadings: number
 }
 
-interface FarmWeather {
+interface ForecastDay {
   date: string
-  tempMin: number
-  tempMax: number
-  gdhDaily: number
-  gdhCumulative: number
+  gdhOutside: number
+  gdhTunnel: number
+}
+
+interface ApiResponse {
+  sections: SectionGdh[]
+  farmWeather: Array<{ date: string; tempMin: number; tempMax: number }>
+  forecast: {
+    meteoDays: ForecastDay[]
+    historicalDays: ForecastDay[]
+    lastForecastDate: string
+    tunnelModel: { alpha: number; offset: number }
+  } | null
+  gdhParams: { baseTemp: number; upperTemp: number }
 }
 
 interface ChartPoint {
+  date: string
   dateLabel: string
-  sectionGdh: number | null
-  sectionPredGdh: number | null
-  outsideGdh: number | null
-  tunnelGdh: number | null
-  outsidePredGdh: number | null
-  tunnelPredGdh: number | null
+  // Real data from CSV readings
+  realGdh: number | null
+  // Meteo forecast (16 days)
+  meteoGdh: number | null
+  // Historical prediction (day 17+)
+  histGdh: number | null
+  // Zone marker for coloring
+  zone: 'real' | 'meteo' | 'historical'
 }
 
 export default function GDHModule() {
-  const [sections, setSections] = useState<SectionGdh[]>([])
-  const [farmWeather, setFarmWeather] = useState<FarmWeather[]>([])
+  const [data, setData] = useState<ApiResponse | null>(null)
   const [selectedSectionId, setSelectedSectionId] = useState('')
   const [tunnelOffset, setTunnelOffset] = useState(4)
   const [loading, setLoading] = useState(true)
@@ -55,9 +66,11 @@ export default function GDHModule() {
     async function fetchData() {
       try {
         const res = await fetch('/api/gdh')
-        const data = await res.json()
-        setSections(data.sections || [])
-        setFarmWeather(data.farmWeather || [])
+        const json = await res.json()
+        setData(json)
+        if (json.forecast?.tunnelModel?.offset) {
+          setTunnelOffset(json.forecast.tunnelModel.offset)
+        }
       } catch (e) {
         console.error('Error fetching GDH data:', e)
       } finally {
@@ -67,150 +80,97 @@ export default function GDHModule() {
     fetchData()
   }, [])
 
+  const sections = data?.sections || []
+  const forecast = data?.forecast
   const selectedSection = sections.find(s => s.id === selectedSectionId)
-  const baseTemp = selectedSection?.baseTemp ?? 6.0
-
-  // Sections with actual temperature data
   const sectionsWithData = sections.filter(s => s.totalReadings > 0)
 
-  // Farm weather GDH calculation (outside + tunnel offset)
-  const weatherGdh = useMemo(() => {
-    if (!farmWeather.length) return { days: [] as Array<{ date: string; dateLabel: string; outsideGdh: number; tunnelGdh: number }>, currentOutside: 0, currentTunnel: 0, avgDailyOutside: 0, avgDailyTunnel: 0 }
+  // Build chart data: 3 zones
+  const { chartData, meteoStartIdx, histStartIdx } = useMemo(() => {
+    const points: ChartPoint[] = []
+    if (!selectedSection) return { chartData: points, meteoStartIdx: -1, histStartIdx: -1 }
 
-    const currentYear = new Date().getFullYear()
-    const sorted = [...farmWeather]
-      .filter(w => new Date(w.date).getFullYear() === currentYear)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-
-    let cumOutside = 0
-    let cumTunnel = 0
-
-    const days = sorted.map(w => {
-      const avg = (w.tempMax + w.tempMin) / 2
-      cumOutside += Math.max(0, avg - baseTemp) * 24
-      cumTunnel += Math.max(0, avg + tunnelOffset - baseTemp) * 24
-      return {
-        date: w.date,
-        dateLabel: new Date(w.date).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' }),
-        outsideGdh: Math.round(cumOutside),
-        tunnelGdh: Math.round(cumTunnel),
-      }
-    })
-
-    const n = Math.min(14, days.length)
-    const last = days.slice(-n)
-    const avgDailyOutside = n >= 2 ? (last[last.length - 1].outsideGdh - last[0].outsideGdh) / n : 0
-    const avgDailyTunnel = n >= 2 ? (last[last.length - 1].tunnelGdh - last[0].tunnelGdh) / n : 0
-
-    return {
-      days,
-      currentOutside: days.length > 0 ? days[days.length - 1].outsideGdh : 0,
-      currentTunnel: days.length > 0 ? days[days.length - 1].tunnelGdh : 0,
-      avgDailyOutside,
-      avgDailyTunnel,
+    const toLabel = (d: string) => {
+      const date = new Date(d)
+      return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })
     }
-  }, [farmWeather, baseTemp, tunnelOffset])
 
-  // Section GDH prediction (avg daily from last 14 days of readings)
-  const sectionPrediction = useMemo(() => {
-    if (!selectedSection || selectedSection.dailyGdh.length === 0) return { avgDaily: 0 }
-    const data = selectedSection.dailyGdh
-    const n = Math.min(14, data.length)
-    const last = data.slice(-n)
-    const avgDaily = n >= 2 ? (last[last.length - 1].cumulativeGdh - last[0].cumulativeGdh) / n : 0
-    return { avgDaily }
-  }, [selectedSection])
-
-  // Build chart data: merge section readings + farm weather + predictions
-  const chartData = useMemo(() => {
-    const dateMap = new Map<string, ChartPoint>()
-
-    const toKey = (d: string) => new Date(d).toISOString().slice(0, 10)
-    const toLabel = (d: string) => new Date(d).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })
-
-    // Add farm weather data
-    for (const w of weatherGdh.days) {
-      const key = toKey(w.date)
-      dateMap.set(key, {
-        dateLabel: w.dateLabel,
-        sectionGdh: null,
-        sectionPredGdh: null,
-        outsideGdh: w.outsideGdh,
-        tunnelGdh: w.tunnelGdh,
-        outsidePredGdh: null,
-        tunnelPredGdh: null,
+    // Zone 1: Real data from CSV readings
+    let lastCumulativeGdh = 0
+    for (const d of selectedSection.dailyGdh) {
+      const dateStr = typeof d.date === 'string' ? d.date.slice(0, 10) : new Date(d.date).toISOString().slice(0, 10)
+      points.push({
+        date: dateStr,
+        dateLabel: toLabel(dateStr),
+        realGdh: d.cumulativeGdh,
+        meteoGdh: null,
+        histGdh: null,
+        zone: 'real',
       })
+      lastCumulativeGdh = d.cumulativeGdh
     }
 
-    // Overlay section data if selected
-    if (selectedSection && selectedSection.dailyGdh.length > 0) {
-      for (const d of selectedSection.dailyGdh) {
-        const key = toKey(d.date)
-        const existing = dateMap.get(key)
-        if (existing) {
-          existing.sectionGdh = d.cumulativeGdh
-        } else {
-          dateMap.set(key, {
-            dateLabel: toLabel(d.date),
-            sectionGdh: d.cumulativeGdh,
-            sectionPredGdh: null,
-            outsideGdh: null,
-            tunnelGdh: null,
-            outsidePredGdh: null,
-            tunnelPredGdh: null,
-          })
-        }
+    // Bridge point: last real also starts meteo prediction
+    const meteoStart = points.length
+
+    // Zone 2: Meteo forecast (16 days)
+    if (forecast?.meteoDays) {
+      let cumGdh = lastCumulativeGdh
+      const lastRealDate = points.length > 0 ? points[points.length - 1].date : ''
+
+      // Bridge: set meteoGdh on last real point
+      if (points.length > 0) {
+        points[points.length - 1].meteoGdh = lastCumulativeGdh
       }
-    }
 
-    // Sort by date
-    const sorted = [...dateMap.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([, v]) => v)
-
-    if (sorted.length === 0) return sorted
-
-    // Add predictions (120 days)
-    const lastPoint = sorted[sorted.length - 1]
-    const lastDate = [...dateMap.keys()].sort().pop()!
-
-    // Bridge point for predictions
-    lastPoint.outsidePredGdh = lastPoint.outsideGdh
-    lastPoint.tunnelPredGdh = lastPoint.tunnelGdh
-    if (selectedSection && selectedSection.dailyGdh.length > 0) {
-      lastPoint.sectionPredGdh = lastPoint.sectionGdh ?? selectedSection.currentGdh
-    }
-
-    const avgOut = weatherGdh.avgDailyOutside
-    const avgTun = weatherGdh.avgDailyTunnel
-    const avgSec = sectionPrediction.avgDaily
-
-    if (avgOut > 0 || avgTun > 0 || avgSec > 0) {
-      let predOut = lastPoint.outsideGdh ?? weatherGdh.currentOutside
-      let predTun = lastPoint.tunnelGdh ?? weatherGdh.currentTunnel
-      let predSec = selectedSection?.currentGdh ?? 0
-      const base = new Date(lastDate)
-
-      for (let i = 1; i <= 120; i++) {
-        const d = new Date(base)
-        d.setDate(d.getDate() + i)
-        predOut += avgOut
-        predTun += avgTun
-        predSec += avgSec
-        sorted.push({
-          dateLabel: d.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' }),
-          sectionGdh: null,
-          sectionPredGdh: selectedSection && avgSec > 0 ? Math.round(predSec) : null,
-          outsideGdh: null,
-          tunnelGdh: null,
-          outsidePredGdh: avgOut > 0 ? Math.round(predOut) : null,
-          tunnelPredGdh: avgTun > 0 ? Math.round(predTun) : null,
+      for (const day of forecast.meteoDays) {
+        if (day.date <= lastRealDate) continue // skip days we have real data for
+        // Use tunnel GDH since sections are in tunnels
+        cumGdh += selectedSection.winteredInTunnel ? day.gdhTunnel : day.gdhOutside
+        points.push({
+          date: day.date,
+          dateLabel: toLabel(day.date),
+          realGdh: null,
+          meteoGdh: Math.round(cumGdh),
+          histGdh: null,
+          zone: 'meteo',
         })
       }
     }
 
-    return sorted
-  }, [weatherGdh, selectedSection, sectionPrediction])
+    // Bridge point: last meteo also starts historical
+    const histStart = points.length
+
+    // Zone 3: Historical prediction (day 17+)
+    if (forecast?.historicalDays) {
+      const lastMeteoPoints = points.filter(p => p.meteoGdh !== null)
+      let cumGdh = lastMeteoPoints.length > 0
+        ? lastMeteoPoints[lastMeteoPoints.length - 1].meteoGdh!
+        : lastCumulativeGdh
+
+      // Bridge: set histGdh on last meteo point
+      if (lastMeteoPoints.length > 0) {
+        lastMeteoPoints[lastMeteoPoints.length - 1].histGdh = cumGdh
+      } else if (points.length > 0) {
+        // No meteo data, bridge from last real
+        points[points.length - 1].histGdh = lastCumulativeGdh
+      }
+
+      for (const day of forecast.historicalDays) {
+        cumGdh += selectedSection.winteredInTunnel ? day.gdhTunnel : day.gdhOutside
+        points.push({
+          date: day.date,
+          dateLabel: toLabel(day.date),
+          realGdh: null,
+          meteoGdh: null,
+          histGdh: Math.round(cumGdh),
+          zone: 'historical',
+        })
+      }
+    }
+
+    return { chartData: points, meteoStartIdx: meteoStart, histStartIdx: histStart }
+  }, [selectedSection, forecast])
 
   // Reference lines for thresholds
   const refLines = useMemo(() => {
@@ -225,35 +185,54 @@ export default function GDHModule() {
     return lines
   }, [selectedSection])
 
-  // Progress and date predictions for selected section
-  const sectionProgress = useMemo(() => {
+  // Predict dates from chart data
+  const predictions = useMemo(() => {
     if (!selectedSection) return null
-    const current = selectedSection.currentGdh
-    const avgDaily = sectionPrediction.avgDaily
-    const avgDailyWeatherTunnel = weatherGdh.avgDailyTunnel
-    const avgDailyWeatherOutside = weatherGdh.avgDailyOutside
 
-    // Use section's own avg if available, else fall back to weather
-    const bestAvg = avgDaily > 0 ? avgDaily : (selectedSection.winteredInTunnel ? avgDailyWeatherTunnel : avgDailyWeatherOutside)
-
-    const calcDate = (threshold: number | null) => {
+    const findDate = (threshold: number | null) => {
       if (!threshold) return null
-      const remaining = Math.max(0, threshold - current)
-      if (remaining <= 0) return { progress: 100, date: 'Osiagnięto!', days: 0 }
-      const days = bestAvg > 0 ? Math.ceil(remaining / bestAvg) : 999
-      const d = new Date(); d.setDate(d.getDate() + days)
+      // Look through all chart points to find when cumulative GDH crosses threshold
+      for (const pt of chartData) {
+        const gdh = pt.realGdh ?? pt.meteoGdh ?? pt.histGdh
+        if (gdh !== null && gdh >= threshold) {
+          const zone = pt.zone
+          return {
+            date: new Date(pt.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' }),
+            zone,
+            progress: 100,
+          }
+        }
+      }
+      // Not reached in prediction window
+      const lastGdh = (() => {
+        for (let i = chartData.length - 1; i >= 0; i--) {
+          const g = chartData[i].realGdh ?? chartData[i].meteoGdh ?? chartData[i].histGdh
+          if (g !== null) return g
+        }
+        return 0
+      })()
       return {
-        progress: Math.min(100, (current / threshold) * 100),
-        date: days > 365 ? 'Brak danych' : d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' }),
-        days,
+        date: 'Poza zasięgiem prognozy',
+        zone: 'unknown' as const,
+        progress: Math.min(99, Math.round((lastGdh / threshold) * 100)),
       }
     }
 
     return {
-      flower: calcDate(selectedSection.flowerThreshold),
-      fruit: calcDate(selectedSection.fruitThreshold),
+      flower: findDate(selectedSection.flowerThreshold),
+      fruit: findDate(selectedSection.fruitThreshold),
+      currentGdh: selectedSection.currentGdh,
     }
-  }, [selectedSection, sectionPrediction, weatherGdh])
+  }, [selectedSection, chartData])
+
+  // Avg daily GDH from last 7 days of real readings
+  const avgDailyGdh = useMemo(() => {
+    if (!selectedSection || selectedSection.dailyGdh.length < 2) return 0
+    const data = selectedSection.dailyGdh
+    const n = Math.min(7, data.length)
+    const last = data.slice(-n)
+    return Math.round((last[last.length - 1].cumulativeGdh - last[0].cumulativeGdh) / n)
+  }, [selectedSection])
 
   if (loading) return (
     <Card><CardContent className="p-6 text-center text-gray-400">
@@ -261,15 +240,21 @@ export default function GDHModule() {
     </CardContent></Card>
   )
 
+  // Find date labels for zone boundaries (for ReferenceArea)
+  const meteoStartLabel = meteoStartIdx >= 0 && meteoStartIdx < chartData.length ? chartData[meteoStartIdx]?.dateLabel : null
+  const histStartLabel = histStartIdx >= 0 && histStartIdx < chartData.length ? chartData[histStartIdx]?.dateLabel : null
+  const chartEndLabel = chartData.length > 0 ? chartData[chartData.length - 1].dateLabel : null
+
   return (
     <Card className="border-green-200">
       <CardHeader className="bg-gradient-to-r from-green-50 to-blue-50 rounded-t-xl">
         <CardTitle className="flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-green-600" />
-          Moduł GDH — Godziny Wzrostu
+          GDH — Godziny Wzrostu (Growing Degree Hours)
         </CardTitle>
         <p className="text-sm text-gray-500">
-          Postęp akumulacji ciepła per sekcja i prognoza dat kwitnienia/owocowania
+          T_baz = {data?.gdhParams?.baseTemp ?? 4.5}°C, T_max = {data?.gdhParams?.upperTemp ?? 26}°C
+          {' '}&bull; Formuła: GDH = &Sigma; max(0, min(T, {data?.gdhParams?.upperTemp ?? 26}) - {data?.gdhParams?.baseTemp ?? 4.5}) &times; &Delta;t
         </p>
       </CardHeader>
       <CardContent className="space-y-6 pt-6">
@@ -287,7 +272,7 @@ export default function GDHModule() {
                 <optgroup label="Z danymi temperatury">
                   {sectionsWithData.map(s => (
                     <option key={s.id} value={s.id}>
-                      {s.blockName} / {s.name} — {s.varietyName} ({s.totalReadings} pomiarów, {s.currentGdh.toLocaleString('pl-PL')} GDH)
+                      {s.blockName} / {s.name} — {s.varietyName} ({s.currentGdh.toLocaleString('pl-PL')} GDH)
                     </option>
                   ))}
                 </optgroup>
@@ -306,7 +291,7 @@ export default function GDHModule() {
           <div className="w-64">
             <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
               <Thermometer className="w-4 h-4 text-green-600" />
-              Korekta tunelowa: <span className="text-green-700 font-bold">+{tunnelOffset}°C</span>
+              Efekt tunelowy: <span className="text-green-700 font-bold">+{tunnelOffset}°C</span>
             </label>
             <input
               type="range" min="0" max="10" step="0.5"
@@ -320,7 +305,7 @@ export default function GDHModule() {
           </div>
         </div>
 
-        {/* Section info card */}
+        {/* Section info */}
         {selectedSection && (
           <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
             <div className="flex flex-wrap items-center gap-4">
@@ -333,10 +318,6 @@ export default function GDHModule() {
                 <p className="font-medium text-green-800">{selectedSection.varietyName}</p>
               </div>
               <div>
-                <p className="text-xs text-green-600">T_baz</p>
-                <p className="font-medium text-green-800">{selectedSection.baseTemp}°C</p>
-              </div>
-              <div>
                 <p className="text-xs text-green-600">Typ</p>
                 <p className="font-medium text-green-800">
                   {selectedSection.winteredInTunnel ? 'Zimowana w tunelu' :
@@ -347,6 +328,10 @@ export default function GDHModule() {
                 <p className="text-xs text-green-600">Pomiary</p>
                 <p className="font-medium text-green-800">{selectedSection.totalReadings.toLocaleString('pl-PL')}</p>
               </div>
+              <div>
+                <p className="text-xs text-green-600">Śr. dzienne GDH (7d)</p>
+                <p className="font-medium text-green-800">{avgDailyGdh}/dzień</p>
+              </div>
               <div className="ml-auto">
                 <p className="text-xs text-green-600">Aktualne GDH</p>
                 <p className="text-2xl font-bold text-green-800">{selectedSection.currentGdh.toLocaleString('pl-PL')}</p>
@@ -355,37 +340,29 @@ export default function GDHModule() {
           </div>
         )}
 
-        {/* Summary cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {selectedSection && selectedSection.totalReadings > 0 && (
-            <>
-              <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
-                <p className="text-xs text-emerald-600 font-medium">GDH sekcji (odczyty)</p>
-                <p className="text-2xl font-bold text-emerald-800">{selectedSection.currentGdh.toLocaleString('pl-PL')}</p>
-              </div>
-              <div className="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
-                <p className="text-xs text-emerald-600">Śr. dzienna (sekcja)</p>
-                <p className="text-xl font-bold text-emerald-700">{Math.round(sectionPrediction.avgDaily)}/dzień</p>
-              </div>
-            </>
-          )}
-          <div className="bg-blue-50 rounded-lg p-3 border border-blue-100">
-            <p className="text-xs text-blue-600 font-medium">GDH pogoda (zewn.)</p>
-            <p className="text-2xl font-bold text-blue-800">{weatherGdh.currentOutside.toLocaleString('pl-PL')}</p>
+        {/* Legend for zones */}
+        {selectedSection && chartData.length > 0 && (
+          <div className="flex flex-wrap gap-4 text-xs">
+            <div className="flex items-center gap-1.5">
+              <div className="w-8 h-1 bg-emerald-600 rounded" />
+              <span className="text-gray-600">Dane realne (odczyty z tunelu)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CloudSun className="w-3.5 h-3.5 text-blue-500" />
+              <div className="w-8 h-1 bg-blue-500 rounded" style={{ background: 'repeating-linear-gradient(90deg, #3b82f6 0, #3b82f6 6px, transparent 6px, transparent 10px)' }} />
+              <span className="text-gray-600">Prognoza meteo (16 dni)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CalendarDays className="w-3.5 h-3.5 text-purple-500" />
+              <div className="w-8 h-1 rounded" style={{ background: 'repeating-linear-gradient(90deg, #8b5cf6 0, #8b5cf6 4px, transparent 4px, transparent 8px)' }} />
+              <span className="text-gray-600">Prognoza historyczna (średnia lat ubiegłych)</span>
+            </div>
           </div>
-          <div className="bg-green-50 rounded-lg p-3 border border-green-100">
-            <p className="text-xs text-green-600 font-medium">GDH pogoda (tunel +{tunnelOffset}°C)</p>
-            <p className="text-2xl font-bold text-green-800">{weatherGdh.currentTunnel.toLocaleString('pl-PL')}</p>
-          </div>
-        </div>
+        )}
 
         {/* Chart */}
-        {chartData.length > 0 ? (
+        {selectedSection && chartData.length > 0 ? (
           <div className="bg-white rounded-lg border p-4">
-            <p className="text-xs text-gray-500 mb-3">
-              Linia ciągła = dane realne &bull; Przerywana = predykcja (14-dniowa średnia)
-              {selectedSection && ' \u2022 Poziome linie = progi sekcji'}
-            </p>
             <div className="h-80 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
@@ -393,119 +370,142 @@ export default function GDHModule() {
                   <XAxis
                     dataKey="dateLabel"
                     tick={{ fontSize: 10 }}
-                    interval={Math.max(1, Math.floor(chartData.length / 14))}
+                    interval={Math.max(1, Math.floor(chartData.length / 16))}
                   />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip
                     content={({ active, payload, label }) => {
                       if (!active || !payload?.length) return null
+                      const pt = payload[0]?.payload as ChartPoint
+                      const zoneLabel = pt?.zone === 'real' ? 'Odczyt z tunelu' : pt?.zone === 'meteo' ? 'Prognoza meteo' : 'Prognoza historyczna'
+                      const gdh = pt?.realGdh ?? pt?.meteoGdh ?? pt?.histGdh
                       return (
                         <div className="bg-white p-3 border rounded-lg shadow-md text-xs">
                           <p className="font-medium mb-1 text-gray-700">Data: {label}</p>
-                          {payload.map((p, i) => (
-                            p.value != null ? (
-                              <p key={i} style={{ color: p.color as string }}>
-                                {p.name}: {Number(p.value).toLocaleString('pl-PL')} GDH
-                              </p>
-                            ) : null
-                          ))}
+                          <p className="text-gray-500 mb-1">{zoneLabel}</p>
+                          {gdh != null && (
+                            <p className="font-bold text-gray-800">GDH: {gdh.toLocaleString('pl-PL')}</p>
+                          )}
                         </div>
                       )
                     }}
                   />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  {/* Section actual GDH from readings */}
-                  {selectedSection && selectedSection.totalReadings > 0 && (
-                    <Line type="monotone" dataKey="sectionGdh"
-                      name={`${selectedSection.blockName}/${selectedSection.name}`}
-                      stroke="#059669" strokeWidth={3} dot={false} connectNulls={false} />
+
+                  {/* Background zones */}
+                  {meteoStartLabel && histStartLabel && (
+                    <ReferenceArea x1={meteoStartLabel} x2={histStartLabel} fill="#dbeafe" fillOpacity={0.3} />
                   )}
-                  {/* Section prediction */}
-                  {selectedSection && selectedSection.totalReadings > 0 && (
-                    <Line type="monotone" dataKey="sectionPredGdh"
-                      name="Predykcja sekcji"
-                      stroke="#6ee7b7" strokeWidth={2} strokeDasharray="8 4" dot={false} connectNulls={false} />
+                  {histStartLabel && chartEndLabel && (
+                    <ReferenceArea x1={histStartLabel} x2={chartEndLabel} fill="#ede9fe" fillOpacity={0.3} />
                   )}
-                  {/* Farm weather: outside */}
-                  <Line type="monotone" dataKey="outsideGdh" name="Pogoda zewn."
-                    stroke="#3b82f6" strokeWidth={1.5} dot={false} connectNulls={false} />
-                  {/* Farm weather: tunnel estimate */}
-                  <Line type="monotone" dataKey="tunnelGdh" name={`Pogoda tunel (+${tunnelOffset}°C)`}
-                    stroke="#22c55e" strokeWidth={1.5} dot={false} connectNulls={false} />
-                  {/* Weather predictions */}
-                  <Line type="monotone" dataKey="outsidePredGdh" name="Pred. zewn."
-                    stroke="#93c5fd" strokeWidth={1.5} strokeDasharray="8 4" dot={false} connectNulls={false} />
-                  <Line type="monotone" dataKey="tunnelPredGdh" name="Pred. tunel"
-                    stroke="#86efac" strokeWidth={1.5} strokeDasharray="8 4" dot={false} connectNulls={false} />
+
+                  {/* Zone 1: Real data - solid green */}
+                  <Line type="monotone" dataKey="realGdh" name="GDH realne"
+                    stroke="#059669" strokeWidth={3} dot={false} connectNulls={false} />
+
+                  {/* Zone 2: Meteo forecast - dashed blue */}
+                  <Line type="monotone" dataKey="meteoGdh" name="Prognoza meteo (16d)"
+                    stroke="#3b82f6" strokeWidth={2.5} strokeDasharray="8 4" dot={false} connectNulls={false} />
+
+                  {/* Zone 3: Historical prediction - dashed purple */}
+                  <Line type="monotone" dataKey="histGdh" name="Prognoza historyczna"
+                    stroke="#8b5cf6" strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls={false} />
+
                   {/* Threshold reference lines */}
                   {refLines.map((rl, i) => (
-                    <ReferenceLine key={i} y={rl.y} stroke={rl.color} strokeDasharray="6 3"
-                      label={{ value: rl.label, fill: rl.color, fontSize: 11, position: 'right' }} />
+                    <ReferenceLine key={i} y={rl.y} stroke={rl.color} strokeDasharray="6 3" strokeWidth={2}
+                      label={{ value: `${rl.label} (${rl.y.toLocaleString('pl-PL')} GDH)`, fill: rl.color, fontSize: 11, position: 'right' }} />
                   ))}
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
-        ) : (
+        ) : selectedSection ? (
           <div className="h-40 flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border-2 border-dashed">
             <div className="text-center">
               <Thermometer className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-              <p className="text-sm">Brak danych. Wgraj CSV z temperaturami lub pobierz dane pogodowe w Ustawieniach.</p>
+              <p className="text-sm">Brak odczytów temperatury dla tej sekcji. Wgraj CSV z danymi Testo.</p>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Progress bars for selected section */}
-        {selectedSection && sectionProgress && (sectionProgress.flower || sectionProgress.fruit) && (
+        {/* Progress bars */}
+        {selectedSection && predictions && (predictions.flower || predictions.fruit) && (
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
               <Target className="w-4 h-4 text-green-600" />
               Prognoza — {selectedSection.blockName} / {selectedSection.name} ({selectedSection.varietyName})
             </h3>
 
-            {sectionProgress.flower && (
+            {predictions.flower && selectedSection.flowerThreshold && (
               <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-amber-800">Kwitnienie</span>
                   <div className="flex items-center gap-3">
                     <span className="text-xs bg-amber-200 text-amber-700 px-2 py-0.5 rounded-full">
-                      {selectedSection.flowerThreshold?.toLocaleString('pl-PL')} GDH
+                      {selectedSection.flowerThreshold.toLocaleString('pl-PL')} GDH
                     </span>
-                    <span className="text-sm font-bold text-amber-700">{sectionProgress.flower.date}</span>
+                    <span className={`text-sm font-bold ${
+                      predictions.flower.zone === 'real' ? 'text-emerald-700' :
+                      predictions.flower.zone === 'meteo' ? 'text-blue-700' :
+                      predictions.flower.zone === 'historical' ? 'text-purple-700' : 'text-gray-500'
+                    }`}>
+                      {predictions.flower.date}
+                    </span>
+                    {predictions.flower.zone !== 'unknown' && predictions.flower.zone !== 'real' && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        predictions.flower.zone === 'meteo' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
+                      }`}>
+                        {predictions.flower.zone === 'meteo' ? 'z prognozy meteo' : 'z danych historycznych'}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-5 bg-amber-100 rounded-full overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-amber-400 to-amber-500 rounded-full transition-all duration-500"
-                      style={{ width: `${sectionProgress.flower.progress}%` }} />
+                      style={{ width: `${predictions.flower.progress}%` }} />
                   </div>
-                  <span className="text-sm font-bold text-amber-700 w-14 text-right">{sectionProgress.flower.progress.toFixed(0)}%</span>
+                  <span className="text-sm font-bold text-amber-700 w-14 text-right">{predictions.flower.progress}%</span>
                 </div>
               </div>
             )}
 
-            {sectionProgress.fruit && (
+            {predictions.fruit && selectedSection.fruitThreshold && (
               <div className="bg-red-50 rounded-lg p-4 border border-red-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-red-800">Owocowanie (pierwszy zbiór)</span>
                   <div className="flex items-center gap-3">
                     <span className="text-xs bg-red-200 text-red-700 px-2 py-0.5 rounded-full">
-                      {selectedSection.fruitThreshold?.toLocaleString('pl-PL')} GDH
+                      {selectedSection.fruitThreshold.toLocaleString('pl-PL')} GDH
                     </span>
-                    <span className="text-sm font-bold text-red-700">{sectionProgress.fruit.date}</span>
+                    <span className={`text-sm font-bold ${
+                      predictions.fruit.zone === 'real' ? 'text-emerald-700' :
+                      predictions.fruit.zone === 'meteo' ? 'text-blue-700' :
+                      predictions.fruit.zone === 'historical' ? 'text-purple-700' : 'text-gray-500'
+                    }`}>
+                      {predictions.fruit.date}
+                    </span>
+                    {predictions.fruit.zone !== 'unknown' && predictions.fruit.zone !== 'real' && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        predictions.fruit.zone === 'meteo' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
+                      }`}>
+                        {predictions.fruit.zone === 'meteo' ? 'z prognozy meteo' : 'z danych historycznych'}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-5 bg-red-100 rounded-full overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-red-400 to-red-500 rounded-full transition-all duration-500"
-                      style={{ width: `${sectionProgress.fruit.progress}%` }} />
+                      style={{ width: `${predictions.fruit.progress}%` }} />
                   </div>
-                  <span className="text-sm font-bold text-red-700 w-14 text-right">{sectionProgress.fruit.progress.toFixed(0)}%</span>
+                  <span className="text-sm font-bold text-red-700 w-14 text-right">{predictions.fruit.progress}%</span>
                 </div>
               </div>
             )}
 
-            {!sectionProgress.flower && !sectionProgress.fruit && (
+            {!selectedSection.flowerThreshold && !selectedSection.fruitThreshold && (
               <p className="text-sm text-gray-400 text-center py-2">
                 Brak progów GDH dla tej odmiany. Ustaw progi w zakładce Odmiany.
               </p>
@@ -513,7 +513,7 @@ export default function GDHModule() {
           </div>
         )}
 
-        {/* Overview table of all sections with data */}
+        {/* Overview table */}
         {sectionsWithData.length > 0 && (
           <div>
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Podsumowanie sekcji z danymi</h3>
@@ -574,6 +574,13 @@ export default function GDHModule() {
         {!selectedSection && (
           <div className="text-center py-4 text-gray-400 bg-gray-50 rounded-lg border border-dashed">
             <p className="text-sm">Wybierz sekcję z listy, aby zobaczyć szczegóły GDH i prognozę</p>
+          </div>
+        )}
+
+        {/* No forecast data warning */}
+        {!forecast && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-700">
+            Brak danych do prognozy. Upewnij się, że w Ustawieniach podano współrzędne farmy (szerokość/długość geograficzną) i pobrano dane historyczne pogody.
           </div>
         )}
       </CardContent>

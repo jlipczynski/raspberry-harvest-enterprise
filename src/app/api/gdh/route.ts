@@ -52,8 +52,13 @@ function percentile(values: number[], p: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo)
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url)
+    const offsetModeParam = searchParams.get('offsetMode') || 'dynamic'
+    const staticOffsetParam = parseFloat(searchParams.get('staticOffset') || '4')
+    const useStaticOffset = offsetModeParam === 'static'
+
     const tenantId = await requireTenantId()
     const farm = await prisma.farm.findFirst({
       where: { tenantId },
@@ -190,17 +195,17 @@ export async function GET() {
           }
         }
 
-        // Apply tunnel inertia with DYNAMIC offset (radiation-based)
+        // Apply tunnel inertia with chosen offset mode
         const meteoDailyMap = new Map<string, number[]>()
-        const firstOffset = meteoHourly.length > 0
-          ? calculateDynamicOffset(meteoHourly[0].isDay, meteoHourly[0].radiation)
-          : 0
+        const firstOffset = useStaticOffset
+          ? staticOffsetParam
+          : (meteoHourly.length > 0 ? calculateDynamicOffset(meteoHourly[0].isDay, meteoHourly[0].radiation) : 0)
         let prevTunnelMeteo = meteoHourly.length > 0 ? meteoHourly[0].temp + firstOffset : 10
         const meteoTunnelHourly: number[] = []
 
         for (const h of meteoHourly) {
-          const dynamicOffset = calculateDynamicOffset(h.isDay, h.radiation)
-          prevTunnelMeteo = tunnelTemp(h.temp, prevTunnelMeteo, TUNNEL_ALPHA, dynamicOffset)
+          const offset = useStaticOffset ? staticOffsetParam : calculateDynamicOffset(h.isDay, h.radiation)
+          prevTunnelMeteo = tunnelTemp(h.temp, prevTunnelMeteo, TUNNEL_ALPHA, offset)
           meteoTunnelHourly.push(prevTunnelMeteo)
 
           const day = h.time.slice(0, 10)
@@ -262,17 +267,20 @@ export async function GET() {
           const t50 = percentile(temps, 50)
           const t90 = percentile(temps, 90)
 
-          // Estimate average daily offset for scenarios (blend of day/night)
-          // Day length varies ~8h (winter) to ~16h (summer) in Poland
-          const month0 = d.getMonth() // 0-11
-          const dayHours = [8, 9, 11, 13, 15, 16, 16, 15, 13, 11, 9, 8][month0]
-          // Avg radiation: ~100 W/m² (winter) to ~400 W/m² (summer avg over day hours)
-          const avgRadiation = [100, 150, 220, 300, 380, 400, 400, 350, 280, 180, 110, 80][month0]
-          const dayOffset = calculateDynamicOffset(1, avgRadiation)
-          // Weighted: (dayHours * dayOffset + nightHours * 0) / 24
-          const avgDailyOffset = (dayHours * dayOffset) / 24
+          // Offset for scenario projection
+          let avgDailyOffset: number
+          if (useStaticOffset) {
+            avgDailyOffset = staticOffsetParam
+          } else {
+            // Estimate average daily offset (blend of day/night based on month)
+            const month0 = d.getMonth() // 0-11
+            const dayHours = [8, 9, 11, 13, 15, 16, 16, 15, 13, 11, 9, 8][month0]
+            const avgRadiation = [100, 150, 220, 300, 380, 400, 400, 350, 280, 180, 110, 80][month0]
+            const dayOffset = calculateDynamicOffset(1, avgRadiation)
+            avgDailyOffset = (dayHours * dayOffset) / 24
+          }
 
-          // Apply tunnel inertia to each scenario with estimated offset
+          // Apply tunnel inertia to each scenario
           tunnelP10 = tunnelTemp(t10, tunnelP10, TUNNEL_ALPHA, avgDailyOffset)
           tunnelP50 = tunnelTemp(t50, tunnelP50, TUNNEL_ALPHA, avgDailyOffset)
           tunnelP90 = tunnelTemp(t90, tunnelP90, TUNNEL_ALPHA, avgDailyOffset)
@@ -367,7 +375,13 @@ export async function GET() {
           },
           seasonalAnomaly,
           lastForecastDate: lastForecastDate.toISOString().slice(0, 10),
-          tunnelModel: { alpha: TUNNEL_ALPHA, offsetModel: 'dynamic', maxOffset: MAX_OFFSET, radiationK: RADIATION_K },
+          tunnelModel: {
+            alpha: TUNNEL_ALPHA,
+            offsetModel: useStaticOffset ? 'static' : 'dynamic',
+            staticOffset: useStaticOffset ? staticOffsetParam : null,
+            maxOffset: MAX_OFFSET,
+            radiationK: RADIATION_K,
+          },
           historicalYears,
         }
       } catch (e) {

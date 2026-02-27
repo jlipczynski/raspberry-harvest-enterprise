@@ -47,7 +47,7 @@ interface ApiResponse {
     scenarios: { p10: ForecastDay[]; p50: ForecastDay[]; p90: ForecastDay[]; best: ForecastDay[] }
     seasonalAnomaly: SeasonalAnomaly | null
     lastForecastDate: string
-    tunnelModel: { alpha: number; offsetModel: string; maxOffset: number; radiationK: number }
+    tunnelModel: { alpha: number; offsetModel: string; staticOffset: number | null; maxOffset: number; radiationK: number }
     historicalYears: number
   } | null
   gdhParams: { baseTemp: number; upperTemp: number }
@@ -79,17 +79,26 @@ interface ScenarioPrediction {
 export default function GDHModule() {
   const [data, setData] = useState<ApiResponse | null>(null)
   const [selectedSectionId, setSelectedSectionId] = useState('')
-  const [maxOffset] = useState(15)
   const [loading, setLoading] = useState(true)
   const [showMethodology, setShowMethodology] = useState(false)
+  const [visibleLines, setVisibleLines] = useState<Record<string, boolean>>({
+    realGdh: true, meteoGdh: true, bestGdh: true, p90Gdh: true, p50Gdh: true, p10Gdh: true,
+  })
+  const [offsetMode, setOffsetMode] = useState<'dynamic' | 'static'>('dynamic')
+  const [staticOffset, setStaticOffset] = useState(4)
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const res = await fetch('/api/gdh')
+        setLoading(true)
+        const params = new URLSearchParams()
+        if (offsetMode === 'static') {
+          params.set('offsetMode', 'static')
+          params.set('staticOffset', String(staticOffset))
+        }
+        const res = await fetch(`/api/gdh?${params.toString()}`)
         const json = await res.json()
         setData(json)
-        // tunnelModel now uses dynamic offset (radiation-based)
       } catch (e) {
         console.error('Error fetching GDH data:', e)
       } finally {
@@ -97,7 +106,7 @@ export default function GDHModule() {
       }
     }
     fetchData()
-  }, [])
+  }, [offsetMode, staticOffset])
 
   const sections = data?.sections || []
   const forecast = data?.forecast
@@ -115,6 +124,20 @@ export default function GDHModule() {
     // If section has a planting date (non-wintered), skip all forecast days before it
     const gdhStartDate = selectedSection.gdhStartDate || ''
 
+    // For sections with future planting date: add empty points from today to gdhStartDate
+    // so the X axis starts from today, but curves only begin at planting date
+    const todayStr = new Date().toISOString().slice(0, 10)
+    if (gdhStartDate && gdhStartDate > todayStr && selectedSection.dailyGdh.length === 0) {
+      // Add weekly empty ticks from today until planting date
+      const cursor = new Date(todayStr)
+      const plantDate = new Date(gdhStartDate)
+      while (cursor < plantDate) {
+        const key = cursor.toISOString().slice(0, 10)
+        points.push({ date: key, dateLabel: toLabel(key), realGdh: null, meteoGdh: null, p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
+        cursor.setDate(cursor.getDate() + 7) // weekly ticks
+      }
+    }
+
     // Zone 1: Real data from CSV readings
     let lastCumGdh = 0
     for (const d of selectedSection.dailyGdh) {
@@ -130,8 +153,9 @@ export default function GDHModule() {
     const lastRealDate = points.length > 0 ? points[points.length - 1].date : ''
 
     // Bridge: last real point also starts meteo
-    if (points.length > 0) {
-      points[points.length - 1].meteoGdh = lastCumGdh
+    const lastNonEmptyPoint = [...points].reverse().find(p => p.realGdh !== null)
+    if (lastNonEmptyPoint) {
+      lastNonEmptyPoint.meteoGdh = lastCumGdh
     }
 
     for (const day of forecast.meteoDays) {
@@ -151,6 +175,9 @@ export default function GDHModule() {
       lastMeteoPoint.p50Gdh = lastMeteoGdh
       lastMeteoPoint.p90Gdh = lastMeteoGdh
       lastMeteoPoint.bestGdh = lastMeteoGdh
+    } else if (gdhStartDate) {
+      // No meteo data before planting — add a zero-point at planting date as scenario start
+      points.push({ date: gdhStartDate, dateLabel: toLabel(gdhStartDate), realGdh: null, meteoGdh: null, p10Gdh: 0, p50Gdh: 0, p90Gdh: 0, bestGdh: 0 })
     } else if (points.length > 0) {
       points[points.length - 1].p10Gdh = lastCumGdh
       points[points.length - 1].p50Gdh = lastCumGdh
@@ -428,21 +455,36 @@ export default function GDHModule() {
               </div>
 
               <div>
-                <p className="font-semibold text-gray-800 mb-1">3. Dynamiczny model inercji tunelu</p>
+                <p className="font-semibold text-gray-800 mb-1">3. Model inercji tunelu (2 tryby)</p>
                 <p className="font-mono bg-gray-50 px-2 py-1 rounded mt-1">
-                  T_tunel(t) = &alpha; &times; (T_zewn + offset_dynamiczny) + (1-&alpha;) &times; T_tunel(t-1)
+                  T_tunel(t) = &alpha; &times; (T_zewn + offset) + (1-&alpha;) &times; T_tunel(t-1)
                 </p>
                 <ul className="mt-1 ml-4 list-disc text-gray-600">
                   <li><strong>&alpha; = 0.3</strong> — tunel reaguje powoli (inercja cieplna folii i gleby)</li>
-                  <li><strong>offset_dynamiczny = 0°C do +{maxOffset}°C</strong> — efekt szklarniowy obliczany <strong>co godzinę</strong> na podstawie promieniowania słonecznego (W/m&sup2;) z Open-Meteo</li>
-                  <li>W nocy i przy pełnym zachmurzeniu: offset &asymp; 0°C (brak nagrzewania)</li>
-                  <li>W bezchmurne letnie południe (~800 W/m&sup2;): offset do +{maxOffset}°C</li>
                 </ul>
+                <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-2">
+                    <p className="font-semibold text-green-800 text-[11px] mb-1">Tryb dynamiczny (zalecane)</p>
+                    <ul className="list-disc ml-3 text-gray-600 space-y-0.5">
+                      <li>offset = 0–15°C na podstawie promieniowania słonecznego (W/m&sup2;)</li>
+                      <li>Noc / zachmurzenie: offset &asymp; 0°C</li>
+                      <li>Słoneczne południe (~800 W/m&sup2;): offset do +15°C</li>
+                      <li>Wzór: <span className="font-mono text-[10px]">min(15, promieniowanie &times; 15/800)</span></li>
+                    </ul>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-2">
+                    <p className="font-semibold text-amber-800 text-[11px] mb-1">Tryb stały (suwak)</p>
+                    <ul className="list-disc ml-3 text-gray-600 space-y-0.5">
+                      <li>Stały offset (np. +4°C) przez cały dzień i noc</li>
+                      <li>Prostszy model, przydatny do porównań</li>
+                      <li>Suwak: 0°C do 15°C w krokach co 0.5°C</li>
+                    </ul>
+                  </div>
+                </div>
                 <p className="mt-1.5 text-gray-600">
-                  <strong>Przykład:</strong> Słoneczny poranek, na zewnątrz 10°C, promieniowanie 270 W/m&sup2; (offset +5°C), tunel godzinę temu miał 8°C:<br />
+                  <strong>Przykład (dynamiczny):</strong> Na zewnątrz 10°C, promieniowanie 270 W/m&sup2; (offset +5°C), tunel wcześniej 8°C:<br />
                   <span className="font-mono bg-gray-50 px-1 rounded">0.3 &times; (10 + 5) + 0.7 &times; 8 = <strong>10.1°C</strong></span>
                 </p>
-                <p className="mt-1 text-gray-500 italic">Wzór: offset = min({maxOffset}, promieniowanie &times; {maxOffset}/800)</p>
               </div>
 
               <div>
@@ -499,17 +541,65 @@ export default function GDHModule() {
               )}
             </select>
           </div>
-          <div className="w-72">
+          <div className="w-80">
             <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
               <Thermometer className="w-4 h-4 text-green-600" />
-              Efekt szklarniowy
+              Efekt szklarniowy (offset tunelu)
             </label>
-            <div className="flex items-center gap-2 bg-green-50 rounded-lg px-3 py-2 border border-green-200">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-sm font-medium text-green-800">Dynamiczny (Słońce/Chmury)</span>
-              <span className="ml-auto text-xs text-green-600">0–{maxOffset}°C</span>
+            <div className="flex items-center gap-1 mb-2">
+              <button
+                onClick={() => setOffsetMode('dynamic')}
+                className={`flex-1 text-xs py-1.5 px-2 rounded-l-lg border transition-colors ${
+                  offsetMode === 'dynamic'
+                    ? 'bg-green-100 border-green-400 text-green-800 font-semibold'
+                    : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                Dynamiczny (zalecane)
+              </button>
+              <button
+                onClick={() => setOffsetMode('static')}
+                className={`flex-1 text-xs py-1.5 px-2 rounded-r-lg border transition-colors ${
+                  offsetMode === 'static'
+                    ? 'bg-amber-100 border-amber-400 text-amber-800 font-semibold'
+                    : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                Stały offset
+              </button>
             </div>
-            <p className="text-[10px] text-gray-400 mt-1">Offset obliczany co godzinę z promieniowania słonecznego (Open-Meteo)</p>
+            {offsetMode === 'dynamic' ? (
+              <div className="flex items-center gap-2 bg-green-50 rounded-lg px-3 py-2 border border-green-200">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-xs font-medium text-green-800">Promieniowanie słoneczne</span>
+                <span className="ml-auto text-xs text-green-600">0–15°C</span>
+              </div>
+            ) : (
+              <div className="bg-amber-50 rounded-lg px-3 py-2 border border-amber-200">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-amber-800">Stały offset</span>
+                  <span className="text-sm font-bold text-amber-700">+{staticOffset}°C</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={15}
+                  step={0.5}
+                  value={staticOffset}
+                  onChange={e => setStaticOffset(Number(e.target.value))}
+                  className="w-full h-2 bg-amber-200 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                />
+                <div className="flex justify-between text-[9px] text-amber-400 mt-0.5">
+                  <span>0°C</span>
+                  <span>15°C</span>
+                </div>
+              </div>
+            )}
+            <p className="text-[10px] text-gray-400 mt-1">
+              {offsetMode === 'dynamic'
+                ? 'Offset obliczany co godzinę na podstawie promieniowania słonecznego (Open-Meteo)'
+                : `Tunel jest stale cieplejszy o +${staticOffset}°C od temperatury zewnętrznej`}
+            </p>
           </div>
         </div>
 
@@ -554,35 +644,31 @@ export default function GDHModule() {
           </div>
         )}
 
-        {/* ── Chart legend ── */}
+        {/* ── Chart legend (clickable toggle) ── */}
         {selectedSection && chartData.length > 0 && (
-          <div className="flex flex-wrap gap-3 text-xs">
-            <div className="flex items-center gap-1.5">
-              <div className="w-6 h-0.5 bg-emerald-600 rounded" />
-              <span className="text-gray-600">Dane realne</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <CloudSun className="w-3 h-3 text-blue-500" />
-              <span className="text-gray-600">Meteo 16d</span>
-            </div>
-            {forecast?.seasonalAnomaly && (
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-rose-500" />
-                <span className="text-gray-600 font-medium">2026 ECMWF</span>
-              </div>
-            )}
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-orange-400" />
-              <span className="text-gray-600">P90 ciepły</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-purple-500" />
-              <span className="text-gray-600">P50 typowy</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-sky-500" />
-              <span className="text-gray-600">P10 zimny</span>
-            </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            {[
+              { key: 'realGdh', label: 'Dane realne', color: 'bg-emerald-600', icon: null as React.ReactNode },
+              { key: 'meteoGdh', label: 'Meteo 16d', color: 'bg-blue-500', icon: <CloudSun className="w-3 h-3" /> },
+              ...(forecast?.seasonalAnomaly ? [{ key: 'bestGdh', label: '2026 ECMWF', color: 'bg-rose-500', icon: null as React.ReactNode }] : []),
+              { key: 'p90Gdh', label: 'P90 ciepły', color: 'bg-orange-400', icon: null as React.ReactNode },
+              { key: 'p50Gdh', label: 'P50 typowy', color: 'bg-purple-500', icon: null as React.ReactNode },
+              { key: 'p10Gdh', label: 'P10 zimny', color: 'bg-sky-500', icon: null as React.ReactNode },
+            ].map(item => (
+              <button
+                key={item.key}
+                onClick={() => setVisibleLines(prev => ({ ...prev, [item.key]: !prev[item.key] }))}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all cursor-pointer select-none ${
+                  visibleLines[item.key]
+                    ? 'border-gray-300 bg-white hover:bg-gray-50 shadow-sm'
+                    : 'border-gray-200 bg-gray-100 opacity-40 hover:opacity-60'
+                }`}
+                title={visibleLines[item.key] ? `Kliknij aby ukryć: ${item.label}` : `Kliknij aby pokazać: ${item.label}`}
+              >
+                {item.icon || <div className={`w-2.5 h-2.5 rounded-full ${item.color}`} />}
+                <span className={visibleLines[item.key] ? 'text-gray-700' : 'text-gray-400 line-through'}>{item.label}</span>
+              </button>
+            ))}
           </div>
         )}
 
@@ -621,19 +707,18 @@ export default function GDHModule() {
                     <ReferenceArea x1={scenarioZoneStart} x2={chartEnd} fill="#ede9fe" fillOpacity={0.15} label={{ value: 'Klimatologia', fontSize: 9, fill: '#c4b5fd' }} />
                   )}
 
-                  {/* Lines */}
-                  <Line type="monotone" dataKey="realGdh" name="GDH realne" stroke="#059669" strokeWidth={3} dot={false} connectNulls={false} />
-                  <Line type="monotone" dataKey="meteoGdh" name="Meteo 16d" stroke="#3b82f6" strokeWidth={2.5} strokeDasharray="8 4" dot={false} connectNulls={false} />
-                  {/* Best estimate from ECMWF seasonal anomaly */}
-                  <Line type="monotone" dataKey="bestGdh" name="2026 ECMWF" stroke="#e11d48" strokeWidth={2.5} strokeDasharray="10 3" dot={false} connectNulls={false} />
-                  <Line type="monotone" dataKey="p90Gdh" name="P90 ciepły" stroke="#f97316" strokeWidth={1.5} strokeDasharray="6 3" dot={false} connectNulls={false} />
-                  <Line type="monotone" dataKey="p50Gdh" name="P50 typowy" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls={false} />
-                  <Line type="monotone" dataKey="p10Gdh" name="P10 zimny" stroke="#0ea5e9" strokeWidth={1.5} strokeDasharray="6 3" dot={false} connectNulls={false} />
+                  {/* Lines — visibility controlled by clickable legend */}
+                  <Line type="monotone" dataKey="realGdh" name="GDH realne" stroke={visibleLines.realGdh ? '#059669' : 'transparent'} strokeWidth={3} dot={false} connectNulls={false} />
+                  <Line type="monotone" dataKey="meteoGdh" name="Meteo 16d" stroke={visibleLines.meteoGdh ? '#3b82f6' : 'transparent'} strokeWidth={2.5} strokeDasharray="8 4" dot={false} connectNulls={false} />
+                  <Line type="monotone" dataKey="bestGdh" name="2026 ECMWF" stroke={visibleLines.bestGdh ? '#e11d48' : 'transparent'} strokeWidth={2.5} strokeDasharray="10 3" dot={false} connectNulls={false} />
+                  <Line type="monotone" dataKey="p90Gdh" name="P90 ciepły" stroke={visibleLines.p90Gdh ? '#f97316' : 'transparent'} strokeWidth={1.5} strokeDasharray="6 3" dot={false} connectNulls={false} />
+                  <Line type="monotone" dataKey="p50Gdh" name="P50 typowy" stroke={visibleLines.p50Gdh ? '#8b5cf6' : 'transparent'} strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls={false} />
+                  <Line type="monotone" dataKey="p10Gdh" name="P10 zimny" stroke={visibleLines.p10Gdh ? '#0ea5e9' : 'transparent'} strokeWidth={1.5} strokeDasharray="6 3" dot={false} connectNulls={false} />
 
                   {/* Planting date vertical reference line */}
                   {plantingDateLabel && (
-                    <ReferenceLine x={plantingDateLabel} stroke="#16a34a" strokeWidth={2} strokeDasharray="4 4"
-                      label={{ value: `Wysadzenie ${new Date(selectedSection!.gdhStartDate!).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })}`, fill: '#16a34a', fontSize: 11, position: 'top' }} />
+                    <ReferenceLine x={plantingDateLabel} stroke="#16a34a" strokeWidth={2.5} strokeDasharray="6 3"
+                      label={{ value: `Wysadzenie ${new Date(selectedSection!.gdhStartDate!).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })}`, fill: '#16a34a', fontSize: 12, fontWeight: 600, position: 'insideTopRight' }} />
                   )}
 
                   {/* Threshold reference lines */}

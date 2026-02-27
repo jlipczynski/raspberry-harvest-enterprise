@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp, Upload, FileText, Thermometer, Loader2, TrendingUp } from 'lucide-react'
 import GDHModule from './gdh-module'
+import GDHMatrix from './gdh-matrix'
 
 interface Variety { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number }
 interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; plantingYear?: number; productionYear?: number; plantMaterialType?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string; _tempCount?: number }
@@ -212,6 +213,13 @@ export default function PlantationPage() {
           </div>
         )}
       </div>
+
+      {/* GDH Matrix - plantation overview */}
+      {showGDH && (
+        <div className="mt-3">
+          <GDHMatrix />
+        </div>
+      )}
 
       {/* PDF Drag & Drop Zone */}
       <div

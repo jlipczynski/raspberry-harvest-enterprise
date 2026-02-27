@@ -73,16 +73,34 @@ export async function GET() {
       allSections.map(async (section) => {
         const v = section.variety
 
-        const dailyAgg: DailyAgg[] = await prisma.$queryRaw`
-          SELECT
-            DATE("timestamp") as date,
-            COUNT(*)::int as cnt,
-            COALESCE(SUM(GREATEST(0, LEAST("temperature", ${GDH_UPPER_TEMP}) - ${GDH_BASE_TEMP})), 0)::float as sum_gdh
-          FROM temperature_readings
-          WHERE "sectionId" = ${section.id}
-          GROUP BY DATE("timestamp")
-          ORDER BY date
-        `
+        // If NOT wintered and has plantingDate → only count GDH from that date
+        // (logger runs before planting but tunnel is empty, readings don't count)
+        const gdhStartDate = (!section.winteredInTunnel && section.plantingDate)
+          ? new Date(section.plantingDate)
+          : null
+
+        const dailyAgg: DailyAgg[] = gdhStartDate
+          ? await prisma.$queryRaw`
+              SELECT
+                DATE("timestamp") as date,
+                COUNT(*)::int as cnt,
+                COALESCE(SUM(GREATEST(0, LEAST("temperature", ${GDH_UPPER_TEMP}) - ${GDH_BASE_TEMP})), 0)::float as sum_gdh
+              FROM temperature_readings
+              WHERE "sectionId" = ${section.id}
+                AND "timestamp" >= ${gdhStartDate}
+              GROUP BY DATE("timestamp")
+              ORDER BY date
+            `
+          : await prisma.$queryRaw`
+              SELECT
+                DATE("timestamp") as date,
+                COUNT(*)::int as cnt,
+                COALESCE(SUM(GREATEST(0, LEAST("temperature", ${GDH_UPPER_TEMP}) - ${GDH_BASE_TEMP})), 0)::float as sum_gdh
+              FROM temperature_readings
+              WHERE "sectionId" = ${section.id}
+              GROUP BY DATE("timestamp")
+              ORDER BY date
+            `
 
         let cumulative = 0
         const dailyGdh = dailyAgg.map(d => {
@@ -123,6 +141,7 @@ export async function GET() {
           varietyName: v?.name || 'Nieznana',
           winteredInTunnel: section.winteredInTunnel,
           plantingDate: section.plantingDate,
+          gdhStartDate: gdhStartDate?.toISOString().slice(0, 10) ?? null,
           plantMaterialType: section.plantMaterialType,
           flowerThreshold,
           fruitThreshold,

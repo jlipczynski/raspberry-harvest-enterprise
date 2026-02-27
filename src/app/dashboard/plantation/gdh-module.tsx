@@ -6,7 +6,8 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, ReferenceArea
 } from 'recharts'
-import { TrendingUp, Thermometer, Target, Loader2, CloudSun, CalendarDays, Info, ChevronDown, ChevronUp } from 'lucide-react'
+import { TrendingUp, Thermometer, Target, Loader2, CloudSun, CalendarDays, Info, ChevronDown, ChevronUp, FileDown } from 'lucide-react'
+import { generateGdhReport } from './gdh-report-pdf'
 
 // ── Types ──
 
@@ -18,6 +19,7 @@ interface SectionGdh {
   varietyName: string
   winteredInTunnel: boolean
   plantingDate: string | null
+  gdhStartDate: string | null
   plantMaterialType: string | null
   flowerThreshold: number | null
   fruitThreshold: number | null
@@ -333,6 +335,16 @@ export default function GDHModule() {
         <CardTitle className="flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-green-600" />
           GDH — Godziny Wzrostu (Growing Degree Hours)
+          {data && sectionsWithData.length > 0 && (
+            <button
+              onClick={() => generateGdhReport(sections, forecast ?? null, data.gdhParams)}
+              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-white border border-green-300 rounded-lg hover:bg-green-50 hover:border-green-400 transition-colors shadow-sm"
+              title="Pobierz raport PDF"
+            >
+              <FileDown className="w-3.5 h-3.5" />
+              Raport PDF
+            </button>
+          )}
         </CardTitle>
         <p className="text-sm text-gray-500">
           T_baz = {data?.gdhParams?.baseTemp ?? 4.5}°C, T_opt = {data?.gdhParams?.upperTemp ?? 26}°C
@@ -494,6 +506,12 @@ export default function GDHModule() {
                    selectedSection.plantMaterialType === 'LONGCANE' ? 'Long canes' : 'Sezon jesienny'}
                 </p>
               </div>
+              {selectedSection.gdhStartDate && (
+                <div>
+                  <p className="text-xs text-green-600">GDH od (wysadzenie)</p>
+                  <p className="font-medium text-green-800">{new Date(selectedSection.gdhStartDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-green-600">Pomiary</p>
                 <p className="font-medium text-green-800">{selectedSection.totalReadings.toLocaleString('pl-PL')}</p>

@@ -112,6 +112,9 @@ export default function GDHModule() {
     const toLabel = (d: string) => new Date(d).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })
     const toKey = (d: string | Date) => typeof d === 'string' ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10)
 
+    // If section has a planting date (non-wintered), skip all forecast days before it
+    const gdhStartDate = selectedSection.gdhStartDate || ''
+
     // Zone 1: Real data from CSV readings
     let lastCumGdh = 0
     for (const d of selectedSection.dailyGdh) {
@@ -133,6 +136,7 @@ export default function GDHModule() {
 
     for (const day of forecast.meteoDays) {
       if (day.date <= lastRealDate) continue
+      if (gdhStartDate && day.date < gdhStartDate) continue // skip before planting
       cumMeteo += day.gdhTunnel
       points.push({ date: day.date, dateLabel: toLabel(day.date), realGdh: null, meteoGdh: Math.round(cumMeteo), p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
     }
@@ -168,6 +172,7 @@ export default function GDHModule() {
       const dBest = bestData[i]
       const date = dp50?.date || dp10?.date || dp90?.date || dBest?.date
       if (!date) continue
+      if (gdhStartDate && date < gdhStartDate) continue // skip before planting
 
       cumP10 += dp10?.gdhTunnel ?? 0
       cumP50 += dp50?.gdhTunnel ?? 0

@@ -11,6 +11,7 @@ interface SectionGdh {
   varietyName: string
   winteredInTunnel: boolean
   plantMaterialType: string | null
+  gdhStartDate: string | null
   flowerThreshold: number | null
   fruitThreshold: number | null
   dailyGdh: Array<{ date: string; cumulativeGdh: number }>
@@ -80,6 +81,7 @@ export default function GDHMatrix() {
     // Build cumulative GDH timeline for each section (daily resolution)
     const sectionTimelines = sections.map(section => {
       const dailyGdh = new Map<string, number>()
+      const gdhStartDate = section.gdhStartDate || ''
 
       // Real data
       let lastRealGdh = 0
@@ -97,6 +99,7 @@ export default function GDHMatrix() {
       let cumGdh = lastRealGdh
       for (const day of forecast.meteoDays) {
         if (day.date <= lastRealDate) continue
+        if (gdhStartDate && day.date < gdhStartDate) continue // skip before planting
         cumGdh += day.gdhTunnel
         dailyGdh.set(day.date, Math.round(cumGdh))
       }
@@ -104,6 +107,7 @@ export default function GDHMatrix() {
       // Selected scenario
       const scenarioData = forecast.scenarios[scenario]
       for (const day of scenarioData) {
+        if (gdhStartDate && day.date < gdhStartDate) continue // skip before planting
         cumGdh += day.gdhTunnel
         dailyGdh.set(day.date, Math.round(cumGdh))
       }

@@ -240,13 +240,85 @@ export async function GET() {
           scenarioP90.push({ date: dateStr, gdhTunnel: Math.round(gdhP90 * 10) / 10 })
         }
 
+        // === 4. ECMWF Seasonal Forecast — anomaly-based best estimate ===
+        let seasonalAnomaly: { months: Array<{ month: string; anomaly: number }>; avgAnomaly: number; verdict: string } | null = null
+        const scenarioBest: Array<{ date: string; gdhTunnel: number }> = []
+
+        try {
+          const seasonalUrl = `https://seasonal-api.open-meteo.com/v1/seasonal?latitude=${lat}&longitude=${lon}&monthly=temperature_2m_anomaly`
+          const seasonalRes = await fetch(seasonalUrl)
+          if (seasonalRes.ok) {
+            const seasonalData = await seasonalRes.json()
+            if (seasonalData.monthly?.time && seasonalData.monthly?.temperature_2m_anomaly) {
+              const months = seasonalData.monthly.time.map((t: string, i: number) => ({
+                month: t,
+                anomaly: seasonalData.monthly.temperature_2m_anomaly[i] ?? 0
+              }))
+
+              const validAnomalies = months.filter((m: { anomaly: number }) => m.anomaly !== null && !isNaN(m.anomaly))
+              const avgAnomaly = validAnomalies.length > 0
+                ? validAnomalies.reduce((s: number, m: { anomaly: number }) => s + m.anomaly, 0) / validAnomalies.length
+                : 0
+
+              // Determine verdict
+              let verdict = 'typowy'
+              if (avgAnomaly > 1.0) verdict = 'wyraźnie cieplejszy'
+              else if (avgAnomaly > 0.5) verdict = 'cieplejszy'
+              else if (avgAnomaly > 0.2) verdict = 'nieco cieplejszy'
+              else if (avgAnomaly < -1.0) verdict = 'wyraźnie chłodniejszy'
+              else if (avgAnomaly < -0.5) verdict = 'chłodniejszy'
+              else if (avgAnomaly < -0.2) verdict = 'nieco chłodniejszy'
+
+              seasonalAnomaly = {
+                months,
+                avgAnomaly: Math.round(avgAnomaly * 10) / 10,
+                verdict,
+              }
+
+              // Build best-estimate line: interpolate between P10/P50/P90 based on anomaly
+              // anomaly > 0 → interpolate P50→P90, anomaly < 0 → interpolate P10→P50
+              // Scale: ±2K maps to full P10/P90 range
+              let tunnelBest = lastMeteoTunnel
+
+              for (let i = 0; i < scenarioP50.length; i++) {
+                const dp10 = scenarioP10[i]
+                const dp50 = scenarioP50[i]
+                const dp90 = scenarioP90[i]
+                if (!dp50) continue
+
+                // Get month-specific anomaly if available, else use average
+                const dateMonth = dp50.date.slice(0, 7) // YYYY-MM
+                const monthAnomaly = months.find((m: { month: string }) => m.month.startsWith(dateMonth))?.anomaly ?? avgAnomaly
+
+                // Interpolation factor: 0 = P50, +1 = P90, -1 = P10
+                const factor = Math.max(-1, Math.min(1, monthAnomaly / 2))
+
+                let gdhBest: number
+                if (factor >= 0) {
+                  // Interpolate between P50 and P90
+                  gdhBest = dp50.gdhTunnel + factor * ((dp90?.gdhTunnel ?? dp50.gdhTunnel) - dp50.gdhTunnel)
+                } else {
+                  // Interpolate between P10 and P50
+                  gdhBest = dp50.gdhTunnel + factor * (dp50.gdhTunnel - (dp10?.gdhTunnel ?? dp50.gdhTunnel))
+                }
+
+                scenarioBest.push({ date: dp50.date, gdhTunnel: Math.round(gdhBest * 10) / 10 })
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Seasonal forecast error:', e)
+        }
+
         forecast = {
           meteoDays,
           scenarios: {
             p10: scenarioP10,
             p50: scenarioP50,
             p90: scenarioP90,
+            best: scenarioBest,
           },
+          seasonalAnomaly,
           lastForecastDate: lastForecastDate.toISOString().slice(0, 10),
           tunnelModel: { alpha: TUNNEL_ALPHA, offset: TUNNEL_OFFSET },
           historicalYears,

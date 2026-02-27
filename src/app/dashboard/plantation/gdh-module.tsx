@@ -32,11 +32,18 @@ interface ForecastDay {
   gdhTunnel: number
 }
 
+interface SeasonalAnomaly {
+  months: Array<{ month: string; anomaly: number }>
+  avgAnomaly: number
+  verdict: string
+}
+
 interface ApiResponse {
   sections: SectionGdh[]
   forecast: {
     meteoDays: ForecastDay[]
-    scenarios: { p10: ForecastDay[]; p50: ForecastDay[]; p90: ForecastDay[] }
+    scenarios: { p10: ForecastDay[]; p50: ForecastDay[]; p90: ForecastDay[]; best: ForecastDay[] }
+    seasonalAnomaly: SeasonalAnomaly | null
     lastForecastDate: string
     tunnelModel: { alpha: number; offset: number }
     historicalYears: number
@@ -52,6 +59,7 @@ interface ChartPoint {
   p10Gdh: number | null
   p50Gdh: number | null
   p90Gdh: number | null
+  bestGdh: number | null
 }
 
 interface ScenarioPrediction {
@@ -108,7 +116,7 @@ export default function GDHModule() {
     let lastCumGdh = 0
     for (const d of selectedSection.dailyGdh) {
       const dateStr = toKey(d.date)
-      points.push({ date: dateStr, dateLabel: toLabel(dateStr), realGdh: d.cumulativeGdh, meteoGdh: null, p10Gdh: null, p50Gdh: null, p90Gdh: null })
+      points.push({ date: dateStr, dateLabel: toLabel(dateStr), realGdh: d.cumulativeGdh, meteoGdh: null, p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
       lastCumGdh = d.cumulativeGdh
     }
 
@@ -126,7 +134,7 @@ export default function GDHModule() {
     for (const day of forecast.meteoDays) {
       if (day.date <= lastRealDate) continue
       cumMeteo += day.gdhTunnel
-      points.push({ date: day.date, dateLabel: toLabel(day.date), realGdh: null, meteoGdh: Math.round(cumMeteo), p10Gdh: null, p50Gdh: null, p90Gdh: null })
+      points.push({ date: day.date, dateLabel: toLabel(day.date), realGdh: null, meteoGdh: Math.round(cumMeteo), p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
     }
 
     // Zone 3: Three climate scenarios (P10, P50, P90)
@@ -138,27 +146,33 @@ export default function GDHModule() {
       lastMeteoPoint.p10Gdh = lastMeteoGdh
       lastMeteoPoint.p50Gdh = lastMeteoGdh
       lastMeteoPoint.p90Gdh = lastMeteoGdh
+      lastMeteoPoint.bestGdh = lastMeteoGdh
     } else if (points.length > 0) {
       points[points.length - 1].p10Gdh = lastCumGdh
       points[points.length - 1].p50Gdh = lastCumGdh
       points[points.length - 1].p90Gdh = lastCumGdh
+      points[points.length - 1].bestGdh = lastCumGdh
     }
 
     let cumP10 = lastMeteoGdh
     let cumP50 = lastMeteoGdh
     let cumP90 = lastMeteoGdh
+    let cumBest = lastMeteoGdh
 
-    const maxLen = Math.max(forecast.scenarios.p10.length, forecast.scenarios.p50.length, forecast.scenarios.p90.length)
+    const bestData = forecast.scenarios.best || []
+    const maxLen = Math.max(forecast.scenarios.p10.length, forecast.scenarios.p50.length, forecast.scenarios.p90.length, bestData.length)
     for (let i = 0; i < maxLen; i++) {
       const dp10 = forecast.scenarios.p10[i]
       const dp50 = forecast.scenarios.p50[i]
       const dp90 = forecast.scenarios.p90[i]
-      const date = dp50?.date || dp10?.date || dp90?.date
+      const dBest = bestData[i]
+      const date = dp50?.date || dp10?.date || dp90?.date || dBest?.date
       if (!date) continue
 
       cumP10 += dp10?.gdhTunnel ?? 0
       cumP50 += dp50?.gdhTunnel ?? 0
       cumP90 += dp90?.gdhTunnel ?? 0
+      cumBest += dBest?.gdhTunnel ?? dp50?.gdhTunnel ?? 0
 
       points.push({
         date,
@@ -168,6 +182,7 @@ export default function GDHModule() {
         p10Gdh: Math.round(cumP10),
         p50Gdh: Math.round(cumP50),
         p90Gdh: Math.round(cumP90),
+        bestGdh: bestData.length > 0 ? Math.round(cumBest) : null,
       })
     }
 
@@ -187,7 +202,7 @@ export default function GDHModule() {
   const scenarioPredictions = useMemo((): ScenarioPrediction[] | null => {
     if (!selectedSection) return null
 
-    const findCrossing = (threshold: number | null, gdhKey: 'realGdh' | 'meteoGdh' | 'p10Gdh' | 'p50Gdh' | 'p90Gdh') => {
+    const findCrossing = (threshold: number | null, gdhKey: 'realGdh' | 'meteoGdh' | 'p10Gdh' | 'p50Gdh' | 'p90Gdh' | 'bestGdh') => {
       if (!threshold) return null
       // Walk through all points, tracking cumulative across zones
       for (const pt of chartData) {
@@ -213,7 +228,24 @@ export default function GDHModule() {
     const flowerReal = findFirstCrossing(selectedSection.flowerThreshold)
     const fruitReal = findFirstCrossing(selectedSection.fruitThreshold)
 
-    return [
+    const hasBest = forecast?.scenarios?.best && forecast.scenarios.best.length > 0
+
+    const rows: ScenarioPrediction[] = []
+
+    if (hasBest) {
+      const anom = forecast?.seasonalAnomaly
+      rows.push({
+        label: `Prognoza 2026 (ECMWF${anom ? `: ${anom.avgAnomaly > 0 ? '+' : ''}${anom.avgAnomaly}K` : ''})`,
+        color: 'text-rose-700',
+        bgColor: 'bg-rose-50 border-rose-300',
+        flowerDate: flowerReal.date ?? findCrossing(selectedSection.flowerThreshold, 'bestGdh'),
+        flowerZone: flowerReal.zone ?? 'best',
+        fruitDate: fruitReal.date ?? findCrossing(selectedSection.fruitThreshold, 'bestGdh'),
+        fruitZone: fruitReal.zone ?? 'best',
+      })
+    }
+
+    rows.push(
       {
         label: 'Ciepły rok (P90)',
         color: 'text-orange-700',
@@ -241,7 +273,9 @@ export default function GDHModule() {
         fruitDate: fruitReal.date ?? findCrossing(selectedSection.fruitThreshold, 'p10Gdh'),
         fruitZone: fruitReal.zone ?? 'p10',
       },
-    ]
+    )
+
+    return rows
   }, [selectedSection, chartData])
 
   // ── Progress ──
@@ -278,12 +312,14 @@ export default function GDHModule() {
     if (!zone || zone === 'real') return null
     const styles: Record<string, string> = {
       meteo: 'bg-blue-100 text-blue-700',
+      best: 'bg-rose-100 text-rose-700',
       p90: 'bg-orange-100 text-orange-700',
       p50: 'bg-purple-100 text-purple-700',
       p10: 'bg-sky-100 text-sky-700',
     }
     const labels: Record<string, string> = {
       meteo: 'prognoza meteo',
+      best: 'ECMWF 2026',
       p90: 'scenariusz P90',
       p50: 'scenariusz P50',
       p10: 'scenariusz P10',
@@ -300,7 +336,16 @@ export default function GDHModule() {
         </CardTitle>
         <p className="text-sm text-gray-500">
           T_baz = {data?.gdhParams?.baseTemp ?? 4.5}°C, T_opt = {data?.gdhParams?.upperTemp ?? 26}°C
-          {forecast && ` \u2022 Klimatologia: ${forecast.historicalYears} lat danych historycznych`}
+          {forecast && ` \u2022 Klimatologia: ${forecast.historicalYears} lat`}
+          {forecast?.seasonalAnomaly && (
+            <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+              forecast.seasonalAnomaly.avgAnomaly > 0.5 ? 'bg-orange-100 text-orange-800' :
+              forecast.seasonalAnomaly.avgAnomaly < -0.5 ? 'bg-sky-100 text-sky-800' :
+              'bg-gray-100 text-gray-700'
+            }`}>
+              ECMWF: 2026 {forecast.seasonalAnomaly.verdict} ({forecast.seasonalAnomaly.avgAnomaly > 0 ? '+' : ''}{forecast.seasonalAnomaly.avgAnomaly}K)
+            </span>
+          )}
         </p>
       </CardHeader>
       <CardContent className="space-y-6 pt-6">
@@ -476,6 +521,12 @@ export default function GDHModule() {
               <CloudSun className="w-3 h-3 text-blue-500" />
               <span className="text-gray-600">Meteo 16d</span>
             </div>
+            {forecast?.seasonalAnomaly && (
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-rose-500" />
+                <span className="text-gray-600 font-medium">2026 ECMWF</span>
+              </div>
+            )}
             <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-orange-400" />
               <span className="text-gray-600">P90 ciepły</span>
@@ -509,6 +560,7 @@ export default function GDHModule() {
                           <p className="font-medium mb-1.5 text-gray-700">Data: {label}</p>
                           {pt.realGdh != null && <p className="text-emerald-700">Realne: <strong>{pt.realGdh.toLocaleString('pl-PL')}</strong> GDH</p>}
                           {pt.meteoGdh != null && <p className="text-blue-600">Meteo: <strong>{pt.meteoGdh.toLocaleString('pl-PL')}</strong> GDH</p>}
+                          {pt.bestGdh != null && <p className="text-rose-600 font-semibold">2026 ECMWF: <strong>{pt.bestGdh.toLocaleString('pl-PL')}</strong> GDH</p>}
                           {pt.p90Gdh != null && <p className="text-orange-600">P90 (ciepły): <strong>{pt.p90Gdh.toLocaleString('pl-PL')}</strong> GDH</p>}
                           {pt.p50Gdh != null && <p className="text-purple-600">P50 (typowy): <strong>{pt.p50Gdh.toLocaleString('pl-PL')}</strong> GDH</p>}
                           {pt.p10Gdh != null && <p className="text-sky-600">P10 (zimny): <strong>{pt.p10Gdh.toLocaleString('pl-PL')}</strong> GDH</p>}
@@ -528,6 +580,8 @@ export default function GDHModule() {
                   {/* Lines */}
                   <Line type="monotone" dataKey="realGdh" name="GDH realne" stroke="#059669" strokeWidth={3} dot={false} connectNulls={false} />
                   <Line type="monotone" dataKey="meteoGdh" name="Meteo 16d" stroke="#3b82f6" strokeWidth={2.5} strokeDasharray="8 4" dot={false} connectNulls={false} />
+                  {/* Best estimate from ECMWF seasonal anomaly */}
+                  <Line type="monotone" dataKey="bestGdh" name="2026 ECMWF" stroke="#e11d48" strokeWidth={2.5} strokeDasharray="10 3" dot={false} connectNulls={false} />
                   <Line type="monotone" dataKey="p90Gdh" name="P90 ciepły" stroke="#f97316" strokeWidth={1.5} strokeDasharray="6 3" dot={false} connectNulls={false} />
                   <Line type="monotone" dataKey="p50Gdh" name="P50 typowy" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="4 4" dot={false} connectNulls={false} />
                   <Line type="monotone" dataKey="p10Gdh" name="P10 zimny" stroke="#0ea5e9" strokeWidth={1.5} strokeDasharray="6 3" dot={false} connectNulls={false} />

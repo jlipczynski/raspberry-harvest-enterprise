@@ -98,7 +98,7 @@ export default function PlanningPage() {
   const [blocks, setBlocks] = useState<Block[]>([])
   const [loading, setLoading] = useState(true)
   const [scenario, setScenario] = useState<Scenario>('p50')
-  const [pickingDaysPerWeek, setPickingDaysPerWeek] = useState(7)
+  const [pickingDaysPerWeek, setPickingDaysPerWeek] = useState(3)
   const [hoursPerDay, setHoursPerDay] = useState(8)
   const [staffingTiers, setStaffingTiers] = useState<StaffingTier[]>(DEFAULT_TIERS)
   const tableRef = useRef<HTMLDivElement>(null)
@@ -213,7 +213,7 @@ export default function PlanningPage() {
       const curve = isSummer
         ? (v?.harvestCurveSummer as number[] || defaultCurve)
         : (v?.harvestCurveAutumn as number[] || defaultCurve)
-      const eff = v?.pickingEfficiency || 8 // kg/h
+      const eff = v?.pickingEfficiency || 6 // kg/h
 
       const weeklyKg: Array<{ week: number; kg: number }> = []
 

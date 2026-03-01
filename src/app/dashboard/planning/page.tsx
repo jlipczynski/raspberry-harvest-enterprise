@@ -98,7 +98,7 @@ export default function PlanningPage() {
   const [blocks, setBlocks] = useState<Block[]>([])
   const [loading, setLoading] = useState(true)
   const [scenario, setScenario] = useState<Scenario>('p50')
-  const [pickingDaysPerWeek, setPickingDaysPerWeek] = useState(7)
+  const [workerDaysPerWeek, setWorkerDaysPerWeek] = useState(4)
   const [hoursPerDay, setHoursPerDay] = useState(8)
   const [staffingTiers, setStaffingTiers] = useState<StaffingTier[]>(DEFAULT_TIERS)
   const tableRef = useRef<HTMLDivElement>(null)
@@ -235,10 +235,12 @@ export default function PlanningPage() {
 
     const weeks = Object.entries(weekMap)
       .map(([wk, data]) => {
-        // Daily calculation: kg per picking day, workers per picking day
-        const dailyKg = Math.round(data.kg / pickingDaysPerWeek)
-        const dailyHrs = Math.round(data.hrs / pickingDaysPerWeek)
-        const pickers = Math.ceil(dailyHrs / hoursPerDay)
+        // Daily values always based on 7-day farm operation
+        const dailyKg = Math.round(data.kg / 7)
+        const dailyHrs = Math.round(data.hrs / 7)
+        // Total headcount: weekly person-hours / hours per worker per week
+        // Workers don't work 7 days — each works workerDaysPerWeek days
+        const pickers = Math.ceil(data.hrs / (workerDaysPerWeek * hoursPerDay))
 
         // Match staffing tier based on daily kg
         const tier = matchStaffingTier(dailyKg, staffingTiers)
@@ -267,7 +269,7 @@ export default function PlanningPage() {
       .sort((a, b) => a.week - b.week)
 
     return { weeks, sectionDetails }
-  }, [allPlantationSections, sectionFruitDates, pickingDaysPerWeek, hoursPerDay, staffingTiers])
+  }, [allPlantationSections, sectionFruitDates, workerDaysPerWeek, hoursPerDay, staffingTiers])
 
   const peakPickers = Math.max(...weeklyPlan.weeks.map(w => w.pickers), 0)
   const peakTotalStaff = Math.max(...weeklyPlan.weeks.map(w => w.totalStaff), 0)
@@ -287,7 +289,7 @@ export default function PlanningPage() {
     doc.text('Planowanie zbiorów — zapotrzebowanie na pracowników', 14, 16)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
-    doc.text(`Scenariusz: ${SCENARIO_SHORT[scenario]} | ${pickingDaysPerWeek} dni zbioru/tydz. × ${hoursPerDay}h/dzień | Wygenerowano: ${new Date().toLocaleDateString('pl-PL')}`, 14, 22)
+    doc.text(`Scenariusz: ${SCENARIO_SHORT[scenario]} | Zbieracz: ${workerDaysPerWeek} dni × ${hoursPerDay}h | Wygenerowano: ${new Date().toLocaleDateString('pl-PL')}`, 14, 22)
 
     const head = [['Tydzień', 'Daty', 'Zbiór/tydz.', 'Zbiór/dzień', 'h/dzień', 'Zbieracze', 'KJ', 'Wagi', 'Infra', 'Łącznie', 'Sekcji']]
     const body = weeklyPlan.weeks.map(w => [
@@ -324,7 +326,7 @@ export default function PlanningPage() {
     })
 
     doc.save(`planowanie-zbiorow-${scenario}-${new Date().toISOString().slice(0, 10)}.pdf`)
-  }, [weeklyPlan, scenario, pickingDaysPerWeek, hoursPerDay])
+  }, [weeklyPlan, scenario, workerDaysPerWeek, hoursPerDay])
 
   const handlePrint = useCallback(() => {
     if (!tableRef.current) return
@@ -343,12 +345,12 @@ export default function PlanningPage() {
         @media print { body { padding: 0; } }
       </style></head><body>
       <h1>Planowanie zbiorów — zapotrzebowanie na pracowników</h1>
-      <p class="meta">Scenariusz: ${SCENARIO_SHORT[scenario]} | ${pickingDaysPerWeek} dni zbioru/tydz. × ${hoursPerDay}h/dzień | ${new Date().toLocaleDateString('pl-PL')}</p>
+      <p class="meta">Scenariusz: ${SCENARIO_SHORT[scenario]} | Zbieracz: ${workerDaysPerWeek} dni × ${hoursPerDay}h | ${new Date().toLocaleDateString('pl-PL')}</p>
       ${tableRef.current.innerHTML}
       <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
     </body></html>`)
     printWindow.document.close()
-  }, [scenario, pickingDaysPerWeek, hoursPerDay])
+  }, [scenario, workerDaysPerWeek, hoursPerDay])
 
   // ==================== RENDER ====================
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400"><Loader2 className="w-5 h-5 animate-spin mr-2" />Ładowanie danych GDH i plantacji...</div>
@@ -371,14 +373,12 @@ export default function PlanningPage() {
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">Dni zbioru/tydz.:</label>
-            <select className="h-8 border rounded-md px-2 text-xs bg-white" value={pickingDaysPerWeek} onChange={e => setPickingDaysPerWeek(+e.target.value)}>
-              <option value={2}>2 dni</option>
+            <label className="text-xs text-gray-500">Dni robocze/zbieracz:</label>
+            <select className="h-8 border rounded-md px-2 text-xs bg-white" value={workerDaysPerWeek} onChange={e => setWorkerDaysPerWeek(+e.target.value)}>
               <option value={3}>3 dni</option>
               <option value={4}>4 dni</option>
               <option value={5}>5 dni</option>
               <option value={6}>6 dni</option>
-              <option value={7}>7 dni</option>
             </select>
           </div>
           <div className="flex items-center gap-2">
@@ -449,7 +449,7 @@ export default function PlanningPage() {
           {/* Workers bar chart — stacked */}
           <div className="bg-white rounded-xl border p-6">
             <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-500" />Zapotrzebowanie na personel (osób/dzień zbioru)</h3>
-            <p className="text-xs text-gray-500 -mt-3 mb-4">{pickingDaysPerWeek}× w tygodniu po {hoursPerDay}h — zbieracze + KJ + wagi + infrastruktura</p>
+            <p className="text-xs text-gray-500 -mt-3 mb-4">Zbiór 7 dni/tydz. | Zbieracz: {workerDaysPerWeek} dni × {hoursPerDay}h — zbieracze + KJ + wagi + infrastruktura</p>
             <div className="flex items-end gap-1 h-48 mb-2">
               {weeklyPlan.weeks.map(w => {
                 const isBottleneck = w.pickers >= bottleneckThreshold

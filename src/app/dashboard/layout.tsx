@@ -5,13 +5,13 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession, signOut } from 'next-auth/react'
 import { Button } from "@/components/ui/button"
-import { 
-  LayoutDashboard, 
+import {
+  LayoutDashboard,
   Calendar,
-  Map, 
-  Leaf, 
-  Cloud, 
-  Users, 
+  Map,
+  Leaf,
+  Cloud,
+  Users,
   BarChart3,
   Settings,
   Menu,
@@ -19,7 +19,8 @@ import {
   Database,
   LogOut,
   Shield,
-  ChevronDown
+  ChevronDown,
+  Compass,
 } from 'lucide-react'
 
 const menuItems = [
@@ -122,6 +123,13 @@ export default function DashboardLayout({
             <LogOut className="w-4 h-4" />
             <span>Wyloguj</span>
           </button>
+          <Link
+            href="/life-dashboard"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-amber-200 hover:bg-white/10 transition-colors text-sm mt-1"
+          >
+            <Compass className="w-4 h-4" />
+            <span>Life Dashboard</span>
+          </Link>
           <p className="text-green-400/40 text-[9px] text-center mt-2">Enterprise Beta</p>
         </div>
       </aside>

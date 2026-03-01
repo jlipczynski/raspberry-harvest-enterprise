@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Button } from "@/components/ui/button"
-import { Users, AlertTriangle, BarChart3, Target, Loader2, FileDown, Printer, Calendar, TrendingUp } from 'lucide-react'
+import { Users, AlertTriangle, BarChart3, Target, Loader2, FileDown, Printer, Calendar, TrendingUp, Info } from 'lucide-react'
 
 // ==================== TYPES ====================
 interface SectionGdh {
@@ -45,7 +45,28 @@ const ALL_SCENARIOS = ['p90', 'p50', 'p10', 'best'] as const
 type Scenario = typeof ALL_SCENARIOS[number]
 const SCENARIO_LABELS: Record<Scenario, string> = { p90: 'P90 — ciepły rok', p50: 'P50 — typowy rok', p10: 'P10 — zimny rok', best: 'ECMWF' }
 const SCENARIO_SHORT: Record<Scenario, string> = { p90: 'P90', p50: 'P50', p10: 'P10', best: 'ECMWF' }
-const defaultCurve = [5, 10, 15, 20, 20, 15, 10, 5]
+
+// ==================== REAL CURVES FROM MAXCROP 2025 ====================
+// Source: sum_of_crops_2025_05_01_2025_12_06.xls — real harvest data
+// DJ SUMMER (avg A1-9, A10-19, D): 10 weeks starting ~wk 23
+const DJ_CURVE_SUMMER = [0.5, 1.8, 2.5, 8.3, 18.2, 19.9, 22.1, 17.0, 7.8, 2.6]
+// RUBY SUMMER (B08-13): 10 weeks, peaks later than DJ
+const RUBY_CURVE_SUMMER = [0.5, 3.8, 6.3, 14.3, 12.4, 16.3, 17.4, 19.1, 5.9, 3.9]
+// DJ AUTUMN (avg A1-9, A10-19): 11 weeks starting ~wk 33
+const DJ_CURVE_AUTUMN = [2.8, 10.1, 10.0, 17.1, 22.9, 15.1, 11.8, 5.9, 3.5, 0.4, 0.2]
+// Ruby has NO autumn production (confirmed by MaxCrop data: B08-13 ends Aug 6)
+const RUBY_CURVE_AUTUMN: number[] = []
+
+// Real yields per shoot from MaxCrop 2025 (replace seed data)
+const REAL_YIELDS: Record<string, { summer: number; autumn: number }> = {
+  'Diamond Jubilee': { summer: 1.48, autumn: 0.67 },  // A-blocks avg: S=1.47-1.48, A=0.63-0.70
+  'Ruby':            { summer: 2.13, autumn: 0 },      // B08-13: S=2.13, A=0 (summer-only!)
+}
+
+// Fallback for unknown varieties
+const defaultCurveSummer = DJ_CURVE_SUMMER
+const defaultCurveAutumn = DJ_CURVE_AUTUMN
+const defaultCurve = DJ_CURVE_SUMMER
 
 // ==================== STAFFING TIERS ====================
 interface StaffingTier {
@@ -201,35 +222,64 @@ export default function PlanningPage() {
       if (!fruitDate) continue // no fruit date prediction → skip
 
       const startWeek = getWeekNumber(new Date(fruitDate))
-
-      // Production calc
       const shoots = section.metersLength * section.potsPerMeter * section.shootsPerPot
-      const isSummer = startWeek < 30
-      const yieldPerShoot = isSummer
-        ? (section.yieldSummerPerShoot || v?.yieldSummerPerShoot || 0)
-        : (section.yieldAutumnPerShoot || v?.yieldAutumnPerShoot || 0)
-      const totalKg = shoots * yieldPerShoot
-      const curve = isSummer
-        ? (v?.harvestCurveSummer as number[] || defaultCurve)
-        : (v?.harvestCurveAutumn as number[] || defaultCurve)
       const eff = v?.pickingEfficiency || 6 // kg/h
+      const varietyName = v?.name || ''
+
+      // Use real MaxCrop yields if available, otherwise fall back to variety/section data
+      const realYield = REAL_YIELDS[varietyName]
+
+      // --- SUMMER ---
+      const summerYield = realYield?.summer
+        ?? section.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
+      const summerCurve = varietyName.includes('Ruby') ? RUBY_CURVE_SUMMER
+        : (varietyName.includes('Diamond') || varietyName.includes('DJ')) ? DJ_CURVE_SUMMER
+        : (v?.harvestCurveSummer as number[] || defaultCurveSummer)
+
+      // --- AUTUMN ---
+      const autumnYield = realYield?.autumn
+        ?? section.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
+      const autumnCurve = varietyName.includes('Ruby') ? RUBY_CURVE_AUTUMN
+        : (varietyName.includes('Diamond') || varietyName.includes('DJ')) ? DJ_CURVE_AUTUMN
+        : (v?.harvestCurveAutumn as number[] || defaultCurveAutumn)
+
+      const summerKg = shoots * summerYield
+      const autumnKg = shoots * autumnYield
+      const totalKg = summerKg + autumnKg
 
       const weeklyKg: Array<{ week: number; kg: number }> = []
 
-      curve.forEach((pct, i) => {
-        const week = startWeek + i
-        const kg = Math.round(totalKg * pct / 100)
-        const hrs = Math.round(kg / eff)
+      // Summer weeks — start from GDH-predicted fruit date
+      if (summerKg > 0 && summerCurve.length > 0) {
+        summerCurve.forEach((pct, i) => {
+          const week = startWeek + i
+          const kg = Math.round(summerKg * pct / 100)
+          const hrs = Math.round(kg / eff)
+          weeklyKg.push({ week, kg })
+          if (!weekMap[week]) weekMap[week] = { kg: 0, hrs: 0, sections: [] }
+          weekMap[week].kg += kg
+          weekMap[week].hrs += hrs
+          if (!weekMap[week].sections.includes(section.name)) weekMap[week].sections.push(section.name)
+        })
+      }
 
-        weeklyKg.push({ week, kg })
+      // Autumn weeks — start at week 33 (mid-August), independent of summer
+      if (autumnKg > 0 && autumnCurve.length > 0) {
+        const autumnStartWeek = 33
+        autumnCurve.forEach((pct, i) => {
+          const week = autumnStartWeek + i
+          const kg = Math.round(autumnKg * pct / 100)
+          const hrs = Math.round(kg / eff)
+          const existing = weeklyKg.find(w => w.week === week)
+          if (existing) { existing.kg += kg } else { weeklyKg.push({ week, kg }) }
+          if (!weekMap[week]) weekMap[week] = { kg: 0, hrs: 0, sections: [] }
+          weekMap[week].kg += kg
+          weekMap[week].hrs += hrs
+          if (!weekMap[week].sections.includes(section.name)) weekMap[week].sections.push(section.name)
+        })
+      }
 
-        if (!weekMap[week]) weekMap[week] = { kg: 0, hrs: 0, sections: [] }
-        weekMap[week].kg += kg
-        weekMap[week].hrs += hrs
-        weekMap[week].sections.push(section.name)
-      })
-
-      sectionDetails.push({ section, fruitStartDate: fruitDate, startWeek, totalKg, weeklyKg, eff })
+      sectionDetails.push({ section, fruitStartDate: fruitDate, startWeek, totalKg, weeklyKg: weeklyKg.sort((a, b) => a.week - b.week), eff })
     }
 
     const weeks = Object.entries(weekMap)
@@ -381,6 +431,81 @@ export default function PlanningPage() {
           </button>
         </div>
       </div>
+
+      {/* MaxCrop data analysis — collapsible */}
+      <details className="bg-slate-50 border border-slate-200 rounded-xl">
+        <summary className="cursor-pointer px-5 py-3 flex items-center gap-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-xl transition-colors">
+          <Info className="w-4 h-4 text-blue-500 shrink-0" />
+          Analiza danych MaxCrop 2025 — skąd pochodzą krzywe i normy
+        </summary>
+        <div className="px-5 pb-5 text-xs text-slate-600 space-y-4">
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-1">Źródło danych</h4>
+            <p>Plik <code className="bg-slate-200 px-1 rounded">sum_of_crops_2025_05_01_2025_12_06.xls</code> — eksport z MaxCrop za okres 1 maja – 6 grudnia 2025. Łącznie <strong>117 858 kg</strong> z sekcji A1-9, A10-19, B01-07, B08-13, D, C.</p>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-1">Yield per shoot — dane realne vs stare seedowe</h4>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead><tr className="border-b border-slate-300 text-slate-500">
+                  <th className="text-left py-1 px-2">Sekcja</th><th className="text-left py-1 px-2">Odmiana</th>
+                  <th className="text-right py-1 px-2">Real lato</th><th className="text-right py-1 px-2">Seed lato</th><th className="text-right py-1 px-2">Diff</th>
+                  <th className="text-right py-1 px-2">Real jesień</th><th className="text-right py-1 px-2">Seed jesień</th><th className="text-right py-1 px-2">Diff</th>
+                </tr></thead>
+                <tbody className="font-mono">
+                  <tr className="border-b border-slate-100"><td className="py-1 px-2">A1-9</td><td className="px-2">DJ</td><td className="text-right px-2">1.47</td><td className="text-right px-2 text-slate-400">1.48</td><td className="text-right px-2 text-green-600">-1%</td><td className="text-right px-2 font-semibold">0.63</td><td className="text-right px-2 text-slate-400">0.44</td><td className="text-right px-2 text-red-600 font-semibold">+43%</td></tr>
+                  <tr className="border-b border-slate-100"><td className="py-1 px-2">A10-19</td><td className="px-2">DJ</td><td className="text-right px-2">1.48</td><td className="text-right px-2 text-slate-400">1.48</td><td className="text-right px-2 text-green-600">0%</td><td className="text-right px-2 font-semibold">0.70</td><td className="text-right px-2 text-slate-400">0.44</td><td className="text-right px-2 text-red-600 font-semibold">+60%</td></tr>
+                  <tr className="border-b border-slate-100"><td className="py-1 px-2">B08-13</td><td className="px-2 font-semibold text-purple-700">Ruby</td><td className="text-right px-2 font-semibold">2.13</td><td className="text-right px-2 text-slate-400">1.55</td><td className="text-right px-2 text-red-600 font-semibold">+37%</td><td className="text-right px-2 font-semibold">0.00</td><td className="text-right px-2 text-slate-400">0.51</td><td className="text-right px-2 text-red-600 font-semibold">-100%</td></tr>
+                  <tr className="border-b border-slate-100"><td className="py-1 px-2">D</td><td className="px-2">DJ (PLUG r.1)</td><td className="text-right px-2 font-semibold">1.74</td><td className="text-right px-2 text-slate-400">1.48</td><td className="text-right px-2 text-red-600 font-semibold">+17%</td><td className="text-right px-2">0.13</td><td className="text-right px-2 text-slate-400">0.44</td><td className="text-right px-2 text-blue-600">-71%</td></tr>
+                  <tr><td className="py-1 px-2">C</td><td className="px-2">DJ</td><td className="text-right px-2 text-red-600">0.00</td><td className="text-right px-2 text-slate-400">1.48</td><td className="text-right px-2 text-red-600 font-semibold">-100%</td><td className="text-right px-2">0.22</td><td className="text-right px-2 text-slate-400">0.44</td><td className="text-right px-2 text-blue-600">-50%</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-1">Krzywe tygodniowe — realne vs stare seed [2,6,12,16,15,13,11,9,7,5,3,1]</h4>
+            <div className="space-y-2">
+              <div>
+                <span className="font-medium text-blue-700">DJ LATO (śr. A1-9, A10-19, D):</span>{' '}
+                <code className="bg-blue-50 px-1 rounded">[0.5, 1.8, 2.5, 8.3, 18.2, 19.9, 22.1, 17.0, 7.8, 2.6]</code>
+                <span className="text-slate-400 ml-2">— peak 22% w jednym tygodniu (seed mówił 16%)</span>
+              </div>
+              <div>
+                <span className="font-medium text-purple-700">Ruby LATO (B08-13):</span>{' '}
+                <code className="bg-purple-50 px-1 rounded">[0.5, 3.8, 6.3, 14.3, 12.4, 16.3, 17.4, 19.1, 5.9, 3.9]</code>
+                <span className="text-slate-400 ml-2">— peak później niż DJ (wk 30 vs 29), bardziej płaska</span>
+              </div>
+              <div>
+                <span className="font-medium text-amber-700">DJ JESIEŃ (A1-9, A10-19):</span>{' '}
+                <code className="bg-amber-50 px-1 rounded">[2.8, 10.1, 10.0, 17.1, 22.9, 15.1, 11.8, 5.9, 3.5, 0.4, 0.2]</code>
+                <span className="text-slate-400 ml-2">— 11 tyg. (seed: 7 tyg.)</span>
+              </div>
+              <div>
+                <span className="font-medium text-red-600">Ruby JESIEŃ:</span>{' '}
+                <span className="bg-red-50 px-1 rounded font-semibold">BRAK — Ruby nie daje jesieni (potwierdzone: B08-13 kończy 6 VIII)</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-slate-800 mb-1">Peak day: 4 526 kg (14 VII 2025)</h4>
+            <p>Top 5 dni: 14 VII (4.5t), 21 VII (3.4t), 26 VII (3.2t), 22 VII (3.2t), 10 VII (3.1t). Okres szczytu: 5–26 lipca, potrzeba 40-71 zbieraczy dziennie przy 8 kg/h × 8h.</p>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <h4 className="font-semibold text-amber-800 mb-1">Co poprawiono vs stary kod</h4>
+            <ul className="list-disc list-inside space-y-0.5 text-amber-700">
+              <li>Krzywe DJ i Ruby z realnych danych MaxCrop (nie identyczne placeholdery)</li>
+              <li>Ruby jesień = 0 (było 0.51 kg/pęd — błąd)</li>
+              <li>DJ jesień = 0.67 kg/pęd (było 0.44 — zaniżone o 43-60%)</li>
+              <li>Każda sekcja liczy LATO + JESIEŃ osobno (było: albo/albo wg startWeek {'<'} 30)</li>
+              <li>Jesień startuje od tygodnia 33 (mid-sierpień), niezależnie od lata</li>
+            </ul>
+          </div>
+        </div>
+      </details>
 
       {noFruitDates && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">

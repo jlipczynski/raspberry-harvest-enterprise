@@ -71,7 +71,8 @@ export default function PlanningPage() {
   const [blocks, setBlocks] = useState<Block[]>([])
   const [loading, setLoading] = useState(true)
   const [scenario, setScenario] = useState<Scenario>('p50')
-  const [hoursPerWeek, setHoursPerWeek] = useState(48)
+  const [pickingDaysPerWeek, setPickingDaysPerWeek] = useState(3)
+  const [hoursPerDay, setHoursPerDay] = useState(8)
   const tableRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -199,19 +200,27 @@ export default function PlanningPage() {
     }
 
     const weeks = Object.entries(weekMap)
-      .map(([wk, data]) => ({
-        week: +wk,
-        dates: getWeekDates(+wk, year),
-        kg: data.kg,
-        hrs: data.hrs,
-        workers: Math.ceil(data.hrs / hoursPerWeek),
-        sectionCount: data.sections.length,
-        sections: data.sections,
-      }))
+      .map(([wk, data]) => {
+        // Daily calculation: kg per picking day, workers per picking day
+        const dailyKg = Math.round(data.kg / pickingDaysPerWeek)
+        const dailyHrs = Math.round(data.hrs / pickingDaysPerWeek)
+        const workers = Math.ceil(dailyHrs / hoursPerDay)
+        return {
+          week: +wk,
+          dates: getWeekDates(+wk, year),
+          kg: data.kg,
+          dailyKg,
+          hrs: data.hrs,
+          dailyHrs,
+          workers, // workers per picking day
+          sectionCount: data.sections.length,
+          sections: data.sections,
+        }
+      })
       .sort((a, b) => a.week - b.week)
 
     return { weeks, sectionDetails }
-  }, [allPlantationSections, sectionFruitDates, hoursPerWeek])
+  }, [allPlantationSections, sectionFruitDates, pickingDaysPerWeek, hoursPerDay])
 
   const peakWorkers = Math.max(...weeklyPlan.weeks.map(w => w.workers), 0)
   const totalKgAll = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalKg, 0)
@@ -230,12 +239,12 @@ export default function PlanningPage() {
     doc.text('Planowanie zbiorów — zapotrzebowanie na pracowników', 14, 16)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
-    doc.text(`Scenariusz: ${SCENARIO_SHORT[scenario]} | ${hoursPerWeek}h/tydzień | Wygenerowano: ${new Date().toLocaleDateString('pl-PL')}`, 14, 22)
+    doc.text(`Scenariusz: ${SCENARIO_SHORT[scenario]} | ${pickingDaysPerWeek} dni zbioru/tydz. × ${hoursPerDay}h/dzień | Wygenerowano: ${new Date().toLocaleDateString('pl-PL')}`, 14, 22)
 
-    const head = [['Tydzień', 'Daty', 'Zbiór (kg)', 'Godziny', 'Pracownicy', 'Sekcji zbiera']]
+    const head = [['Tydzień', 'Daty', 'Zbiór/tydz.', 'Zbiór/dzień', 'h/dzień', 'Osób/dzień', 'Sekcji']]
     const body = weeklyPlan.weeks.map(w => [
-      `T${w.week}`, w.dates, w.kg.toLocaleString('pl-PL'),
-      `${w.hrs}h`, `${w.workers}`, `${w.sectionCount}`,
+      `T${w.week}`, w.dates, `${w.kg.toLocaleString('pl-PL')} kg`,
+      `${w.dailyKg.toLocaleString('pl-PL')} kg`, `${w.dailyHrs}h`, `${w.workers}`, `${w.sectionCount}`,
     ])
 
     autoTable(doc, {
@@ -266,7 +275,7 @@ export default function PlanningPage() {
     })
 
     doc.save(`planowanie-zbiorow-${scenario}-${new Date().toISOString().slice(0, 10)}.pdf`)
-  }, [weeklyPlan, scenario, hoursPerWeek])
+  }, [weeklyPlan, scenario, pickingDaysPerWeek, hoursPerDay])
 
   const handlePrint = useCallback(() => {
     if (!tableRef.current) return
@@ -285,12 +294,12 @@ export default function PlanningPage() {
         @media print { body { padding: 0; } }
       </style></head><body>
       <h1>Planowanie zbiorów — zapotrzebowanie na pracowników</h1>
-      <p class="meta">Scenariusz: ${SCENARIO_SHORT[scenario]} | ${hoursPerWeek}h/tydzień | ${new Date().toLocaleDateString('pl-PL')}</p>
+      <p class="meta">Scenariusz: ${SCENARIO_SHORT[scenario]} | ${pickingDaysPerWeek} dni zbioru/tydz. × ${hoursPerDay}h/dzień | ${new Date().toLocaleDateString('pl-PL')}</p>
       ${tableRef.current.innerHTML}
       <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
     </body></html>`)
     printWindow.document.close()
-  }, [scenario, hoursPerWeek])
+  }, [scenario, pickingDaysPerWeek, hoursPerDay])
 
   // ==================== RENDER ====================
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400"><Loader2 className="w-5 h-5 animate-spin mr-2" />Ładowanie danych GDH i plantacji...</div>
@@ -313,8 +322,18 @@ export default function PlanningPage() {
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">h/tydzień:</label>
-            <input type="number" className="h-8 w-16 border rounded-md px-2 text-xs bg-white text-center" value={hoursPerWeek} onChange={e => setHoursPerWeek(Math.max(1, +e.target.value))} />
+            <label className="text-xs text-gray-500">Dni zbioru/tydz.:</label>
+            <select className="h-8 border rounded-md px-2 text-xs bg-white" value={pickingDaysPerWeek} onChange={e => setPickingDaysPerWeek(+e.target.value)}>
+              <option value={2}>2 dni</option>
+              <option value={3}>3 dni</option>
+              <option value={4}>4 dni</option>
+              <option value={5}>5 dni</option>
+              <option value={6}>6 dni</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500">h/dzień:</label>
+            <input type="number" className="h-8 w-14 border rounded-md px-2 text-xs bg-white text-center" value={hoursPerDay} onChange={e => setHoursPerDay(Math.max(1, Math.min(12, +e.target.value)))} />
           </div>
           <button onClick={handleExportPdf} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
             <FileDown className="w-3.5 h-3.5" />PDF
@@ -347,7 +366,7 @@ export default function PlanningPage() {
             </div>
             <div className="bg-blue-50 rounded-xl p-4 border border-blue-200 text-center">
               <p className="text-3xl font-bold text-blue-600">{peakWorkers}</p>
-              <p className="text-xs text-blue-600">Pracowników max</p>
+              <p className="text-xs text-blue-600">Osób/dzień max</p>
             </div>
             <div className="bg-purple-50 rounded-xl p-4 border border-purple-200 text-center">
               <p className="text-3xl font-bold text-purple-600">{weeklyPlan.weeks.length}</p>
@@ -375,7 +394,8 @@ export default function PlanningPage() {
 
           {/* Workers bar chart */}
           <div className="bg-white rounded-xl border p-6">
-            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-500" />Zapotrzebowanie na pracowników — tydzień po tygodniu</h3>
+            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-500" />Zapotrzebowanie na pracowników (osób/dzień zbioru)</h3>
+            <p className="text-xs text-gray-500 -mt-3 mb-4">{pickingDaysPerWeek}× w tygodniu po {hoursPerDay}h — wydajność z odmiany</p>
             <div className="flex items-end gap-1 h-48 mb-2">
               {weeklyPlan.weeks.map(w => {
                 const isBottleneck = w.workers >= bottleneckThreshold
@@ -387,8 +407,8 @@ export default function PlanningPage() {
                     />
                     <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap z-10 shadow-lg">
                       <div className="font-bold text-blue-400">T{w.week} ({w.dates})</div>
-                      <div>{w.kg.toLocaleString('pl-PL')} kg</div>
-                      <div>{w.workers} pracowników ({w.hrs}h)</div>
+                      <div>{w.kg.toLocaleString('pl-PL')} kg/tydz. → {w.dailyKg.toLocaleString('pl-PL')} kg/dzień</div>
+                      <div className="font-bold">{w.workers} osób/dzień zbioru</div>
                       <div>{w.sectionCount} sekcji zbiera</div>
                     </div>
                   </div>
@@ -411,10 +431,11 @@ export default function PlanningPage() {
                 <thead>
                   <tr className="text-gray-500 border-b-2 border-gray-300">
                     <th className="text-left py-2 px-3">Tydzień</th>
-                    <th className="text-right py-2 px-3">Zbiór (kg)</th>
+                    <th className="text-right py-2 px-3">kg/tydzień</th>
+                    <th className="text-right py-2 px-3">kg/dzień</th>
                     <th className="text-right py-2 px-3">Kumulatywnie</th>
-                    <th className="text-right py-2 px-3">Godziny</th>
-                    <th className="text-right py-2 px-3">Pracownicy</th>
+                    <th className="text-right py-2 px-3">h/dzień</th>
+                    <th className="text-right py-2 px-3 font-bold text-blue-700">Osób/dzień</th>
                     <th className="text-right py-2 px-3">Sekcji</th>
                     <th className="text-left py-2 px-3">Zbierające sekcje</th>
                   </tr>
@@ -426,10 +447,11 @@ export default function PlanningPage() {
                     return (
                       <tr key={w.week} className={`border-b ${isBottleneck ? 'bg-red-50' : ''}`}>
                         <td className="py-2 px-3">T{w.week} <span className="text-gray-400 text-xs">({w.dates})</span></td>
-                        <td className="text-right px-3 font-medium">{w.kg.toLocaleString('pl-PL')} kg</td>
+                        <td className="text-right px-3">{w.kg.toLocaleString('pl-PL')} kg</td>
+                        <td className="text-right px-3 font-medium">{w.dailyKg.toLocaleString('pl-PL')} kg</td>
                         <td className="text-right px-3 text-gray-500">{(cum / 1000).toFixed(2)}t</td>
-                        <td className="text-right px-3 text-gray-500">{w.hrs}h</td>
-                        <td className="text-right px-3 font-medium">{w.workers} os.</td>
+                        <td className="text-right px-3 text-gray-500">{w.dailyHrs}h</td>
+                        <td className="text-right px-3 font-bold text-blue-700">{w.workers}</td>
                         <td className="text-right px-3">{w.sectionCount}</td>
                         <td className="px-3 text-xs text-gray-500 max-w-[200px] truncate" title={w.sections.join(', ')}>{w.sections.join(', ')}</td>
                       </tr>
@@ -549,7 +571,7 @@ export default function PlanningPage() {
                     ))}
                   </tr>
                   <tr className="font-bold text-blue-700">
-                    <td className="py-1 px-1">LUDZIE</td>
+                    <td className="py-1 px-1">OSÓB/DZIEŃ</td>
                     {weeklyPlan.weeks.map(w => (
                       <td key={w.week} className="py-1 px-0.5 text-center">
                         <div className={`rounded py-0.5 ${w.workers >= bottleneckThreshold ? 'bg-red-100 text-red-700' : 'bg-blue-50'}`}>{w.workers}</div>

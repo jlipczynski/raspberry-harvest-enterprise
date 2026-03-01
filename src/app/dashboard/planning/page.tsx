@@ -47,6 +47,33 @@ const SCENARIO_LABELS: Record<Scenario, string> = { p90: 'P90 — ciepły rok', 
 const SCENARIO_SHORT: Record<Scenario, string> = { p90: 'P90', p50: 'P50', p10: 'P10', best: 'ECMWF' }
 const defaultCurve = [5, 10, 15, 20, 20, 15, 10, 5]
 
+// ==================== STAFFING TIERS ====================
+interface StaffingTier {
+  id: string
+  dailyKgFrom: number
+  dailyKgTo: number
+  pickersFrom: number
+  pickersTo: number
+  qualityControl: number
+  weighingStaff: number
+  infrastructure: number
+}
+
+const DEFAULT_TIERS: StaffingTier[] = [
+  { id: '1', dailyKgFrom: 0, dailyKgTo: 500, pickersFrom: 1, pickersTo: 10, qualityControl: 1, weighingStaff: 1, infrastructure: 1 },
+  { id: '2', dailyKgFrom: 500, dailyKgTo: 1500, pickersFrom: 10, pickersTo: 25, qualityControl: 2, weighingStaff: 1, infrastructure: 2 },
+  { id: '3', dailyKgFrom: 1500, dailyKgTo: 3000, pickersFrom: 25, pickersTo: 50, qualityControl: 3, weighingStaff: 2, infrastructure: 3 },
+  { id: '4', dailyKgFrom: 3000, dailyKgTo: 5000, pickersFrom: 50, pickersTo: 80, qualityControl: 5, weighingStaff: 3, infrastructure: 4 },
+]
+
+function matchStaffingTier(dailyKg: number, tiers: StaffingTier[]): StaffingTier | null {
+  for (const tier of tiers) {
+    if (dailyKg >= tier.dailyKgFrom && dailyKg < tier.dailyKgTo) return tier
+  }
+  // If above all tiers, use the last one
+  return tiers.length > 0 ? tiers[tiers.length - 1] : null
+}
+
 // ==================== HELPERS ====================
 const getWeekNumber = (date: Date) => {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
@@ -73,9 +100,16 @@ export default function PlanningPage() {
   const [scenario, setScenario] = useState<Scenario>('p50')
   const [pickingDaysPerWeek, setPickingDaysPerWeek] = useState(7)
   const [hoursPerDay, setHoursPerDay] = useState(8)
+  const [staffingTiers, setStaffingTiers] = useState<StaffingTier[]>(DEFAULT_TIERS)
   const tableRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    // Load staffing tiers from localStorage (same source as workers config page)
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('staffingTiers')
+      if (saved) try { setStaffingTiers(JSON.parse(saved)) } catch {}
+    }
+
     Promise.all([
       fetch('/api/gdh').then(r => r.json()),
       fetch('/api/plantation').then(r => r.json()),
@@ -204,7 +238,15 @@ export default function PlanningPage() {
         // Daily calculation: kg per picking day, workers per picking day
         const dailyKg = Math.round(data.kg / pickingDaysPerWeek)
         const dailyHrs = Math.round(data.hrs / pickingDaysPerWeek)
-        const workers = Math.ceil(dailyHrs / hoursPerDay)
+        const pickers = Math.ceil(dailyHrs / hoursPerDay)
+
+        // Match staffing tier based on daily kg
+        const tier = matchStaffingTier(dailyKg, staffingTiers)
+        const qc = tier?.qualityControl || 0
+        const weighing = tier?.weighingStaff || 0
+        const infra = tier?.infrastructure || 0
+        const totalStaff = pickers + qc + weighing + infra
+
         return {
           week: +wk,
           dates: getWeekDates(+wk, year),
@@ -212,7 +254,12 @@ export default function PlanningPage() {
           dailyKg,
           hrs: data.hrs,
           dailyHrs,
-          workers, // workers per picking day
+          pickers,
+          workers: pickers, // backward compat
+          qc,
+          weighing,
+          infra,
+          totalStaff,
           sectionCount: data.sections.length,
           sections: data.sections,
         }
@@ -220,12 +267,13 @@ export default function PlanningPage() {
       .sort((a, b) => a.week - b.week)
 
     return { weeks, sectionDetails }
-  }, [allPlantationSections, sectionFruitDates, pickingDaysPerWeek, hoursPerDay])
+  }, [allPlantationSections, sectionFruitDates, pickingDaysPerWeek, hoursPerDay, staffingTiers])
 
-  const peakWorkers = Math.max(...weeklyPlan.weeks.map(w => w.workers), 0)
+  const peakPickers = Math.max(...weeklyPlan.weeks.map(w => w.pickers), 0)
+  const peakTotalStaff = Math.max(...weeklyPlan.weeks.map(w => w.totalStaff), 0)
   const totalKgAll = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalKg, 0)
-  const bottleneckThreshold = peakWorkers * 0.8
-  const bottleneckWeeks = weeklyPlan.weeks.filter(w => w.workers >= bottleneckThreshold)
+  const bottleneckThreshold = peakPickers * 0.8
+  const bottleneckWeeks = weeklyPlan.weeks.filter(w => w.pickers >= bottleneckThreshold)
 
   // ==================== PDF EXPORT ====================
   const handleExportPdf = useCallback(async () => {
@@ -241,10 +289,11 @@ export default function PlanningPage() {
     doc.setFontSize(9)
     doc.text(`Scenariusz: ${SCENARIO_SHORT[scenario]} | ${pickingDaysPerWeek} dni zbioru/tydz. × ${hoursPerDay}h/dzień | Wygenerowano: ${new Date().toLocaleDateString('pl-PL')}`, 14, 22)
 
-    const head = [['Tydzień', 'Daty', 'Zbiór/tydz.', 'Zbiór/dzień', 'h/dzień', 'Osób/dzień', 'Sekcji']]
+    const head = [['Tydzień', 'Daty', 'Zbiór/tydz.', 'Zbiór/dzień', 'h/dzień', 'Zbieracze', 'KJ', 'Wagi', 'Infra', 'Łącznie', 'Sekcji']]
     const body = weeklyPlan.weeks.map(w => [
       `T${w.week}`, w.dates, `${w.kg.toLocaleString('pl-PL')} kg`,
-      `${w.dailyKg.toLocaleString('pl-PL')} kg`, `${w.dailyHrs}h`, `${w.workers}`, `${w.sectionCount}`,
+      `${w.dailyKg.toLocaleString('pl-PL')} kg`, `${w.dailyHrs}h`,
+      `${w.pickers}`, `${w.qc}`, `${w.weighing}`, `${w.infra}`, `${w.totalStaff}`, `${w.sectionCount}`,
     ])
 
     autoTable(doc, {
@@ -355,7 +404,7 @@ export default function PlanningPage() {
       {weeklyPlan.weeks.length > 0 && (
         <>
           {/* KPI tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <div className="bg-white rounded-xl p-4 border text-center">
               <p className="text-3xl font-bold">{weeklyPlan.sectionDetails.length}</p>
               <p className="text-xs text-gray-500">Sekcji zbiera</p>
@@ -365,8 +414,12 @@ export default function PlanningPage() {
               <p className="text-xs text-green-600">Prognoza total</p>
             </div>
             <div className="bg-blue-50 rounded-xl p-4 border border-blue-200 text-center">
-              <p className="text-3xl font-bold text-blue-600">{peakWorkers}</p>
-              <p className="text-xs text-blue-600">Osób/dzień max</p>
+              <p className="text-3xl font-bold text-blue-600">{peakPickers}</p>
+              <p className="text-xs text-blue-600">Zbieraczy max</p>
+            </div>
+            <div className="bg-orange-50 rounded-xl p-4 border border-orange-200 text-center">
+              <p className="text-3xl font-bold text-orange-600">{peakTotalStaff}</p>
+              <p className="text-xs text-orange-600">Łącznie osób max</p>
             </div>
             <div className="bg-purple-50 rounded-xl p-4 border border-purple-200 text-center">
               <p className="text-3xl font-bold text-purple-600">{weeklyPlan.weeks.length}</p>
@@ -385,31 +438,41 @@ export default function PlanningPage() {
               <div className="flex flex-wrap gap-2">
                 {bottleneckWeeks.map(w => (
                   <span key={w.week} className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm">
-                    T{w.week}: {w.workers} os. ({w.kg.toLocaleString('pl-PL')} kg, {w.sectionCount} sekcji)
+                    T{w.week}: {w.totalStaff} os. ({w.pickers} zbieraczy + {w.qc + w.weighing + w.infra} wsparcie, {w.kg.toLocaleString('pl-PL')} kg)
                   </span>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Workers bar chart */}
+          {/* Workers bar chart — stacked */}
           <div className="bg-white rounded-xl border p-6">
-            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-500" />Zapotrzebowanie na pracowników (osób/dzień zbioru)</h3>
-            <p className="text-xs text-gray-500 -mt-3 mb-4">{pickingDaysPerWeek}× w tygodniu po {hoursPerDay}h — wydajność z odmiany</p>
+            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-500" />Zapotrzebowanie na personel (osób/dzień zbioru)</h3>
+            <p className="text-xs text-gray-500 -mt-3 mb-4">{pickingDaysPerWeek}× w tygodniu po {hoursPerDay}h — zbieracze + KJ + wagi + infrastruktura</p>
             <div className="flex items-end gap-1 h-48 mb-2">
               {weeklyPlan.weeks.map(w => {
-                const isBottleneck = w.workers >= bottleneckThreshold
+                const isBottleneck = w.pickers >= bottleneckThreshold
+                const maxH = peakTotalStaff > 0 ? peakTotalStaff : 1
+                const pickerH = (w.pickers / maxH) * 180
+                const qcH = (w.qc / maxH) * 180
+                const weighH = (w.weighing / maxH) * 180
+                const infraH = (w.infra / maxH) * 180
                 return (
-                  <div key={w.week} className="flex-1 flex flex-col items-center group relative">
-                    <div
-                      className={`w-full rounded-t transition-all cursor-pointer ${isBottleneck ? 'bg-gradient-to-t from-red-500 to-orange-400' : 'bg-gradient-to-t from-blue-500 to-blue-400'} hover:opacity-80`}
-                      style={{ height: `${peakWorkers > 0 ? (w.workers / peakWorkers) * 180 : 0}px`, minHeight: w.workers > 0 ? '8px' : '0' }}
-                    />
+                  <div key={w.week} className="flex-1 flex flex-col items-end group relative">
+                    <div className="w-full flex flex-col-reverse">
+                      <div className={`w-full ${isBottleneck ? 'bg-red-500' : 'bg-blue-500'} transition-all`} style={{ height: `${pickerH}px`, minHeight: w.pickers > 0 ? '2px' : '0' }} />
+                      {w.qc > 0 && <div className="w-full bg-amber-500" style={{ height: `${qcH}px`, minHeight: '2px' }} />}
+                      {w.weighing > 0 && <div className="w-full bg-cyan-500" style={{ height: `${weighH}px`, minHeight: '2px' }} />}
+                      {w.infra > 0 && <div className="w-full bg-purple-500 rounded-t" style={{ height: `${infraH}px`, minHeight: '2px' }} />}
+                    </div>
                     <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap z-10 shadow-lg">
                       <div className="font-bold text-blue-400">T{w.week} ({w.dates})</div>
-                      <div>{w.kg.toLocaleString('pl-PL')} kg/tydz. → {w.dailyKg.toLocaleString('pl-PL')} kg/dzień</div>
-                      <div className="font-bold">{w.workers} osób/dzień zbioru</div>
-                      <div>{w.sectionCount} sekcji zbiera</div>
+                      <div>{w.dailyKg.toLocaleString('pl-PL')} kg/dzień</div>
+                      <div className="text-blue-300">{w.pickers} zbieraczy</div>
+                      <div className="text-amber-300">{w.qc} kontrola jakości</div>
+                      <div className="text-cyan-300">{w.weighing} wagi</div>
+                      <div className="text-purple-300">{w.infra} infrastruktura</div>
+                      <div className="font-bold border-t border-gray-700 mt-1 pt-1">{w.totalStaff} osób łącznie</div>
                     </div>
                   </div>
                 )
@@ -421,6 +484,12 @@ export default function PlanningPage() {
                 <div className="text-[10px] text-gray-400">{w.dates.split('-')[0]}</div>
               </div>
             ))}</div>
+            <div className="flex gap-4 mt-3 text-xs text-gray-500 justify-center flex-wrap">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500 inline-block" /> Zbieracze</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Kontrola jakości</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-cyan-500 inline-block" /> Wagi</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-500 inline-block" /> Infrastruktura</span>
+            </div>
           </div>
 
           {/* Detailed table */}
@@ -433,17 +502,20 @@ export default function PlanningPage() {
                     <th className="text-left py-2 px-3">Tydzień</th>
                     <th className="text-right py-2 px-3">kg/tydzień</th>
                     <th className="text-right py-2 px-3">kg/dzień</th>
-                    <th className="text-right py-2 px-3">Kumulatywnie</th>
+                    <th className="text-right py-2 px-3">Kumulat.</th>
                     <th className="text-right py-2 px-3">h/dzień</th>
-                    <th className="text-right py-2 px-3 font-bold text-blue-700">Osób/dzień</th>
+                    <th className="text-right py-2 px-3 text-blue-600">Zbieracze</th>
+                    <th className="text-right py-2 px-3 text-amber-600">KJ</th>
+                    <th className="text-right py-2 px-3 text-cyan-600">Wagi</th>
+                    <th className="text-right py-2 px-3 text-purple-600">Infra</th>
+                    <th className="text-right py-2 px-3 font-bold text-orange-700">Łącznie</th>
                     <th className="text-right py-2 px-3">Sekcji</th>
-                    <th className="text-left py-2 px-3">Zbierające sekcje</th>
                   </tr>
                 </thead>
                 <tbody>
                   {weeklyPlan.weeks.map((w, wi) => {
                     const cum = weeklyPlan.weeks.slice(0, wi + 1).reduce((s, x) => s + x.kg, 0)
-                    const isBottleneck = w.workers >= bottleneckThreshold
+                    const isBottleneck = w.pickers >= bottleneckThreshold
                     return (
                       <tr key={w.week} className={`border-b ${isBottleneck ? 'bg-red-50' : ''}`}>
                         <td className="py-2 px-3">T{w.week} <span className="text-gray-400 text-xs">({w.dates})</span></td>
@@ -451,9 +523,12 @@ export default function PlanningPage() {
                         <td className="text-right px-3 font-medium">{w.dailyKg.toLocaleString('pl-PL')} kg</td>
                         <td className="text-right px-3 text-gray-500">{(cum / 1000).toFixed(2)}t</td>
                         <td className="text-right px-3 text-gray-500">{w.dailyHrs}h</td>
-                        <td className="text-right px-3 font-bold text-blue-700">{w.workers}</td>
+                        <td className="text-right px-3 font-semibold text-blue-600">{w.pickers}</td>
+                        <td className="text-right px-3 text-amber-600">{w.qc}</td>
+                        <td className="text-right px-3 text-cyan-600">{w.weighing}</td>
+                        <td className="text-right px-3 text-purple-600">{w.infra}</td>
+                        <td className="text-right px-3 font-bold text-orange-700">{w.totalStaff}</td>
                         <td className="text-right px-3">{w.sectionCount}</td>
-                        <td className="px-3 text-xs text-gray-500 max-w-[200px] truncate" title={w.sections.join(', ')}>{w.sections.join(', ')}</td>
                       </tr>
                     )
                   })}
@@ -692,10 +767,18 @@ export default function PlanningPage() {
                     ))}
                   </tr>
                   <tr className="font-bold text-blue-700">
-                    <td className="py-1 px-1">OSÓB/DZIEŃ</td>
+                    <td className="py-1 px-1">ZBIERACZE</td>
                     {weeklyPlan.weeks.map(w => (
                       <td key={w.week} className="py-1 px-0.5 text-center">
-                        <div className={`rounded py-0.5 ${w.workers >= bottleneckThreshold ? 'bg-red-100 text-red-700' : 'bg-blue-50'}`}>{w.workers}</div>
+                        <div className={`rounded py-0.5 ${w.pickers >= bottleneckThreshold ? 'bg-red-100 text-red-700' : 'bg-blue-50'}`}>{w.pickers}</div>
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="font-bold text-orange-700">
+                    <td className="py-1 px-1">ŁĄCZNIE</td>
+                    {weeklyPlan.weeks.map(w => (
+                      <td key={w.week} className="py-1 px-0.5 text-center">
+                        <div className="rounded py-0.5 bg-orange-50">{w.totalStaff}</div>
                       </td>
                     ))}
                   </tr>

@@ -7,11 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  raspberry-harvest:
+  ci:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: raspberry-harvest
 
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +17,6 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: raspberry-harvest/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -36,30 +32,3 @@ jobs:
         env:
           DATABASE_URL: "postgresql://placeholder:placeholder@localhost:5432/placeholder"
           NEXTAUTH_SECRET: "ci-build-secret"
-
-  dashboard:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: dashboard
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: dashboard/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Test
-        run: npm run test
-
-      - name: Build
-        run: npm run build

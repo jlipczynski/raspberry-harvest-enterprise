@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd raspberry-harvest && npm install 2>&1 | tail -1 && npx prisma generate 2>&1 | tail -1 && cd ../dashboard && npm install 2>&1 | tail -1 && echo '✅ Environment ready: both projects initialized'"
+            "command": "npm install 2>&1 | tail -1 && npx prisma generate 2>&1 | tail -1 && echo '✅ Environment ready: deps installed, Prisma client generated'"
           }
         ]
       }

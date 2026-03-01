@@ -98,7 +98,7 @@ export default function PlanningPage() {
   const [blocks, setBlocks] = useState<Block[]>([])
   const [loading, setLoading] = useState(true)
   const [scenario, setScenario] = useState<Scenario>('p50')
-  const [pickingDaysPerWeek, setPickingDaysPerWeek] = useState(6)
+  const [pickingDaysPerWeek, setPickingDaysPerWeek] = useState(7)
   const [hoursPerDay, setHoursPerDay] = useState(8)
   const [staffingTiers, setStaffingTiers] = useState<StaffingTier[]>(DEFAULT_TIERS)
   const tableRef = useRef<HTMLDivElement>(null)

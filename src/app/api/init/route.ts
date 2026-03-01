@@ -23,18 +23,18 @@ export async function POST() {
         }
       })
 
-      // Odmiany z pełnymi danymi
+      // Odmiany z pełnymi danymi — krzywe i yieldy z MaxCrop 2025
       const dj = await prisma.variety.create({
         data: {
           name: 'Diamond Jubilee',
           origin: 'Wielka Brytania',
           description: 'Odmiana deserowa o dużych, aromatycznych owocach',
           yieldSummerPerShoot: 1.48,
-          yieldAutumnPerShoot: 0.44,
+          yieldAutumnPerShoot: 0.67,  // MaxCrop 2025: A-blocks avg 0.63-0.70 (było 0.44)
           gdhSummer: 20000,
           gdhAutumn: 25000,
-          harvestCurveSummer: [2, 6, 12, 16, 15, 13, 11, 9, 7, 5, 3, 1],
-          harvestCurveAutumn: [5, 15, 25, 25, 15, 10, 5],
+          harvestCurveSummer: [0.5, 1.8, 2.5, 8.3, 18.2, 19.9, 22.1, 17.0, 7.8, 2.6],  // MaxCrop 2025 real
+          harvestCurveAutumn: [2.8, 10.1, 10.0, 17.1, 22.9, 15.1, 11.8, 5.9, 3.5, 0.4, 0.2],  // MaxCrop 2025 real, 11 tyg.
           pickingEfficiency: 8,
           wastePercent: 2,
           secondCategoryPercent: 8,
@@ -49,11 +49,11 @@ export async function POST() {
           origin: 'Polska',
           description: 'Odmiana o intensywnym smaku i dobrej wydajności',
           yieldSummerPerShoot: 1.55,
-          yieldAutumnPerShoot: 0.51,
+          yieldAutumnPerShoot: 0,  // MaxCrop 2025: Ruby NIE daje jesieni (B08-13 kończy 6 VIII)
           gdhSummer: 19000,
           gdhAutumn: 24000,
-          harvestCurveSummer: [2, 6, 12, 16, 15, 13, 11, 9, 7, 5, 3, 1],
-          harvestCurveAutumn: [5, 15, 25, 25, 15, 10, 5],
+          harvestCurveSummer: [0.5, 3.8, 6.3, 14.3, 12.4, 16.3, 17.4, 19.1, 5.9, 3.9],  // MaxCrop 2025 real
+          harvestCurveAutumn: [],  // brak jesieni
           pickingEfficiency: 8.5,
           wastePercent: 2,
           secondCategoryPercent: 7,
@@ -71,38 +71,40 @@ export async function POST() {
       // Sekcje z nowymi polami
       await prisma.section.createMany({
         data: [
-          { 
-            name: 'A1-9', 
+          // === BLOK A: DJ, SMALL_POT, rok prod. 2 — baseline yields ===
+          {
+            name: 'A1-9',
             metersLength: 2646, // 18 rzędów × 147m
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2024,
             productionYear: 2,
             plantMaterialType: 'SMALL_POT',
-            yieldSummerPerShoot: 1.48,
-            yieldAutumnPerShoot: 0.44,
+            yieldSummerPerShoot: 1.47,   // MaxCrop 2025
+            yieldAutumnPerShoot: 0.63,   // MaxCrop 2025
             gdhSummer: 20000,
             gdhAutumn: 25000,
-            blockId: blockA.id, 
-            varietyId: dj.id 
+            blockId: blockA.id,
+            varietyId: dj.id
           },
-          { 
-            name: 'A10-19', 
+          {
+            name: 'A10-19',
             metersLength: 2340, // 20 rzędów × 117m
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2024,
             productionYear: 2,
             plantMaterialType: 'SMALL_POT',
-            yieldSummerPerShoot: 1.48,
-            yieldAutumnPerShoot: 0.44,
+            yieldSummerPerShoot: 1.48,   // MaxCrop 2025
+            yieldAutumnPerShoot: 0.70,   // MaxCrop 2025
             gdhSummer: 20000,
             gdhAutumn: 25000,
-            blockId: blockA.id, 
-            varietyId: dj.id 
+            blockId: blockA.id,
+            varietyId: dj.id
           },
-          { 
-            name: 'B01-07', 
+          // === BLOK B: Ruby, LONGCANE, rok prod. 3 — Ruby NIE daje jesieni ===
+          {
+            name: 'B01-07',
             metersLength: 2100, // 14 rzędów × 150m
             potsPerMeter: 2,
             shootsPerPot: 2,
@@ -110,86 +112,88 @@ export async function POST() {
             productionYear: 3,
             plantMaterialType: 'LONGCANE',
             yieldSummerPerShoot: 1.55,
-            yieldAutumnPerShoot: 0.51,
+            yieldAutumnPerShoot: 0,      // Ruby = brak jesieni (MaxCrop 2025)
             gdhSummer: 19000,
             gdhAutumn: 24000,
-            blockId: blockB.id, 
-            varietyId: ruby.id 
+            blockId: blockB.id,
+            varietyId: ruby.id
           },
-          { 
-            name: 'B08-13', 
+          {
+            name: 'B08-13',
             metersLength: 1800, // 12 rzędów × 150m
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2023,
             productionYear: 3,
             plantMaterialType: 'LONGCANE',
-            yieldSummerPerShoot: 1.55,
-            yieldAutumnPerShoot: 0.51,
+            yieldSummerPerShoot: 2.13,   // MaxCrop 2025 — wyższy yield niż B01-07
+            yieldAutumnPerShoot: 0,      // Ruby = brak jesieni
             gdhSummer: 19000,
             gdhAutumn: 24000,
-            blockId: blockB.id, 
-            varietyId: ruby.id 
+            blockId: blockB.id,
+            varietyId: ruby.id
           },
-          { 
-            name: 'C01-05', 
+          // === BLOK C: DJ, SMALL_POT — słaba kondycja 2025, niski yield ===
+          {
+            name: 'C01-05',
             metersLength: 1500, // 10 rzędów × 150m
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2024,
             productionYear: 2,
             plantMaterialType: 'SMALL_POT',
-            yieldSummerPerShoot: 1.48,
-            yieldAutumnPerShoot: 0.44,
+            yieldSummerPerShoot: 0,      // MaxCrop 2025: zero lata (słaba kondycja)
+            yieldAutumnPerShoot: 0.22,   // MaxCrop 2025: minimalna jesień
             gdhSummer: 20000,
             gdhAutumn: 25000,
-            blockId: blockC.id, 
-            varietyId: dj.id 
+            blockId: blockC.id,
+            varietyId: dj.id
           },
-          { 
-            name: 'C06-11', 
+          {
+            name: 'C06-11',
             metersLength: 1800, // 12 rzędów × 150m
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2024,
             productionYear: 2,
             plantMaterialType: 'SMALL_POT',
-            yieldSummerPerShoot: 1.48,
-            yieldAutumnPerShoot: 0.44,
+            yieldSummerPerShoot: 0,      // MaxCrop 2025: zero lata
+            yieldAutumnPerShoot: 0.22,   // MaxCrop 2025: minimalna jesień
             gdhSummer: 20000,
             gdhAutumn: 25000,
-            blockId: blockC.id, 
-            varietyId: dj.id 
+            blockId: blockC.id,
+            varietyId: dj.id
           },
-          { 
-            name: 'D01-09', 
+          // === BLOK D: DJ, PLUG rok 1 — wyższy lato, niski jesień (młoda rośl.) ===
+          {
+            name: 'D01-09',
             metersLength: 2700, // 18 rzędów × 150m
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2025,
             productionYear: 1,
             plantMaterialType: 'PLUG',
-            yieldSummerPerShoot: 1.48,
-            yieldAutumnPerShoot: 0.44,
+            yieldSummerPerShoot: 1.74,   // MaxCrop 2025: PLUG rok 1 (+17% vs A-blocks)
+            yieldAutumnPerShoot: 0.13,   // MaxCrop 2025: mała jesień (rok 1)
             gdhSummer: 20000,
             gdhAutumn: 25000,
-            blockId: blockD.id, 
-            varietyId: dj.id 
+            blockId: blockD.id,
+            varietyId: dj.id
           },
-          { 
-            name: 'D10-18', 
+          {
+            name: 'D10-18',
             metersLength: 2700, // 18 rzędów × 150m
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2025,
             productionYear: 1,
             plantMaterialType: 'PLUG',
-            yieldSummerPerShoot: 1.48,
-            yieldAutumnPerShoot: 0.44,
+            yieldSummerPerShoot: 1.74,   // MaxCrop 2025
+            yieldAutumnPerShoot: 0.13,   // MaxCrop 2025
             gdhSummer: 20000,
             gdhAutumn: 25000,
-            blockId: blockD.id, 
-            varietyId: dj.id 
+            blockId: blockD.id,
+            varietyId: dj.id
           },
         ]
       })

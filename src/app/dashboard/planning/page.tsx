@@ -57,12 +57,6 @@ const DJ_CURVE_AUTUMN = [2.8, 10.1, 10.0, 17.1, 22.9, 15.1, 11.8, 5.9, 3.5, 0.4,
 // Ruby has NO autumn production (confirmed by MaxCrop data: B08-13 ends Aug 6)
 const RUBY_CURVE_AUTUMN: number[] = []
 
-// Real yields per shoot from MaxCrop 2025 (replace seed data)
-const REAL_YIELDS: Record<string, { summer: number; autumn: number }> = {
-  'Diamond Jubilee': { summer: 1.48, autumn: 0.67 },  // A-blocks avg: S=1.47-1.48, A=0.63-0.70
-  'Ruby':            { summer: 2.13, autumn: 0 },      // B08-13: S=2.13, A=0 (summer-only!)
-}
-
 // Fallback for unknown varieties
 const defaultCurveSummer = DJ_CURVE_SUMMER
 const defaultCurveAutumn = DJ_CURVE_AUTUMN
@@ -226,19 +220,15 @@ export default function PlanningPage() {
       const eff = v?.pickingEfficiency || 6 // kg/h
       const varietyName = v?.name || ''
 
-      // Use real MaxCrop yields if available, otherwise fall back to variety/section data
-      const realYield = REAL_YIELDS[varietyName]
-
+      // Yields from DB: section-level overrides variety-level
       // --- SUMMER ---
-      const summerYield = realYield?.summer
-        ?? section.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
+      const summerYield = section.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
       const summerCurve = varietyName.includes('Ruby') ? RUBY_CURVE_SUMMER
         : (varietyName.includes('Diamond') || varietyName.includes('DJ')) ? DJ_CURVE_SUMMER
         : (v?.harvestCurveSummer as number[] || defaultCurveSummer)
 
       // --- AUTUMN ---
-      const autumnYield = realYield?.autumn
-        ?? section.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
+      const autumnYield = section.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
       const autumnCurve = varietyName.includes('Ruby') ? RUBY_CURVE_AUTUMN
         : (varietyName.includes('Diamond') || varietyName.includes('DJ')) ? DJ_CURVE_AUTUMN
         : (v?.harvestCurveAutumn as number[] || defaultCurveAutumn)
@@ -499,10 +489,26 @@ export default function PlanningPage() {
             <ul className="list-disc list-inside space-y-0.5 text-amber-700">
               <li>Krzywe DJ i Ruby z realnych danych MaxCrop (nie identyczne placeholdery)</li>
               <li>Ruby jesień = 0 (było 0.51 kg/pęd — błąd)</li>
-              <li>DJ jesień = 0.67 kg/pęd (było 0.44 — zaniżone o 43-60%)</li>
+              <li>DJ jesień = 0.67 kg/pęd na odmianę (było 0.44 — zaniżone o 43-60%)</li>
+              <li>Yieldy per sekcja z MaxCrop: C=0 lato / 0.22 jesień, D(PLUG)=1.74/0.13, B08-13=2.13/0</li>
               <li>Każda sekcja liczy LATO + JESIEŃ osobno (było: albo/albo wg startWeek {'<'} 30)</li>
               <li>Jesień startuje od tygodnia 33 (mid-sierpień), niezależnie od lata</li>
             </ul>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <h4 className="font-semibold text-blue-800 mb-1">Przeliczenie total (weryfikacja)</h4>
+            <div className="font-mono text-[11px] space-y-0.5 text-blue-700">
+              <div>A1-9:  10 584 pędów × (1.47+0.63) = 22 228 kg</div>
+              <div>A10-19: 9 360 pędów × (1.48+0.70) = 20 405 kg</div>
+              <div>B01-07: 8 400 pędów × (1.55+0.00) = 13 020 kg</div>
+              <div>B08-13: 7 200 pędów × (2.13+0.00) = 15 336 kg</div>
+              <div>C01-05: 6 000 pędów × (0.00+0.22) =  1 320 kg</div>
+              <div>C06-11: 7 200 pędów × (0.00+0.22) =  1 584 kg</div>
+              <div>D01-09: 10 800 pędów × (1.74+0.13) = 20 196 kg</div>
+              <div>D10-18: 10 800 pędów × (1.74+0.13) = 20 196 kg</div>
+              <div className="font-bold border-t border-blue-300 pt-1">SUMA: 114 285 kg ≈ 114 ton (MaxCrop real: 118t, diff -3%)</div>
+            </div>
           </div>
         </div>
       </details>

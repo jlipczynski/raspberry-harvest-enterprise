@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Plus, Users, X, Trash2, Search, Edit, Check, ChevronUp, ChevronDown,
-  ChevronsUpDown, Mail, UserPlus, Award
+  ChevronsUpDown, Mail, UserPlus, Award, Settings2, ClipboardList
 } from 'lucide-react'
 
 interface Worker {
@@ -79,7 +79,228 @@ function getSortValue(w: Worker, key: SortKey): string | number {
   }
 }
 
+// ==================== STAFFING CONFIG ====================
+interface StaffingTier {
+  id: string
+  dailyKgFrom: number
+  dailyKgTo: number
+  pickersFrom: number
+  pickersTo: number
+  qualityControl: number
+  weighingStaff: number
+  infrastructure: number
+}
+
+const DEFAULT_TIERS: StaffingTier[] = [
+  { id: '1', dailyKgFrom: 0, dailyKgTo: 500, pickersFrom: 1, pickersTo: 10, qualityControl: 1, weighingStaff: 1, infrastructure: 1 },
+  { id: '2', dailyKgFrom: 500, dailyKgTo: 1500, pickersFrom: 10, pickersTo: 25, qualityControl: 2, weighingStaff: 1, infrastructure: 2 },
+  { id: '3', dailyKgFrom: 1500, dailyKgTo: 3000, pickersFrom: 25, pickersTo: 50, qualityControl: 3, weighingStaff: 2, infrastructure: 3 },
+  { id: '4', dailyKgFrom: 3000, dailyKgTo: 5000, pickersFrom: 50, pickersTo: 80, qualityControl: 5, weighingStaff: 3, infrastructure: 4 },
+]
+
+const STAFF_OPTIONS = Array.from({ length: 16 }, (_, i) => i) // 0-15
+
+function StaffingConfig() {
+  const [tiers, setTiers] = useState<StaffingTier[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('staffingTiers')
+      if (saved) try { return JSON.parse(saved) } catch {}
+    }
+    return DEFAULT_TIERS
+  })
+  const [saved, setSaved] = useState(false)
+
+  const updateTier = (id: string, field: keyof StaffingTier, value: number) => {
+    setTiers(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t))
+    setSaved(false)
+  }
+
+  const addTier = () => {
+    const last = tiers[tiers.length - 1]
+    setTiers(prev => [...prev, {
+      id: Date.now().toString(),
+      dailyKgFrom: last ? last.dailyKgTo : 0,
+      dailyKgTo: last ? last.dailyKgTo + 1000 : 1000,
+      pickersFrom: last ? last.pickersTo : 1,
+      pickersTo: last ? last.pickersTo + 20 : 20,
+      qualityControl: last ? last.qualityControl + 1 : 1,
+      weighingStaff: last ? last.weighingStaff : 1,
+      infrastructure: last ? last.infrastructure + 1 : 1,
+    }])
+    setSaved(false)
+  }
+
+  const removeTier = (id: string) => {
+    if (tiers.length <= 1) return
+    setTiers(prev => prev.filter(t => t.id !== id))
+    setSaved(false)
+  }
+
+  const saveTiers = () => {
+    localStorage.setItem('staffingTiers', JSON.stringify(tiers))
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const totalForTier = (t: StaffingTier) => {
+    const avgPickers = Math.round((t.pickersFrom + t.pickersTo) / 2)
+    return avgPickers + t.qualityControl + t.weighingStaff + t.infrastructure
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">Konfiguracja personelu</h2>
+          <p className="text-sm text-gray-500">Zdefiniuj ile osób wsparcia potrzebujesz dla danego przedziału zbioru</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={addTier}>
+            <Plus className="w-4 h-4 mr-1" /> Dodaj przedział
+          </Button>
+          <Button size="sm" className={saved ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-700'} onClick={saveTiers}>
+            {saved ? <><Check className="w-4 h-4 mr-1" /> Zapisano</> : 'Zapisz konfigurację'}
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-gray-50">
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase" colSpan={2}>Szacunkowy zbiór dzienny (kg)</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase" colSpan={2}>Zbieracze</th>
+                  <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Kontrola jakości</th>
+                  <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Praca na wagach</th>
+                  <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase">Obsługa infrastruktury</th>
+                  <th className="px-3 py-3 text-center text-xs font-semibold text-blue-600 uppercase font-bold">Łącznie osób</th>
+                  <th className="px-1 py-3" />
+                </tr>
+                <tr className="border-b bg-gray-50/50">
+                  <th className="px-3 py-1 text-[10px] text-gray-400 text-center">od</th>
+                  <th className="px-3 py-1 text-[10px] text-gray-400 text-center">do</th>
+                  <th className="px-3 py-1 text-[10px] text-gray-400 text-center">od</th>
+                  <th className="px-3 py-1 text-[10px] text-gray-400 text-center">do</th>
+                  <th className="px-3 py-1 text-[10px] text-gray-400 text-center">osób</th>
+                  <th className="px-3 py-1 text-[10px] text-gray-400 text-center">osób</th>
+                  <th className="px-3 py-1 text-[10px] text-gray-400 text-center">osób</th>
+                  <th />
+                  <th />
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {tiers.map((tier, idx) => (
+                  <tr key={tier.id} className="hover:bg-gray-50">
+                    <td className="px-2 py-2">
+                      <input type="number" min="0" step="100" value={tier.dailyKgFrom}
+                        onChange={e => updateTier(tier.id, 'dailyKgFrom', +e.target.value)}
+                        className="w-20 rounded-md border px-2 py-1.5 text-sm text-center bg-white" />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input type="number" min="0" step="100" value={tier.dailyKgTo}
+                        onChange={e => updateTier(tier.id, 'dailyKgTo', +e.target.value)}
+                        className="w-20 rounded-md border px-2 py-1.5 text-sm text-center bg-white" />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input type="number" min="1" value={tier.pickersFrom}
+                        onChange={e => updateTier(tier.id, 'pickersFrom', +e.target.value)}
+                        className="w-16 rounded-md border px-2 py-1.5 text-sm text-center bg-white" />
+                    </td>
+                    <td className="px-2 py-2">
+                      <input type="number" min="1" value={tier.pickersTo}
+                        onChange={e => updateTier(tier.id, 'pickersTo', +e.target.value)}
+                        className="w-16 rounded-md border px-2 py-1.5 text-sm text-center bg-white" />
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <select value={tier.qualityControl} onChange={e => updateTier(tier.id, 'qualityControl', +e.target.value)}
+                        className="rounded-md border px-2 py-1.5 text-sm text-center bg-white min-w-[60px]">
+                        {STAFF_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <select value={tier.weighingStaff} onChange={e => updateTier(tier.id, 'weighingStaff', +e.target.value)}
+                        className="rounded-md border px-2 py-1.5 text-sm text-center bg-white min-w-[60px]">
+                        {STAFF_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <select value={tier.infrastructure} onChange={e => updateTier(tier.id, 'infrastructure', +e.target.value)}
+                        className="rounded-md border px-2 py-1.5 text-sm text-center bg-white min-w-[60px]">
+                        {STAFF_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <span className="inline-flex items-center justify-center w-10 h-8 rounded-lg bg-blue-100 text-blue-700 font-bold text-sm">
+                        {totalForTier(tier)}
+                      </span>
+                    </td>
+                    <td className="px-1 py-2">
+                      <button onClick={() => removeTier(tier.id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="Usuń przedział">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Summary visualization */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Podsumowanie — zapotrzebowanie na personel wg przedziału</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {tiers.map(tier => {
+              const avgPickers = Math.round((tier.pickersFrom + tier.pickersTo) / 2)
+              const total = totalForTier(tier)
+              const maxTotal = Math.max(...tiers.map(totalForTier), 1)
+              return (
+                <div key={tier.id} className="flex items-center gap-3">
+                  <div className="w-32 text-xs text-gray-600 text-right shrink-0">
+                    {tier.dailyKgFrom.toLocaleString('pl-PL')}–{tier.dailyKgTo.toLocaleString('pl-PL')} kg
+                  </div>
+                  <div className="flex-1 flex h-7 rounded-lg overflow-hidden bg-gray-100">
+                    <div className="bg-green-500 flex items-center justify-center text-[10px] text-white font-bold" style={{ width: `${(avgPickers / total) * (total / maxTotal) * 100}%` }} title={`Zbieracze: ~${avgPickers}`}>
+                      {avgPickers > 3 ? avgPickers : ''}
+                    </div>
+                    <div className="bg-amber-500 flex items-center justify-center text-[10px] text-white font-bold" style={{ width: `${(tier.qualityControl / total) * (total / maxTotal) * 100}%` }} title={`Kontrola jakości: ${tier.qualityControl}`}>
+                      {tier.qualityControl > 0 ? tier.qualityControl : ''}
+                    </div>
+                    <div className="bg-blue-500 flex items-center justify-center text-[10px] text-white font-bold" style={{ width: `${(tier.weighingStaff / total) * (total / maxTotal) * 100}%` }} title={`Wagi: ${tier.weighingStaff}`}>
+                      {tier.weighingStaff > 0 ? tier.weighingStaff : ''}
+                    </div>
+                    <div className="bg-purple-500 flex items-center justify-center text-[10px] text-white font-bold" style={{ width: `${(tier.infrastructure / total) * (total / maxTotal) * 100}%` }} title={`Infrastruktura: ${tier.infrastructure}`}>
+                      {tier.infrastructure > 0 ? tier.infrastructure : ''}
+                    </div>
+                  </div>
+                  <div className="w-10 text-right text-sm font-bold text-gray-700">{total}</div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex gap-4 mt-4 text-xs text-gray-500 justify-center flex-wrap">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block" /> Zbieracze</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Kontrola jakości</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500 inline-block" /> Praca na wagach</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-500 inline-block" /> Infrastruktura</span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// ==================== MAIN PAGE ====================
+type WorkersTab = 'config' | 'recruitment'
+
 export default function WorkersPage() {
+  const [activeTab, setActiveTab] = useState<WorkersTab>('config')
   const [workers, setWorkers] = useState<Worker[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -180,6 +401,11 @@ export default function WorkersPage() {
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="text-gray-500">Ładowanie pracowników...</div></div>
 
+  const tabs: { key: WorkersTab; label: string; icon: typeof Settings2 }[] = [
+    { key: 'config', label: 'Konfiguracja', icon: Settings2 },
+    { key: 'recruitment', label: 'Rekrutacja', icon: ClipboardList },
+  ]
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -187,10 +413,35 @@ export default function WorkersPage() {
           <h1 className="text-2xl font-bold text-gray-900">Pracownicy</h1>
           <p className="text-gray-500">Zarządzanie pracownikami sezonowymi</p>
         </div>
-        <Button className="bg-green-600 hover:bg-green-700" onClick={() => setEditing({ ...emptyWorker })}>
-          <Plus className="w-4 h-4 mr-2" /> Dodaj pracownika
-        </Button>
+        {activeTab === 'recruitment' && (
+          <Button className="bg-green-600 hover:bg-green-700" onClick={() => setEditing({ ...emptyWorker })}>
+            <Plus className="w-4 h-4 mr-2" /> Dodaj pracownika
+          </Button>
+        )}
       </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+        {tabs.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+              activeTab === tab.key
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'config' && <StaffingConfig />}
+
+      {activeTab === 'recruitment' && (<>
+      {/* Stats cards — recruitment tab */}
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
@@ -386,6 +637,7 @@ export default function WorkersPage() {
           </CardContent>
         </Card>
       )}
+      </>)}
     </div>
   )
 }

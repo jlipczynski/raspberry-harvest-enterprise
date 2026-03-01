@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Button } from "@/components/ui/button"
-import { Users, AlertTriangle, BarChart3, Target, Loader2, FileDown, Printer } from 'lucide-react'
+import { Users, AlertTriangle, BarChart3, Target, Loader2, FileDown, Printer, Calendar, TrendingUp } from 'lucide-react'
 
 // ==================== TYPES ====================
 interface SectionGdh {
@@ -71,7 +71,7 @@ export default function PlanningPage() {
   const [blocks, setBlocks] = useState<Block[]>([])
   const [loading, setLoading] = useState(true)
   const [scenario, setScenario] = useState<Scenario>('p50')
-  const [pickingDaysPerWeek, setPickingDaysPerWeek] = useState(3)
+  const [pickingDaysPerWeek, setPickingDaysPerWeek] = useState(7)
   const [hoursPerDay, setHoursPerDay] = useState(8)
   const tableRef = useRef<HTMLDivElement>(null)
 
@@ -179,7 +179,7 @@ export default function PlanningPage() {
       const curve = isSummer
         ? (v?.harvestCurveSummer as number[] || defaultCurve)
         : (v?.harvestCurveAutumn as number[] || defaultCurve)
-      const eff = v?.pickingEfficiency || 6 // kg/h
+      const eff = v?.pickingEfficiency || 8 // kg/h
 
       const weeklyKg: Array<{ week: number; kg: number }> = []
 
@@ -517,6 +517,127 @@ export default function PlanningPage() {
             </div>
           </div>
 
+          {/* Gantt: section harvest timeline */}
+          <div className="bg-white rounded-xl border p-6">
+            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Calendar className="w-5 h-5 text-indigo-500" />Oś czasu zbiorów per sekcja</h3>
+            <div className="overflow-x-auto">
+              {(() => {
+                const minWeek = Math.min(...weeklyPlan.weeks.map(w => w.week))
+                const maxWeek = Math.max(...weeklyPlan.weeks.map(w => w.week))
+                const range = maxWeek - minWeek + 1
+                const sorted = [...weeklyPlan.sectionDetails].sort((a, b) => (a.startWeek || 99) - (b.startWeek || 99))
+                return (
+                  <div className="min-w-[600px]">
+                    {/* week headers */}
+                    <div className="flex items-center mb-1">
+                      <div className="w-40 shrink-0" />
+                      <div className="flex-1 flex">
+                        {Array.from({ length: range }, (_, i) => (
+                          <div key={i} className="flex-1 text-center text-[10px] text-gray-500 font-medium">T{minWeek + i}</div>
+                        ))}
+                      </div>
+                    </div>
+                    {sorted.map(d => {
+                      const sectionWeeks = d.weeklyKg.filter(w => w.kg > 0)
+                      const sMin = Math.min(...sectionWeeks.map(w => w.week))
+                      const sMax = Math.max(...sectionWeeks.map(w => w.week))
+                      const left = ((sMin - minWeek) / range) * 100
+                      const width = ((sMax - sMin + 1) / range) * 100
+                      const maxKg = Math.max(...sectionWeeks.map(w => w.kg), 1)
+                      return (
+                        <div key={d.section.id} className="flex items-center mb-0.5 group">
+                          <div className="w-40 shrink-0 text-xs truncate pr-2">
+                            <span className="text-gray-400">{d.section.blockName}/</span><span className="font-medium">{d.section.name}</span>
+                          </div>
+                          <div className="flex-1 relative h-6 bg-gray-50 rounded">
+                            {/* bar background */}
+                            <div className="absolute top-0.5 bottom-0.5 rounded" style={{ left: `${left}%`, width: `${width}%`, background: 'linear-gradient(90deg, #fbbf24, #ef4444, #fbbf24)' }} />
+                            {/* individual week cells with intensity */}
+                            {sectionWeeks.map(w => {
+                              const wLeft = ((w.week - minWeek) / range) * 100
+                              const wWidth = (1 / range) * 100
+                              const opacity = 0.3 + (w.kg / maxKg) * 0.7
+                              return (
+                                <div
+                                  key={w.week}
+                                  className="absolute top-0.5 bottom-0.5 rounded-sm"
+                                  style={{ left: `${wLeft}%`, width: `${wWidth}%`, background: `rgba(220, 38, 38, ${opacity})` }}
+                                  title={`${d.section.name} T${w.week}: ${w.kg.toLocaleString('pl-PL')} kg`}
+                                />
+                              )
+                            })}
+                            {/* total label */}
+                            <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white drop-shadow-sm pointer-events-none" style={{ left: `${left}%`, width: `${width}%` }}>
+                              {(d.totalKg / 1000).toFixed(1)}t
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {/* date labels */}
+                    <div className="flex items-center mt-1">
+                      <div className="w-40 shrink-0" />
+                      <div className="flex-1 flex">
+                        {Array.from({ length: range }, (_, i) => (
+                          <div key={i} className="flex-1 text-center text-[9px] text-gray-400">{getWeekDates(minWeek + i).split('-')[0]}</div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+
+          {/* Cumulative harvest chart */}
+          <div className="bg-white rounded-xl border p-6">
+            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-green-500" />Kumulatywny zbiór (narastająco)</h3>
+            {(() => {
+              let cum = 0
+              const cumData = weeklyPlan.weeks.map(w => { cum += w.kg; return { week: w.week, dates: w.dates, cum, kg: w.kg } })
+              const maxCum = cum
+              const pctTarget = totalKgAll > 0 ? totalKgAll : maxCum
+              return (
+                <div>
+                  <div className="flex items-end gap-1 h-48 mb-2 relative">
+                    {/* target line */}
+                    <div className="absolute left-0 right-0 border-t-2 border-dashed border-green-400 top-0 z-10" />
+                    <div className="absolute left-1 top-0.5 text-[10px] text-green-600 font-medium z-10">{(pctTarget / 1000).toFixed(1)}t plan</div>
+                    {cumData.map((d, i) => {
+                      const prevCum = i > 0 ? cumData[i - 1].cum : 0
+                      const barHeight = maxCum > 0 ? (d.cum / pctTarget) * 180 : 0
+                      const prevHeight = maxCum > 0 ? (prevCum / pctTarget) * 180 : 0
+                      const pct = pctTarget > 0 ? Math.round((d.cum / pctTarget) * 100) : 0
+                      return (
+                        <div key={d.week} className="flex-1 flex flex-col items-center group relative">
+                          <div className="w-full relative" style={{ height: '180px' }}>
+                            {/* cumulative bar */}
+                            <div className="absolute bottom-0 left-0 right-0 bg-green-200 rounded-t" style={{ height: `${Math.min(barHeight, 180)}px` }} />
+                            {/* weekly increment */}
+                            <div className="absolute bottom-0 left-0 right-0 bg-green-500 rounded-t" style={{ height: `${Math.min(barHeight - prevHeight, 180)}px`, bottom: `${Math.min(prevHeight, 180)}px` }} />
+                          </div>
+                          {/* tooltip */}
+                          <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap z-10 shadow-lg">
+                            <div className="font-bold text-green-400">T{d.week} ({d.dates})</div>
+                            <div>+{d.kg.toLocaleString('pl-PL')} kg ten tydzień</div>
+                            <div className="font-bold">{(d.cum / 1000).toFixed(2)}t kumulatywnie ({pct}%)</div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="flex gap-1">{cumData.map(d => (
+                    <div key={d.week} className="flex-1 text-center text-[10px] text-gray-500">T{d.week}</div>
+                  ))}</div>
+                  <div className="flex gap-3 mt-3 text-xs text-gray-500 justify-center">
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block" /> przyrost tygodniowy</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-200 inline-block" /> kumulatywnie</span>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+
           {/* Heatmap: sections × weeks */}
           <div className="bg-white rounded-xl border p-6">
             <h3 className="font-semibold text-lg mb-4">Mapa ciepła — sekcje × tygodnie</h3>
@@ -545,11 +666,11 @@ export default function PlanningPage() {
                             const kg = weekKgMap.get(w.week) || 0
                             const intensity = kg / maxSectionKg
                             const bg = kg === 0 ? 'bg-gray-50'
-                              : intensity > 0.8 ? 'bg-green-600 text-white'
-                              : intensity > 0.6 ? 'bg-green-500 text-white'
-                              : intensity > 0.4 ? 'bg-green-400'
-                              : intensity > 0.2 ? 'bg-green-300'
-                              : 'bg-green-200'
+                              : intensity > 0.8 ? 'bg-red-600 text-white'
+                              : intensity > 0.6 ? 'bg-red-500 text-white'
+                              : intensity > 0.4 ? 'bg-red-400 text-white'
+                              : intensity > 0.2 ? 'bg-orange-300'
+                              : 'bg-orange-200'
                             return (
                               <td key={w.week} className="py-0.5 px-0.5">
                                 <div className={`${bg} rounded text-center py-0.5`} title={`${d.section.name} T${w.week}: ${kg.toLocaleString('pl-PL')} kg`}>

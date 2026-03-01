@@ -205,7 +205,9 @@ export default function PlanningPage() {
       fruitStartDate: string | null
       startWeek: number | null
       totalKg: number
-      weeklyKg: Array<{ week: number; kg: number }>
+      totalSummerKg: number
+      totalAutumnKg: number
+      weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }>
       eff: number
     }> = []
 
@@ -237,7 +239,7 @@ export default function PlanningPage() {
       const autumnKg = shoots * autumnYield
       const totalKg = summerKg + autumnKg
 
-      const weeklyKg: Array<{ week: number; kg: number }> = []
+      const weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }> = []
 
       // Summer weeks — start from GDH-predicted fruit date
       if (summerKg > 0 && summerCurve.length > 0) {
@@ -245,7 +247,7 @@ export default function PlanningPage() {
           const week = startWeek + i
           const kg = Math.round(summerKg * pct / 100)
           const hrs = Math.round(kg / eff)
-          weeklyKg.push({ week, kg })
+          weeklyKg.push({ week, kg, summerKg: kg, autumnKg: 0 })
           if (!weekMap[week]) weekMap[week] = { kg: 0, hrs: 0, sections: [] }
           weekMap[week].kg += kg
           weekMap[week].hrs += hrs
@@ -261,7 +263,7 @@ export default function PlanningPage() {
           const kg = Math.round(autumnKg * pct / 100)
           const hrs = Math.round(kg / eff)
           const existing = weeklyKg.find(w => w.week === week)
-          if (existing) { existing.kg += kg } else { weeklyKg.push({ week, kg }) }
+          if (existing) { existing.kg += kg; existing.autumnKg += kg } else { weeklyKg.push({ week, kg, summerKg: 0, autumnKg: kg }) }
           if (!weekMap[week]) weekMap[week] = { kg: 0, hrs: 0, sections: [] }
           weekMap[week].kg += kg
           weekMap[week].hrs += hrs
@@ -269,7 +271,7 @@ export default function PlanningPage() {
         })
       }
 
-      sectionDetails.push({ section, fruitStartDate: fruitDate, startWeek, totalKg, weeklyKg: weeklyKg.sort((a, b) => a.week - b.week), eff })
+      sectionDetails.push({ section, fruitStartDate: fruitDate, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg: weeklyKg.sort((a, b) => a.week - b.week), eff })
     }
 
     const weeks = Object.entries(weekMap)
@@ -311,6 +313,8 @@ export default function PlanningPage() {
   const peakPickers = Math.max(...weeklyPlan.weeks.map(w => w.pickers), 0)
   const peakTotalStaff = Math.max(...weeklyPlan.weeks.map(w => w.totalStaff), 0)
   const totalKgAll = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalKg, 0)
+  const totalSummerKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalSummerKg, 0)
+  const totalAutumnKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalAutumnKg, 0)
   const bottleneckThreshold = peakPickers * 0.8
   const bottleneckWeeks = weeklyPlan.weeks.filter(w => w.pickers >= bottleneckThreshold)
 
@@ -349,12 +353,14 @@ export default function PlanningPage() {
 
     autoTable(doc, {
       startY: lastY + 14,
-      head: [['Sekcja', 'Odmiana', 'Start owocowania', 'Tydzień startu', 'Prognoza (kg)', 'Wydajność (kg/h)']],
+      head: [['Sekcja', 'Odmiana', 'Start', 'Tydzień', 'Lato (kg)', 'Jesień (kg)', 'Razem (kg)', 'kg/h']],
       body: weeklyPlan.sectionDetails.map(d => [
         `${d.section.blockName}/${d.section.name}`,
         d.section.variety?.name || '?',
         d.fruitStartDate ? new Date(d.fruitStartDate).toLocaleDateString('pl-PL') : '—',
         d.startWeek ? `T${d.startWeek}` : '—',
+        d.totalSummerKg > 0 ? Math.round(d.totalSummerKg).toLocaleString('pl-PL') : '—',
+        d.totalAutumnKg > 0 ? Math.round(d.totalAutumnKg).toLocaleString('pl-PL') : '—',
         d.totalKg.toLocaleString('pl-PL'),
         `${d.eff}`,
       ]),
@@ -532,6 +538,11 @@ export default function PlanningPage() {
             <div className="bg-green-50 rounded-xl p-4 border border-green-200 text-center">
               <p className="text-3xl font-bold text-green-700">{(totalKgAll / 1000).toFixed(1)}t</p>
               <p className="text-xs text-green-600">Prognoza total</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">
+                <span className="text-green-600">{(totalSummerKg / 1000).toFixed(1)}t lato</span>
+                {' + '}
+                <span className="text-amber-600">{(totalAutumnKg / 1000).toFixed(1)}t jesień</span>
+              </p>
             </div>
             <div className="bg-blue-50 rounded-xl p-4 border border-blue-200 text-center">
               <p className="text-3xl font-bold text-blue-600">{peakPickers}</p>
@@ -659,7 +670,11 @@ export default function PlanningPage() {
 
           {/* Per-section breakdown */}
           <div className="bg-white rounded-xl border p-6">
-            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Target className="w-5 h-5 text-indigo-500" />Start zbiorów per sekcja (z GDH)</h3>
+            <h3 className="font-semibold text-lg mb-2 flex items-center gap-2"><Target className="w-5 h-5 text-indigo-500" />Start zbiorów per sekcja (z GDH)</h3>
+            <div className="flex gap-4 mb-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-400 inline-block" /> Lato</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-400 inline-block" /> Jesień</span>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
@@ -668,7 +683,9 @@ export default function PlanningPage() {
                     <th className="text-left py-2 px-3">Odmiana</th>
                     <th className="text-center py-2 px-3">Start owocowania</th>
                     <th className="text-center py-2 px-3">Tydzień</th>
-                    <th className="text-right py-2 px-3">Prognoza (kg)</th>
+                    <th className="text-right py-2 px-3">Lato (kg)</th>
+                    <th className="text-right py-2 px-3">Jesień (kg)</th>
+                    <th className="text-right py-2 px-3">Razem (kg)</th>
                     <th className="text-right py-2 px-3">Wydajność</th>
                     <th className="text-left py-2 px-3">Rozkład tygodniowy</th>
                   </tr>
@@ -690,18 +707,23 @@ export default function PlanningPage() {
                             </span>
                           </td>
                           <td className="text-center px-3 font-medium">T{d.startWeek}</td>
-                          <td className="text-right px-3">{d.totalKg.toLocaleString('pl-PL')} kg</td>
+                          <td className="text-right px-3 text-green-700">{d.totalSummerKg > 0 ? `${Math.round(d.totalSummerKg).toLocaleString('pl-PL')}` : '—'}</td>
+                          <td className="text-right px-3 text-amber-700">{d.totalAutumnKg > 0 ? `${Math.round(d.totalAutumnKg).toLocaleString('pl-PL')}` : '—'}</td>
+                          <td className="text-right px-3 font-medium">{d.totalKg.toLocaleString('pl-PL')}</td>
                           <td className="text-right px-3 text-gray-500">{d.eff} kg/h</td>
                           <td className="px-3">
                             <div className="flex items-end gap-0.5 h-5">
-                              {d.weeklyKg.map(w => (
-                                <div
-                                  key={w.week}
-                                  className="flex-1 bg-green-400 rounded-t"
-                                  style={{ height: `${(w.kg / maxWeekKg) * 20}px`, minHeight: w.kg > 0 ? '2px' : '0' }}
-                                  title={`T${w.week}: ${w.kg.toLocaleString('pl-PL')} kg`}
-                                />
-                              ))}
+                              {d.weeklyKg.map(w => {
+                                const color = w.autumnKg > w.summerKg ? 'bg-amber-400' : 'bg-green-400'
+                                return (
+                                  <div
+                                    key={w.week}
+                                    className={`flex-1 ${color} rounded-t`}
+                                    style={{ height: `${(w.kg / maxWeekKg) * 20}px`, minHeight: w.kg > 0 ? '2px' : '0' }}
+                                    title={`T${w.week}: ${w.kg.toLocaleString('pl-PL')} kg${w.summerKg > 0 ? ` (lato: ${w.summerKg.toLocaleString('pl-PL')})` : ''}${w.autumnKg > 0 ? ` (jesień: ${w.autumnKg.toLocaleString('pl-PL')})` : ''}`}
+                                  />
+                                )
+                              })}
                             </div>
                           </td>
                         </tr>
@@ -714,7 +736,11 @@ export default function PlanningPage() {
 
           {/* Gantt: section harvest timeline */}
           <div className="bg-white rounded-xl border p-6">
-            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Calendar className="w-5 h-5 text-indigo-500" />Oś czasu zbiorów per sekcja</h3>
+            <h3 className="font-semibold text-lg mb-2 flex items-center gap-2"><Calendar className="w-5 h-5 text-indigo-500" />Oś czasu zbiorów per sekcja</h3>
+            <div className="flex gap-4 mb-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block" /> Lato</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Jesień</span>
+            </div>
             <div className="overflow-x-auto">
               {(() => {
                 const minWeek = Math.min(...weeklyPlan.weeks.map(w => w.week))
@@ -745,25 +771,25 @@ export default function PlanningPage() {
                             <span className="text-gray-400">{d.section.blockName}/</span><span className="font-medium">{d.section.name}</span>
                           </div>
                           <div className="flex-1 relative h-6 bg-gray-50 rounded">
-                            {/* bar background */}
-                            <div className="absolute top-0.5 bottom-0.5 rounded" style={{ left: `${left}%`, width: `${width}%`, background: 'linear-gradient(90deg, #fbbf24, #ef4444, #fbbf24)' }} />
-                            {/* individual week cells with intensity */}
+                            {/* individual week cells colored by season */}
                             {sectionWeeks.map(w => {
                               const wLeft = ((w.week - minWeek) / range) * 100
                               const wWidth = (1 / range) * 100
                               const opacity = 0.3 + (w.kg / maxKg) * 0.7
+                              const isAutumn = w.autumnKg > w.summerKg
+                              const color = isAutumn ? `rgba(245, 158, 11, ${opacity})` : `rgba(34, 197, 94, ${opacity})`
                               return (
                                 <div
                                   key={w.week}
                                   className="absolute top-0.5 bottom-0.5 rounded-sm"
-                                  style={{ left: `${wLeft}%`, width: `${wWidth}%`, background: `rgba(220, 38, 38, ${opacity})` }}
-                                  title={`${d.section.name} T${w.week}: ${w.kg.toLocaleString('pl-PL')} kg`}
+                                  style={{ left: `${wLeft}%`, width: `${wWidth}%`, background: color }}
+                                  title={`${d.section.name} T${w.week}: ${w.kg.toLocaleString('pl-PL')} kg${w.summerKg > 0 ? ` (lato: ${w.summerKg.toLocaleString('pl-PL')})` : ''}${w.autumnKg > 0 ? ` (jesień: ${w.autumnKg.toLocaleString('pl-PL')})` : ''}`}
                                 />
                               )
                             })}
                             {/* total label */}
                             <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white drop-shadow-sm pointer-events-none" style={{ left: `${left}%`, width: `${width}%` }}>
-                              {(d.totalKg / 1000).toFixed(1)}t
+                              {(d.totalKg / 1000).toFixed(1)}t{d.totalSummerKg > 0 && d.totalAutumnKg > 0 ? ' (L+J)' : d.totalAutumnKg > 0 ? ' (J)' : ' (L)'}
                             </div>
                           </div>
                         </div>
@@ -851,24 +877,32 @@ export default function PlanningPage() {
                     .sort((a, b) => (a.startWeek || 99) - (b.startWeek || 99))
                     .map(d => {
                       const maxSectionKg = Math.max(...d.weeklyKg.map(w => w.kg), 1)
-                      const weekKgMap = new Map(d.weeklyKg.map(w => [w.week, w.kg]))
+                      const weekDataMap = new Map(d.weeklyKg.map(w => [w.week, w]))
                       return (
                         <tr key={d.section.id}>
                           <td className="py-0.5 px-1 font-medium truncate">
                             <span className="text-gray-400">{d.section.blockName}/</span>{d.section.name}
                           </td>
                           {weeklyPlan.weeks.map(w => {
-                            const kg = weekKgMap.get(w.week) || 0
+                            const wd = weekDataMap.get(w.week)
+                            const kg = wd?.kg || 0
                             const intensity = kg / maxSectionKg
+                            const isAutumn = wd ? wd.autumnKg > wd.summerKg : false
                             const bg = kg === 0 ? 'bg-gray-50'
-                              : intensity > 0.8 ? 'bg-red-600 text-white'
-                              : intensity > 0.6 ? 'bg-red-500 text-white'
-                              : intensity > 0.4 ? 'bg-red-400 text-white'
-                              : intensity > 0.2 ? 'bg-orange-300'
-                              : 'bg-orange-200'
+                              : isAutumn
+                                ? (intensity > 0.8 ? 'bg-amber-600 text-white'
+                                  : intensity > 0.6 ? 'bg-amber-500 text-white'
+                                  : intensity > 0.4 ? 'bg-amber-400 text-white'
+                                  : intensity > 0.2 ? 'bg-amber-300'
+                                  : 'bg-amber-200')
+                                : (intensity > 0.8 ? 'bg-green-600 text-white'
+                                  : intensity > 0.6 ? 'bg-green-500 text-white'
+                                  : intensity > 0.4 ? 'bg-green-400 text-white'
+                                  : intensity > 0.2 ? 'bg-green-300'
+                                  : 'bg-green-200')
                             return (
                               <td key={w.week} className="py-0.5 px-0.5">
-                                <div className={`${bg} rounded text-center py-0.5`} title={`${d.section.name} T${w.week}: ${kg.toLocaleString('pl-PL')} kg`}>
+                                <div className={`${bg} rounded text-center py-0.5`} title={`${d.section.name} T${w.week}: ${kg.toLocaleString('pl-PL')} kg${wd && wd.summerKg > 0 ? ` (lato: ${wd.summerKg.toLocaleString('pl-PL')})` : ''}${wd && wd.autumnKg > 0 ? ` (jesień: ${wd.autumnKg.toLocaleString('pl-PL')})` : ''}`}>
                                   {kg > 0 ? (kg >= 1000 ? `${(kg / 1000).toFixed(1)}` : kg) : ''}
                                 </div>
                               </td>

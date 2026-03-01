@@ -3,16 +3,9 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 async function main() {
-  // Check if already migrated (Ruby autumn should be 0)
-  const ruby = await prisma.variety.findFirst({ where: { name: 'Ruby' } })
-  if (ruby && ruby.yieldAutumnPerShoot === 0) {
-    console.log('MaxCrop migration: already done, skipping')
-    return
-  }
+  console.log('MaxCrop migration: ensuring correct yields and curves...')
 
-  console.log('MaxCrop migration: updating yields and curves...')
-
-  // Varieties
+  // Varieties — always set correct values
   const dj = await prisma.variety.findFirst({ where: { name: 'Diamond Jubilee' } })
   if (dj) {
     await prisma.variety.update({
@@ -23,9 +16,12 @@ async function main() {
         harvestCurveAutumn: [2.8, 10.1, 10.0, 17.1, 22.9, 15.1, 11.8, 5.9, 3.5, 0.4, 0.2],
       }
     })
-    console.log('  DJ variety: autumn 0.44→0.67, curves updated')
+    console.log('  DJ variety: autumn=0.67, curves set')
+  } else {
+    console.log('  DJ variety: NOT FOUND')
   }
 
+  const ruby = await prisma.variety.findFirst({ where: { name: 'Ruby' } })
   if (ruby) {
     await prisma.variety.update({
       where: { id: ruby.id },
@@ -35,10 +31,12 @@ async function main() {
         harvestCurveAutumn: [],
       }
     })
-    console.log('  Ruby variety: autumn 0.51→0, curves updated')
+    console.log('  Ruby variety: autumn=0, curves set')
+  } else {
+    console.log('  Ruby variety: NOT FOUND')
   }
 
-  // Sections
+  // Sections — always set correct yields from MaxCrop 2025
   const updates: Record<string, { yieldSummerPerShoot: number; yieldAutumnPerShoot: number }> = {
     'A1-9':   { yieldSummerPerShoot: 1.47, yieldAutumnPerShoot: 0.63 },
     'A10-19': { yieldSummerPerShoot: 1.48, yieldAutumnPerShoot: 0.70 },
@@ -50,15 +48,21 @@ async function main() {
     'D10-18': { yieldSummerPerShoot: 1.74, yieldAutumnPerShoot: 0.13 },
   }
 
+  let updated = 0
+  let notFound = 0
   for (const [name, data] of Object.entries(updates)) {
     const section = await prisma.section.findFirst({ where: { name } })
     if (section) {
       await prisma.section.update({ where: { id: section.id }, data })
-      console.log(`  ${name}: S=${data.yieldSummerPerShoot} A=${data.yieldAutumnPerShoot}`)
+      console.log(`  ${name}: summer=${data.yieldSummerPerShoot} autumn=${data.yieldAutumnPerShoot}`)
+      updated++
+    } else {
+      console.log(`  ${name}: NOT FOUND`)
+      notFound++
     }
   }
 
-  console.log('MaxCrop migration: done')
+  console.log(`MaxCrop migration: done (${updated} sections updated, ${notFound} not found)`)
 }
 
 main()

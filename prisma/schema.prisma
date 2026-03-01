@@ -164,14 +164,15 @@ model Section {
   temperatureReadings   TemperatureReading[]
   winteredInTunnel      Boolean   @default(false)
   templateAssignments   SectionTemplateAssignment[]
+  harvestSeasons        HarvestSeason[]
   plantingDate          DateTime?
   winterShootsDate      DateTime?
   harvestCurveSummer    Float[]   @default([])
   harvestCurveAutumn    Float[]   @default([])
-  
+
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  
+
   @@map("sections")
 }
 
@@ -296,17 +297,37 @@ model Worker {
 
 // ==================== HARVESTS ====================
 model Harvest {
-  id        String   @id @default(cuid())
-  date      DateTime @db.Date
-  yieldKg   Float
-  notes     String?
-  
-  sectionId String
-  section   Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  
-  createdAt DateTime @default(now())
-  
+  id           String   @id @default(cuid())
+  date         DateTime @db.Date
+  yieldKg      Float
+  notes        String?
+  season       String?  // 'summer' | 'autumn'
+  isPreHarvest Boolean  @default(false) // "pośpiech" — nie liczymy jako start komercyjny
+
+  sectionId    String
+  section      Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+
   @@map("harvests")
+}
+
+// ==================== HARVEST SEASONS (tracking commercial start per section/season/year) ====================
+model HarvestSeason {
+  id                     String    @id @default(cuid())
+  year                   Int
+  season                 String    // 'summer' | 'autumn'
+  commercialStartDate    DateTime? @db.Date // data zakotwiczenia — ręcznie potwierdzona
+  gdhPredictedStartDate  DateTime? @db.Date // prognoza startu z GDH
+
+  sectionId              String
+  section                Section   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([sectionId, year, season])
+  @@map("harvest_seasons")
 }
 
 // ==================== PRODUCTION CURVE TEMPLATES ====================

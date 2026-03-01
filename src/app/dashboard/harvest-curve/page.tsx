@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Upload, FileSpreadsheet, Save, Sun, Leaf, Trash2, BarChart3, Pencil, X, Check } from 'lucide-react'
+import { Upload, FileSpreadsheet, Save, Sun, Leaf, Trash2, BarChart3, Pencil, X, Check, TrendingUp, Anchor, AlertCircle } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // ==================== TYPES ====================
@@ -18,16 +18,33 @@ interface HarvestCurveRecord {
 
 interface RawRow { date: string; area: string; weightReal: number }
 interface WeekRow { week: number; kg: number; dates: string; season: 'summer' | 'autumn' }
-interface DayData { date: string; kg: number; dayOfWeek: number }
+interface DayData { date: string; kg: number; dayOfWeek: number; isPreHarvest: boolean }
 interface AreaImport {
   area: string
   totalKg: number
   weeks: WeekRow[]
   days: DayData[]
   assignedSectionIds: string[]
+  commercialStartDate: string | null  // data zakotwiczenia — raz ustawione, nie zmieniamy
 }
 
-type TabType = 'import' | 'history'
+interface ForecastData {
+  sectionId: string
+  sectionName: string
+  varietyName: string
+  season: string
+  year: number
+  estimatedTotalKg: number
+  scaledTotalKg: number | null
+  originalForecast: { week: number; weekDates: string; kg: number; pct: number }[]
+  scaledForecast: { week: number; weekDates: string; kg: number; pct: number }[]
+  actual: { week: number; weekDates: string; kg: number; pct: number }[]
+  preHarvest: { week: number; weekDates: string; kg: number; pct: number }[]
+  commercialStartDate: string | null
+  gdhPredictedStartDate: string | null
+}
+
+type TabType = 'import' | 'history' | 'forecast'
 
 // ==================== HELPERS ====================
 const getWeekNumber = (date: Date) => {
@@ -87,6 +104,13 @@ export default function HarvestCurvePage() {
   // Edit
   const [editingCurve, setEditingCurve] = useState<HarvestCurveRecord | null>(null)
   const [editForm, setEditForm] = useState({ varietyId: '', sectionId: '', year: 2025, season: 'summer' })
+
+  // Forecast (Prognoza)
+  const [forecastSection, setForecastSection] = useState('')
+  const [forecastSeason, setForecastSeason] = useState<'summer' | 'autumn'>('summer')
+  const [forecastYear, setForecastYear] = useState(new Date().getFullYear())
+  const [forecastData, setForecastData] = useState<ForecastData | null>(null)
+  const [forecastLoading, setForecastLoading] = useState(false)
 
   useEffect(() => { fetchAll() }, [])
   useEffect(() => { if (activeTab === 'history') fetchCurves() }, [activeTab, filterVariety])
@@ -172,8 +196,8 @@ export default function HarvestCurvePage() {
             .map(([wk, kg]) => ({ week: Number(wk), kg, dates: getWeekDates(Number(wk), yr), season: 'summer' as const }))
           const days: DayData[] = Object.entries(areaDailyMap[area] || {})
             .sort(([a], [b]) => a.localeCompare(b))
-            .map(([date, kg]) => ({ date, kg, dayOfWeek: new Date(date).getDay() }))
-          return { area, totalKg: weeks.reduce((s, w) => s + w.kg, 0), weeks, days, assignedSectionIds: [] }
+            .map(([date, kg]) => ({ date, kg, dayOfWeek: new Date(date).getDay(), isPreHarvest: false }))
+          return { area, totalKg: weeks.reduce((s, w) => s + w.kg, 0), weeks, days, assignedSectionIds: [], commercialStartDate: null }
         }).sort((a, b) => b.totalKg - a.totalKg)
 
         setAreas(parsed)
@@ -261,7 +285,7 @@ export default function HarvestCurvePage() {
         body: JSON.stringify({ curves: curvesToCreate }),
       })
 
-      // Also save to section fields
+      // Also save to section fields + create Harvest records with pośpiech flag
       for (const sectionId of area.assignedSectionIds) {
         if (summerWeeks.length > 0) {
           const summerTotal = summerWeeks.reduce((s, w) => s + w.kg, 0)
@@ -278,6 +302,44 @@ export default function HarvestCurvePage() {
             method: 'PATCH', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ harvestCurveAutumn: curve }),
           })
+        }
+
+        // Zapisz dzienne dane jako Harvest records z flagą pośpiech
+        const harvestRecords = area.days.map(d => {
+          const wk = getWeekNumber(new Date(d.date))
+          const daySeason = summerWeeks.some(w => w.week === wk) ? 'summer' : 'autumn'
+          return {
+            date: d.date,
+            yieldKg: d.kg,
+            season: daySeason,
+            isPreHarvest: d.isPreHarvest,
+            sectionId,
+          }
+        })
+
+        if (harvestRecords.length > 0) {
+          await fetch('/api/harvests', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ harvests: harvestRecords }),
+          })
+        }
+
+        // Ustaw HarvestSeason jeśli commercialStartDate jest zakotwiczone
+        if (area.commercialStartDate) {
+          for (const seasonType of ['summer', 'autumn'] as const) {
+            const seasonWeeks = seasonType === 'summer' ? summerWeeks : autumnWeeks
+            if (seasonWeeks.length > 0) {
+              await fetch('/api/harvest-seasons', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  sectionId,
+                  year: importYear,
+                  season: seasonType,
+                  commercialStartDate: area.commercialStartDate,
+                }),
+              })
+            }
+          }
         }
       }
 
@@ -316,6 +378,77 @@ export default function HarvestCurvePage() {
     })
     setEditingCurve(null)
     fetchCurves()
+  }
+
+  // ==================== POŚPIECH / START TOGGLE ====================
+  const toggleDayPreHarvest = (areaIdx: number, dayIdx: number) => {
+    setAreas(prev => prev.map((a, ai) => {
+      if (ai !== areaIdx) return a
+      // Jeśli commercialStartDate jest już ustawione, nie pozwalamy zmieniać
+      if (a.commercialStartDate) return a
+
+      const newDays = [...a.days]
+      const clickedDay = newDays[dayIdx]
+
+      if (clickedDay.isPreHarvest) {
+        // Kliknięto na "pośpiech" — oznacz jako start komercyjny
+        // Wszystkie dni od tego momentu = nie-pośpiech
+        for (let i = dayIdx; i < newDays.length; i++) {
+          newDays[i] = { ...newDays[i], isPreHarvest: false }
+        }
+        // Wszystkie dni przed = pośpiech
+        for (let i = 0; i < dayIdx; i++) {
+          newDays[i] = { ...newDays[i], isPreHarvest: true }
+        }
+        return { ...a, days: newDays, commercialStartDate: clickedDay.date }
+      } else {
+        // Pierwszy dzień — zaznacz jako pośpiech
+        newDays[dayIdx] = { ...newDays[dayIdx], isPreHarvest: true }
+        // Wszystkie wcześniejsze też pośpiech
+        for (let i = 0; i < dayIdx; i++) {
+          newDays[i] = { ...newDays[i], isPreHarvest: true }
+        }
+        return { ...a, days: newDays, commercialStartDate: null }
+      }
+    }))
+  }
+
+  const markCommercialStart = (areaIdx: number, dayIdx: number) => {
+    setAreas(prev => prev.map((a, ai) => {
+      if (ai !== areaIdx) return a
+      if (a.commercialStartDate) return a // Już zakotwiczone
+
+      const newDays = [...a.days]
+      // Wszystkie dni przed dayIdx = pośpiech
+      for (let i = 0; i < dayIdx; i++) {
+        newDays[i] = { ...newDays[i], isPreHarvest: true }
+      }
+      // Dzień dayIdx i kolejne = komercyjne
+      for (let i = dayIdx; i < newDays.length; i++) {
+        newDays[i] = { ...newDays[i], isPreHarvest: false }
+      }
+      return { ...a, days: newDays, commercialStartDate: newDays[dayIdx].date }
+    }))
+  }
+
+  const resetCommercialStart = (areaIdx: number) => {
+    setAreas(prev => prev.map((a, ai) => {
+      if (ai !== areaIdx) return a
+      const newDays = a.days.map(d => ({ ...d, isPreHarvest: false }))
+      return { ...a, days: newDays, commercialStartDate: null }
+    }))
+  }
+
+  // ==================== FORECAST ====================
+  const fetchForecast = async () => {
+    if (!forecastSection) return
+    setForecastLoading(true)
+    try {
+      const res = await fetch(`/api/harvest-forecast/${forecastSection}?year=${forecastYear}&season=${forecastSeason}`)
+      const data = await res.json()
+      setForecastData(data)
+    } catch (e) { console.error(e) }
+    finally { setForecastLoading(false) }
   }
 
   // Group curves: by variety → by season
@@ -422,6 +555,9 @@ export default function HarvestCurvePage() {
         </Button>
         <Button variant={activeTab === 'history' ? 'default' : 'outline'} onClick={() => { setActiveTab('history'); fetchCurves() }} className={activeTab === 'history' ? 'bg-green-600 hover:bg-green-700' : ''}>
           <BarChart3 className="w-4 h-4 mr-2" />Historia krzywych
+        </Button>
+        <Button variant={activeTab === 'forecast' ? 'default' : 'outline'} onClick={() => setActiveTab('forecast')} className={activeTab === 'forecast' ? 'bg-green-600 hover:bg-green-700' : ''}>
+          <TrendingUp className="w-4 h-4 mr-2" />Prognoza vs Realne
         </Button>
       </div>
 
@@ -537,7 +673,71 @@ export default function HarvestCurvePage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-gray-500 mb-3">Kliknij na sezon w wierszu, aby oznaczyć od którego tygodnia zaczyna się jesień. Wszystkie kolejne tygodnie automatycznie zmienią się na jesień.</p>
+                <p className="text-sm text-gray-500 mb-3">Kliknij na sezon w wierszu, aby oznaczyć od którego tygodnia zaczyna się jesień.</p>
+
+                {/* Pośpiech / Start zbiorów */}
+                <div className={`p-4 rounded-lg border mb-4 ${currentArea.commercialStartDate ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Anchor className="w-4 h-4" />
+                      <span className="font-semibold text-sm">
+                        {currentArea.commercialStartDate
+                          ? `Start zbiorów komercyjnych: ${new Date(currentArea.commercialStartDate).toLocaleDateString('pl-PL')}`
+                          : 'Oznacz start zbiorów komercyjnych'}
+                      </span>
+                    </div>
+                    {currentArea.commercialStartDate && (
+                      <Button size="sm" variant="outline" onClick={() => resetCommercialStart(selectedAreaIdx)}>
+                        <X className="w-3 h-3 mr-1" />Resetuj
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-600 mb-3">
+                    {currentArea.commercialStartDate
+                      ? 'Dni przed startem oznaczone jako "pośpiech" — nie wchodzą do krzywej komercyjnej.'
+                      : 'Kliknij "Start" przy dniu, który uznasz za początek zbiorów komercyjnych. Wcześniejsze dni zostaną oznaczone jako "pośpiech".'}
+                  </p>
+
+                  {/* Dzienne dane z togglem */}
+                  <div className="max-h-64 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-white">
+                        <tr className="border-b">
+                          <th className="text-left py-1 px-2">Data</th>
+                          <th className="text-right py-1 px-2">kg</th>
+                          <th className="text-center py-1 px-2 w-32">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {currentArea.days.slice(0, 30).map((d, di) => (
+                          <tr key={d.date} className={`border-b ${d.isPreHarvest ? 'bg-gray-50 text-gray-400' : ''}`}>
+                            <td className="py-1 px-2 font-medium">
+                              {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
+                            </td>
+                            <td className="py-1 px-2 text-right">{d.kg.toFixed(1)}</td>
+                            <td className="py-1 px-2 text-center">
+                              {currentArea.commercialStartDate ? (
+                                <span className={`px-2 py-0.5 rounded-full text-xs ${d.isPreHarvest ? 'bg-gray-200 text-gray-600' : 'bg-green-100 text-green-700'}`}>
+                                  {d.isPreHarvest ? 'Pośpiech' : 'Komercyjny'}
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => markCommercialStart(selectedAreaIdx, di)}
+                                  className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+                                >
+                                  Oznacz jako start
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {currentArea.days.length > 30 && (
+                          <tr><td colSpan={3} className="py-2 text-center text-gray-400">... i {currentArea.days.length - 30} więcej dni</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
 
                 {/* Bar chart */}
                 <div style={{ height: '200px' }} className="flex items-end gap-1 mb-4">
@@ -723,6 +923,314 @@ export default function HarvestCurvePage() {
             <div className="bg-gray-50 rounded-xl p-12 text-center">
               <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-500">Brak zapisanych krzywych. Zaimportuj dane z zakładki "Import MaxCrop".</p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ==================== FORECAST TAB ==================== */}
+      {activeTab === 'forecast' && (
+        <>
+          {/* Filtry */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-4 flex-wrap">
+                <div>
+                  <Label className="text-xs text-gray-500">Sekcja</Label>
+                  <select className="h-9 border rounded-md px-3 text-sm ml-1" value={forecastSection} onChange={e => setForecastSection(e.target.value)}>
+                    <option value="">-- Wybierz sekcję --</option>
+                    {sections.map(s => (
+                      <option key={s.id} value={s.id}>{s.blockName} / {s.name} ({s.variety?.name})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500">Sezon</Label>
+                  <select className="h-9 border rounded-md px-3 text-sm ml-1" value={forecastSeason} onChange={e => setForecastSeason(e.target.value as 'summer' | 'autumn')}>
+                    <option value="summer">Lato</option>
+                    <option value="autumn">Jesień</option>
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs text-gray-500">Rok</Label>
+                  <select className="h-9 border rounded-md px-3 text-sm ml-1" value={forecastYear} onChange={e => setForecastYear(parseInt(e.target.value))}>
+                    {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <Button className="bg-green-600 hover:bg-green-700 ml-auto" onClick={fetchForecast} disabled={!forecastSection || forecastLoading}>
+                  <TrendingUp className="w-4 h-4 mr-2" />{forecastLoading ? 'Ładowanie...' : 'Pokaż prognozę'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Wyniki prognozy */}
+          {forecastData && (
+            <>
+              {/* Podsumowanie */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="bg-white rounded-xl p-4 border text-center">
+                  <p className="text-xs text-gray-500">Sekcja</p>
+                  <p className="text-lg font-bold">{forecastData.sectionName}</p>
+                  <p className="text-xs text-gray-400">{forecastData.varietyName}</p>
+                </div>
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-200 text-center">
+                  <p className="text-xs text-blue-600">Prognoza GDH</p>
+                  <p className="text-2xl font-bold text-blue-700">{(forecastData.estimatedTotalKg / 1000).toFixed(1)}t</p>
+                  <p className="text-xs text-blue-400">{forecastData.gdhPredictedStartDate ? `Start: ${new Date(forecastData.gdhPredictedStartDate).toLocaleDateString('pl-PL')}` : 'Brak daty GDH'}</p>
+                </div>
+                {forecastData.scaledTotalKg !== null && (
+                  <div className="bg-purple-50 rounded-xl p-4 border border-purple-200 text-center">
+                    <p className="text-xs text-purple-600">Prognoza skalowana</p>
+                    <p className="text-2xl font-bold text-purple-700">{(forecastData.scaledTotalKg / 1000).toFixed(1)}t</p>
+                    <p className="text-xs text-purple-400">
+                      {forecastData.scaledTotalKg > forecastData.estimatedTotalKg ? '+' : ''}
+                      {(((forecastData.scaledTotalKg - forecastData.estimatedTotalKg) / forecastData.estimatedTotalKg) * 100).toFixed(0)}% vs prognoza
+                    </p>
+                  </div>
+                )}
+                <div className="bg-green-50 rounded-xl p-4 border border-green-200 text-center">
+                  <p className="text-xs text-green-600">Zebrano (komercyjne)</p>
+                  <p className="text-2xl font-bold text-green-700">{(forecastData.actual.reduce((s, w) => s + w.kg, 0) / 1000).toFixed(1)}t</p>
+                  <p className="text-xs text-green-400">{forecastData.actual.length} tygodni danych</p>
+                </div>
+                {forecastData.commercialStartDate && (
+                  <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 text-center">
+                    <p className="text-xs text-amber-600">Zakotwiczenie</p>
+                    <p className="text-lg font-bold text-amber-700">{new Date(forecastData.commercialStartDate).toLocaleDateString('pl-PL')}</p>
+                    <p className="text-xs text-amber-400">Pośpiech: {(forecastData.preHarvest.reduce((s, w) => s + w.kg, 0)).toFixed(0)} kg</p>
+                  </div>
+                )}
+              </div>
+
+              {/* 3-warstwowy wykres */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-green-600" />
+                    Krzywa zbiorów — 3 warstwy
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* Legenda */}
+                  <div className="flex flex-wrap gap-4 mb-4">
+                    <div className="flex items-center gap-2 text-sm">
+                      <div className="w-8 h-1 rounded" style={{ backgroundColor: '#93c5fd' }} />
+                      <span className="text-gray-600">Oryginalna prognoza (GDH)</span>
+                    </div>
+                    {forecastData.scaledForecast.length > 0 && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <div className="w-8 h-1 rounded" style={{ backgroundColor: '#c084fc' }} />
+                        <span className="text-gray-600">Auto-skalowana prognoza</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 text-sm">
+                      <div className="w-4 h-4 rounded" style={{ backgroundColor: '#22c55e' }} />
+                      <span className="text-gray-600">Realne dane (komercyjne)</span>
+                    </div>
+                    {forecastData.preHarvest.length > 0 && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <div className="w-4 h-4 rounded" style={{ backgroundColor: '#d1d5db' }} />
+                        <span className="text-gray-600">Pośpiech (przed startem)</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {(() => {
+                    // Zbierz wszystkie tygodnie
+                    const allWeeks = new Set<number>()
+                    forecastData.originalForecast.forEach(w => allWeeks.add(w.week))
+                    forecastData.scaledForecast.forEach(w => allWeeks.add(w.week))
+                    forecastData.actual.forEach(w => allWeeks.add(w.week))
+                    forecastData.preHarvest.forEach(w => allWeeks.add(w.week))
+                    const sortedWeeks = [...allWeeks].sort((a, b) => a - b)
+                    if (sortedWeeks.length === 0) return <p className="text-gray-400 text-center py-8">Brak danych do wyświetlenia</p>
+
+                    const maxKg = Math.max(
+                      ...forecastData.originalForecast.map(w => w.kg),
+                      ...forecastData.scaledForecast.map(w => w.kg),
+                      ...forecastData.actual.map(w => w.kg),
+                      ...forecastData.preHarvest.map(w => w.kg),
+                      1
+                    )
+
+                    const getX = (week: number) => {
+                      const idx = sortedWeeks.indexOf(week)
+                      return sortedWeeks.length > 1 ? (idx / (sortedWeeks.length - 1)) * 100 : 50
+                    }
+                    const getY = (kg: number) => 100 - (kg / maxKg) * 85
+
+                    const makeLine = (data: { week: number; kg: number }[]) => {
+                      return data.map(d => `${getX(d.week)},${getY(d.kg)}`).join(' ')
+                    }
+
+                    return (
+                      <div>
+                        <div className="relative h-64 border-l border-b border-gray-200 ml-12 mb-2">
+                          {/* Oś Y */}
+                          <div className="absolute -left-12 top-0 bottom-0 flex flex-col justify-between text-xs text-gray-400 py-1 w-10 text-right">
+                            <span>{(maxKg / 1000).toFixed(1)}t</span>
+                            <span>{(maxKg / 2000).toFixed(1)}t</span>
+                            <span>0</span>
+                          </div>
+
+                          <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                            {/* Oryginalna prognoza — linia przerywana */}
+                            <polyline
+                              points={makeLine(forecastData.originalForecast)}
+                              fill="none"
+                              stroke="#93c5fd"
+                              strokeWidth="1.5"
+                              strokeDasharray="4 2"
+                              strokeLinejoin="round"
+                            />
+
+                            {/* Skalowana prognoza — linia ciągła */}
+                            {forecastData.scaledForecast.length > 0 && (
+                              <polyline
+                                points={makeLine(forecastData.scaledForecast)}
+                                fill="none"
+                                stroke="#c084fc"
+                                strokeWidth="1.5"
+                                strokeLinejoin="round"
+                              />
+                            )}
+
+                            {/* Pośpiech — szare słupki */}
+                            {forecastData.preHarvest.map(w => {
+                              const x = getX(w.week)
+                              const y = getY(w.kg)
+                              const barWidth = sortedWeeks.length > 1 ? 80 / sortedWeeks.length : 20
+                              return (
+                                <rect
+                                  key={`pre-${w.week}`}
+                                  x={x - barWidth / 2}
+                                  y={y}
+                                  width={barWidth}
+                                  height={100 - y}
+                                  fill="#d1d5db"
+                                  opacity="0.6"
+                                  rx="1"
+                                />
+                              )
+                            })}
+
+                            {/* Realne dane — zielone słupki */}
+                            {forecastData.actual.map(w => {
+                              const x = getX(w.week)
+                              const y = getY(w.kg)
+                              const barWidth = sortedWeeks.length > 1 ? 80 / sortedWeeks.length : 20
+                              return (
+                                <rect
+                                  key={`act-${w.week}`}
+                                  x={x - barWidth / 2}
+                                  y={y}
+                                  width={barWidth}
+                                  height={100 - y}
+                                  fill="#22c55e"
+                                  opacity="0.7"
+                                  rx="1"
+                                />
+                              )
+                            })}
+
+                            {/* Punkty na liniach */}
+                            {forecastData.originalForecast.map(w => (
+                              <circle key={`of-${w.week}`} cx={getX(w.week)} cy={getY(w.kg)} r="1.5" fill="#93c5fd" />
+                            ))}
+                            {forecastData.scaledForecast.map(w => (
+                              <circle key={`sf-${w.week}`} cx={getX(w.week)} cy={getY(w.kg)} r="1.5" fill="#c084fc" />
+                            ))}
+                          </svg>
+                        </div>
+
+                        {/* Oś X */}
+                        <div className="flex ml-12">
+                          {sortedWeeks.map(w => (
+                            <div key={w} className="flex-1 text-center text-xs text-gray-500">T{w}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Tabela szczegółowa */}
+                  <div className="mt-6 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-gray-50">
+                          <th className="text-left py-2 px-3">Tydzień</th>
+                          <th className="text-right py-2 px-3 text-blue-600">Prognoza GDH</th>
+                          {forecastData.scaledForecast.length > 0 && (
+                            <th className="text-right py-2 px-3 text-purple-600">Skalowana</th>
+                          )}
+                          <th className="text-right py-2 px-3 text-green-600">Realne</th>
+                          <th className="text-right py-2 px-3">Odchylenie</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const allWeeks = new Set<number>()
+                          forecastData.originalForecast.forEach(w => allWeeks.add(w.week))
+                          forecastData.scaledForecast.forEach(w => allWeeks.add(w.week))
+                          forecastData.actual.forEach(w => allWeeks.add(w.week))
+                          return [...allWeeks].sort((a, b) => a - b).map(week => {
+                            const orig = forecastData.originalForecast.find(w => w.week === week)
+                            const scaled = forecastData.scaledForecast.find(w => w.week === week)
+                            const actual = forecastData.actual.find(w => w.week === week)
+                            const ref = scaled || orig
+                            const deviation = ref && actual ? ((actual.kg - ref.kg) / ref.kg * 100) : null
+
+                            return (
+                              <tr key={week} className="border-b hover:bg-gray-50">
+                                <td className="py-2 px-3 font-medium">T{week}</td>
+                                <td className="py-2 px-3 text-right text-blue-600">{orig ? `${(orig.kg / 1000).toFixed(2)}t` : '—'}</td>
+                                {forecastData.scaledForecast.length > 0 && (
+                                  <td className="py-2 px-3 text-right text-purple-600">{scaled ? `${(scaled.kg / 1000).toFixed(2)}t` : '—'}</td>
+                                )}
+                                <td className="py-2 px-3 text-right text-green-600 font-medium">{actual ? `${(actual.kg / 1000).toFixed(2)}t` : '—'}</td>
+                                <td className="py-2 px-3 text-right">
+                                  {deviation !== null ? (
+                                    <span className={deviation > 0 ? 'text-green-600' : 'text-red-600'}>
+                                      {deviation > 0 ? '+' : ''}{deviation.toFixed(0)}%
+                                    </span>
+                                  ) : '—'}
+                                </td>
+                              </tr>
+                            )
+                          })
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Info o pośpiechu */}
+              {forecastData.preHarvest.length > 0 && (
+                <Card className="border-gray-200">
+                  <CardHeader className="py-3 bg-gray-50">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-gray-500" />
+                      Dane pośpiechowe (nie wchodzą do krzywej komercyjnej)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-3">
+                    <div className="flex gap-4 text-sm">
+                      <span className="text-gray-600">Łącznie: <strong>{forecastData.preHarvest.reduce((s, w) => s + w.kg, 0).toFixed(0)} kg</strong></span>
+                      <span className="text-gray-600">Tygodnie: <strong>{forecastData.preHarvest.map(w => `T${w.week}`).join(', ')}</strong></span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+
+          {!forecastData && !forecastLoading && (
+            <div className="bg-gray-50 rounded-xl p-12 text-center">
+              <TrendingUp className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500">Wybierz sekcję i kliknij "Pokaż prognozę" aby zobaczyć 3-warstwowy wykres.</p>
+              <p className="text-gray-400 text-sm mt-2">Oryginalna prognoza (GDH) + Auto-skalowana + Realne dane</p>
             </div>
           )}
         </>

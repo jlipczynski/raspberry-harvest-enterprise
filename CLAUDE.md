@@ -1,86 +1,110 @@
-# Raspberry Harvest Enterprise
+# Raspberry Harvest Enterprise — Monorepo
 
-System do planowania i zarządzania zbiorami malin — multi-tenant SaaS z prognozowaniem na podstawie GDH (Growing Degree Hours).
+Ten repo zawiera dwa niezależne projekty:
 
-## Quick Reference
+- **raspberry-harvest/** — System do planowania i zarządzania zbiorami malin (multi-tenant SaaS z prognozowaniem GDH)
+- **dashboard/** — Dashboard application (nowy projekt)
 
-npm install          # Install dependencies (runs prisma generate via postinstall)
-npm run dev          # Start dev server (Next.js)
-npm run build        # Build for production (prisma generate && next build)
-npm run lint         # Run ESLint
-npm run test         # Run unit/integration tests (Vitest)
-npm run test:watch   # Run tests in watch mode
-npm run seed         # Seed database (npx tsx prisma/seed.ts)
-npx prisma migrate dev  # Run database migrations
-npx prisma studio       # Open Prisma Studio (DB GUI)
+Każdy projekt ma własny `package.json`, testy, linting i build. Są w pełni niezależne.
 
-## Tech Stack
+## Struktura
 
-- Framework: Next.js 16 (App Router) + React 19 + TypeScript 5
-- Database: PostgreSQL via Neon serverless + Prisma 6 ORM
-- Auth: NextAuth.js v4 (credentials provider, JWT strategy)
-- UI: Tailwind CSS 4 + shadcn/ui (New York style) + Radix UI + Recharts
-- Validation: Zod 4
-- State: TanStack React Query 5
-- Testing: Vitest
-- CI/CD: GitHub Actions (lint → test → build)
+```
+raspberry-harvest/     # Projekt raspberry-harvest (Next.js + Prisma + NextAuth)
+dashboard/             # Projekt dashboard (Next.js)
+.github/workflows/     # CI — oddzielne joby dla każdego projektu
+CLAUDE.md              # Ten plik
+```
 
-## Architecture & Patterns
+## Praca z projektami
+
+Zawsze najpierw wejdź do katalogu projektu:
+
+```bash
+cd raspberry-harvest   # lub cd dashboard
+npm install
+npm run dev
+npm run test
+npm run lint
+npm run build
+```
+
+Projekty działają na różnych portach:
+- raspberry-harvest: port 3000 (default)
+- dashboard: port 3001
+
+## Conventions (oba projekty)
+
+- TypeScript strict mode — no `any` types
+- Zod for API input validation
+- `@/` path alias maps to `./src/*`
+- Component files: PascalCase
+- Tests: Vitest, colocated as `*.test.ts` / `*.test.tsx`
+- Run `npm run test` in project dir before committing
+- Polish comments are acceptable in domain-specific code
+
+---
+
+## Raspberry Harvest — Szczegóły
+
+### Tech Stack
+- Next.js 16 (App Router) + React 19 + TypeScript 5
+- PostgreSQL via Neon serverless + Prisma 6 ORM
+- Auth: NextAuth.js v4 (credentials, JWT)
+- UI: Tailwind CSS 4 + shadcn/ui + Radix UI + Recharts
+- Zod 4, TanStack React Query 5, Vitest
 
 ### Multi-Tenancy
-Every data query MUST be scoped by tenantId. The tenant is resolved from the user's session. Never expose data across tenants.
+Every data query MUST be scoped by tenantId. Never expose data across tenants.
 
 ### API Routes
-- All API routes use Next.js Route Handlers (app/api/**/route.ts)
-- Auth check via getServerSession(authOptions) at the start of every route
-- Return NextResponse.json() with appropriate status codes
+- Route Handlers in `app/api/**/route.ts`
+- Auth check via `getServerSession(authOptions)`
 - Validate input with Zod schemas
 
 ### Database
-- Prisma client singleton in src/lib/prisma.ts
-- Uses Neon serverless adapter for edge compatibility
-- Schema uses @@map() for snake_case table names
-- Relations use onDelete: Cascade where appropriate
-
-### Frontend
-- React Server Components by default, "use client" only when needed
-- Data fetching via TanStack React Query (useQuery/useMutation)
-- shadcn/ui components in src/components/ui/ — add new ones via npx shadcn@latest add <component>
-- Path alias: @/* maps to ./src/*
+- Prisma client singleton in `src/lib/prisma.ts`
+- Neon serverless adapter
+- `@@map()` for snake_case table names
 
 ### Domain Concepts
-- GDH (Growing Degree Hours): Accumulated heat units above base temperature (~6°C) used to predict flowering and fruit readiness
-- Production Curves: Weekly/daily yield distribution patterns per variety and season
-- Seasons: Summer (first crop) and Autumn (second crop)
-- Plant Material Types: Wintered in tunnel, Long Canes (LC), Tray Plants
+- GDH (Growing Degree Hours): heat units above ~6°C for predicting harvest
+- Production Curves: weekly/daily yield patterns per variety
+- Seasons: Summer (first crop), Autumn (second crop)
+- Plant Material Types: Wintered in tunnel, Long Canes, Tray Plants
 
-## Coding Conventions
-
-- TypeScript strict mode — no any types, use proper typing
-- Use Zod for all API input validation
-- Use @/ path alias for imports (e.g., @/lib/prisma)
-- Component files: PascalCase (e.g., FeedbackButton.tsx)
-- API route files: route.ts inside descriptive directory structure
-- All dates use date-fns for formatting/manipulation
-- Polish comments are acceptable in domain-specific code (GDH, harvest logic)
-
-## Environment Variables
-
-Required:
+### Environment Variables (raspberry-harvest)
 - DATABASE_URL — PostgreSQL connection string (Neon)
 - NEXTAUTH_SECRET — JWT signing secret
 
-## Testing
+### Commands
+```bash
+cd raspberry-harvest
+npm run seed             # Seed database
+npx prisma migrate dev   # Run migrations
+npx prisma studio        # DB GUI
+```
 
-- Tests use Vitest with @testing-library/react for component tests
-- Test files: colocated with source as *.test.ts or *.test.tsx
-- Run npm run test before committing
-- Mock Prisma client and NextAuth session in tests
-- Focus tests on: API route handlers, utility functions (especially forecast-calculator.ts), Zod schemas
+---
 
-## Git Workflow
+## Dashboard — Szczegóły
 
-- Branch from main for all changes
-- CI runs automatically on push and PR: lint → test → build
-- Keep commits focused and descriptive
-- Do not commit .env* files or secrets
+### Tech Stack
+- Next.js 16 (App Router) + React 19 + TypeScript 5
+- UI: Tailwind CSS 4 + shadcn/ui + Radix UI + Recharts
+- Zod 4, TanStack React Query 5, Vitest
+
+### Commands
+```bash
+cd dashboard
+npm install
+npm run dev    # port 3001
+npm run build
+npm run test
+npm run lint
+```
+
+---
+
+# currentDate
+Today's date is 2026-03-01.

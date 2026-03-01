@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2, Grid3X3 } from 'lucide-react'
+import { Loader2, Grid3X3, CalendarDays } from 'lucide-react'
 
 interface SectionGdh {
   id: string
@@ -28,13 +28,34 @@ interface ApiResponse {
   sections: SectionGdh[]
   forecast: {
     meteoDays: ForecastDay[]
-    scenarios: { p10: ForecastDay[]; p50: ForecastDay[]; p90: ForecastDay[] }
+    scenarios: { p10: ForecastDay[]; p50: ForecastDay[]; p90: ForecastDay[]; best?: ForecastDay[] }
+    seasonalAnomaly?: { months: Array<{ month: string; anomaly: number }>; avgAnomaly: number; verdict: string } | null
     lastForecastDate: string
     historicalYears: number
   } | null
 }
 
 type Scenario = 'p50' | 'p10' | 'p90'
+
+const ALL_SCENARIOS = ['p90', 'p50', 'p10', 'best'] as const
+type AllScenario = typeof ALL_SCENARIOS[number]
+const SCENARIO_LABELS: Record<AllScenario, string> = {
+  p90: 'P90',
+  p50: 'P50',
+  p10: 'P10',
+  best: 'ECMWF',
+}
+const SCENARIO_DESCRIPTIONS: Record<AllScenario, string> = {
+  p90: 'Ciepły rok — 90% lat historycznie było chłodniejszych. Najwcześniejszy start.',
+  p50: 'Typowy rok — mediana historyczna. Najbardziej prawdopodobny scenariusz.',
+  p10: 'Zimny rok — tylko 10% lat było chłodniejszych. Najpóźniejszy start.',
+  best: 'Prognoza sezonowa ECMWF — interpolacja P10-P90 wg anomalii temperatury na nadchodzące miesiące.',
+}
+
+interface ThresholdDates {
+  flowerDate: string | null
+  fruitDate: string | null
+}
 
 interface WeekCell {
   weekLabel: string
@@ -199,6 +220,78 @@ export default function GDHMatrix() {
 
     return { sections, weeks: weeks.map(w => w.label), rows }
   }, [sections, forecast, scenario])
+
+  // ==================== DATE TABLE: threshold dates per section per scenario ====================
+  const dateTable = useMemo(() => {
+    if (!sections.length || !forecast) return []
+
+    const toKey = (d: string | Date) => typeof d === 'string' ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10)
+
+    // Helper: build cumulative GDH timeline for a section with a given scenario
+    const buildTimeline = (section: SectionGdh, scenarioKey: AllScenario) => {
+      const dailyGdh = new Map<string, number>()
+      const gdhStartDate = section.gdhStartDate || ''
+
+      // Real data
+      let lastRealGdh = 0
+      let lastRealDate = ''
+      for (const d of section.dailyGdh) {
+        const key = toKey(d.date)
+        dailyGdh.set(key, d.cumulativeGdh)
+        lastRealGdh = d.cumulativeGdh
+        lastRealDate = key
+      }
+
+      // Meteo 16d forecast
+      let cumGdh = lastRealGdh
+      for (const day of forecast.meteoDays) {
+        if (day.date <= lastRealDate) continue
+        if (gdhStartDate && day.date < gdhStartDate) continue
+        cumGdh += day.gdhTunnel
+        dailyGdh.set(day.date, Math.round(cumGdh))
+      }
+
+      // Scenario data
+      const scenarioData = scenarioKey === 'best'
+        ? (forecast.scenarios.best || forecast.scenarios.p50)
+        : forecast.scenarios[scenarioKey]
+
+      for (const day of scenarioData) {
+        if (gdhStartDate && day.date < gdhStartDate) continue
+        cumGdh += day.gdhTunnel
+        dailyGdh.set(day.date, Math.round(cumGdh))
+      }
+
+      return dailyGdh
+    }
+
+    // Helper: find date when cumulative GDH crosses threshold
+    const findThresholdDate = (timeline: Map<string, number>, threshold: number | null): string | null => {
+      if (!threshold) return null
+      const entries = [...timeline.entries()].sort(([a], [b]) => a.localeCompare(b))
+      for (const [date, gdh] of entries) {
+        if (gdh >= threshold) return date
+      }
+      return null
+    }
+
+    return sections.map(section => {
+      const scenarioResults: Record<AllScenario, ThresholdDates> = {} as Record<AllScenario, ThresholdDates>
+
+      for (const sc of ALL_SCENARIOS) {
+        const timeline = buildTimeline(section, sc)
+        scenarioResults[sc] = {
+          flowerDate: findThresholdDate(timeline, section.flowerThreshold),
+          fruitDate: findThresholdDate(timeline, section.fruitThreshold),
+        }
+      }
+
+      return {
+        section,
+        scenarios: scenarioResults,
+      }
+    })
+  }, [sections, forecast])
 
   if (loading) return (
     <Card><CardContent className="p-6 text-center text-gray-400">
@@ -372,6 +465,97 @@ export default function GDHMatrix() {
             )
           })()}
         </div>
+        {/* ==================== DATE TABLE: all sections × all scenarios ==================== */}
+        {dateTable.length > 0 && (
+          <div className="mt-6">
+            <div className="flex items-center gap-2 mb-3">
+              <CalendarDays className="w-5 h-5 text-indigo-600" />
+              <h3 className="font-semibold text-gray-800">Daty kwitnienia i owocowania — wszystkie scenariusze</h3>
+            </div>
+
+            {/* Scenario descriptions */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs">
+              {ALL_SCENARIOS.map(sc => (
+                <div key={sc} className="bg-gray-50 rounded-lg p-2 border">
+                  <p className="font-semibold text-gray-700">{SCENARIO_LABELS[sc]}</p>
+                  <p className="text-gray-500">{SCENARIO_DESCRIPTIONS[sc]}</p>
+                  {sc === 'best' && forecast?.seasonalAnomaly && (
+                    <p className="mt-1 text-indigo-600 font-medium">
+                      Anomalia: {forecast.seasonalAnomaly.avgAnomaly > 0 ? '+' : ''}{forecast.seasonalAnomaly.avgAnomaly}°C ({forecast.seasonalAnomaly.verdict})
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="border-b-2 border-gray-300">
+                    <th rowSpan={2} className="sticky left-0 z-10 bg-white text-left px-3 py-2 font-medium text-gray-600 min-w-[160px] border-r">
+                      Sekcja
+                    </th>
+                    <th colSpan={4} className="px-2 py-1.5 text-center font-semibold text-amber-700 bg-amber-50 border-b border-amber-200">
+                      Kwitnienie
+                    </th>
+                    <th colSpan={4} className="px-2 py-1.5 text-center font-semibold text-red-700 bg-red-50 border-b border-red-200">
+                      Owocowanie (start zbiorów)
+                    </th>
+                  </tr>
+                  <tr className="border-b">
+                    {ALL_SCENARIOS.map(sc => (
+                      <th key={`f-${sc}`} className="px-2 py-1.5 text-center font-medium text-amber-600 bg-amber-50/50 min-w-[80px]">
+                        {SCENARIO_LABELS[sc]}
+                      </th>
+                    ))}
+                    {ALL_SCENARIOS.map(sc => (
+                      <th key={`r-${sc}`} className="px-2 py-1.5 text-center font-medium text-red-600 bg-red-50/50 min-w-[80px]">
+                        {SCENARIO_LABELS[sc]}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {dateTable.map(({ section, scenarios }) => {
+                    const fmtDate = (d: string | null) => {
+                      if (!d) return '—'
+                      return new Date(d).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })
+                    }
+
+                    // Highlight earliest fruit date
+                    const fruitDates = ALL_SCENARIOS.map(sc => scenarios[sc].fruitDate).filter(Boolean) as string[]
+                    const earliestFruit = fruitDates.length > 0 ? fruitDates.sort()[0] : null
+
+                    return (
+                      <tr key={section.id} className="border-b hover:bg-gray-50/50">
+                        <td className="sticky left-0 z-10 bg-white px-3 py-2 border-r">
+                          <div className="font-medium text-gray-800">
+                            <span className="text-gray-400">{section.blockName}/</span>{section.name}
+                          </div>
+                          <div className="text-[10px] text-gray-400">{section.varietyName}</div>
+                        </td>
+                        {ALL_SCENARIOS.map(sc => (
+                          <td key={`f-${sc}`} className="px-2 py-2 text-center">
+                            <span className={scenarios[sc].flowerDate ? 'text-amber-700 font-medium' : 'text-gray-300'}>
+                              {fmtDate(scenarios[sc].flowerDate)}
+                            </span>
+                          </td>
+                        ))}
+                        {ALL_SCENARIOS.map(sc => (
+                          <td key={`r-${sc}`} className="px-2 py-2 text-center">
+                            <span className={`${scenarios[sc].fruitDate ? 'text-red-700 font-medium' : 'text-gray-300'} ${scenarios[sc].fruitDate === earliestFruit ? 'underline decoration-2' : ''}`}>
+                              {fmtDate(scenarios[sc].fruitDate)}
+                            </span>
+                          </td>
+                        ))}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

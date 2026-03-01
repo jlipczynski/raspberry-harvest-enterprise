@@ -98,7 +98,7 @@ export default function PlanningPage() {
   const [blocks, setBlocks] = useState<Block[]>([])
   const [loading, setLoading] = useState(true)
   const [scenario, setScenario] = useState<Scenario>('p50')
-  const [pickingDaysPerWeek, setPickingDaysPerWeek] = useState(7)
+  const [pickingDaysPerWeek, setPickingDaysPerWeek] = useState(6)
   const [hoursPerDay, setHoursPerDay] = useState(8)
   const [staffingTiers, setStaffingTiers] = useState<StaffingTier[]>(DEFAULT_TIERS)
   const tableRef = useRef<HTMLDivElement>(null)
@@ -378,6 +378,7 @@ export default function PlanningPage() {
               <option value={4}>4 dni</option>
               <option value={5}>5 dni</option>
               <option value={6}>6 dni</option>
+              <option value={7}>7 dni</option>
             </select>
           </div>
           <div className="flex items-center gap-2">

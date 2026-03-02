@@ -225,9 +225,9 @@ export default function PlanningPage() {
       const varietyName = v?.name || ''
 
       // Gross multiplier: MaxCrop yields = I klasa, but workers pick EVERYTHING
-      // grossMultiplier = 100 / (100 - secondCat% - waste%)
-      const secondCat = v?.secondCategoryPercent ?? 22
-      const waste = v?.wastePercent ?? 3
+      // Hardcoded like curves — not dependent on DB migration
+      const secondCat = varietyName.includes('Ruby') ? 20 : 22
+      const waste = 3
       const grossMultiplier = 100 / (100 - secondCat - waste)
 
       // Yields from DB: section-level overrides variety-level

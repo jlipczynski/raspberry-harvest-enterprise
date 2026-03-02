@@ -115,6 +115,8 @@ export default function PlanningPage() {
   const [scenario, setScenario] = useState<Scenario>('p50')
   const [hoursPerDay, setHoursPerDay] = useState(8)
   const [staffingTiers, setStaffingTiers] = useState<StaffingTier[]>(DEFAULT_TIERS)
+  const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
+  const [dailyViewSection, setDailyViewSection] = useState<string>('all')
   const tableRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -324,6 +326,85 @@ export default function PlanningPage() {
   const totalAutumnKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalAutumnKg, 0)
   const bottleneckThreshold = peakPickers * 0.8
   const bottleneckWeeks = weeklyPlan.weeks.filter(w => w.pickers >= bottleneckThreshold)
+
+  // Auto-select peak week if none selected
+  useEffect(() => {
+    if (selectedWeek === null && weeklyPlan.weeks.length > 0) {
+      const peak = weeklyPlan.weeks.reduce((best, w) => w.kg > best.kg ? w : best, weeklyPlan.weeks[0])
+      setSelectedWeek(peak.week)
+    }
+  }, [weeklyPlan.weeks, selectedWeek])
+
+  // ==================== DAILY PLAN FOR SELECTED WEEK ====================
+  const dailyPlan = useMemo(() => {
+    if (!selectedWeek || !weeklyPlan.weeks.length) return null
+
+    const year = new Date().getFullYear()
+    const jan1 = new Date(year, 0, 1)
+    const daysToMonday = (jan1.getDay() + 6) % 7
+    const monday = new Date(year, 0, 1 - daysToMonday + (selectedWeek - 1) * 7)
+
+    const DAY_NAMES = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela']
+    const DAY_SHORT = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb', 'Nd']
+
+    // Find which sections are active in this week
+    const activeSections = weeklyPlan.sectionDetails
+      .filter(d => {
+        const weekData = d.weeklyKg.find(w => w.week === selectedWeek)
+        return weekData && weekData.kg > 0
+      })
+      .filter(d => dailyViewSection === 'all' || d.section.id === dailyViewSection)
+
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(monday)
+      date.setDate(monday.getDate() + i)
+
+      let totalKg = 0
+      let totalHrs = 0
+      const sectionBreakdown: Array<{
+        name: string; blockName: string; varietyName: string
+        kg: number; summerKg: number; autumnKg: number; hrs: number; eff: number
+      }> = []
+
+      for (const detail of activeSections) {
+        const weekData = detail.weeklyKg.find(w => w.week === selectedWeek)!
+        const dailyKg = Math.round(weekData.kg / 7)
+        const dailySummerKg = Math.round(weekData.summerKg / 7)
+        const dailyAutumnKg = Math.round(weekData.autumnKg / 7)
+        const hrs = Math.round(dailyKg / detail.eff)
+
+        sectionBreakdown.push({
+          name: detail.section.name,
+          blockName: detail.section.blockName,
+          varietyName: detail.section.variety?.name || '?',
+          kg: dailyKg, summerKg: dailySummerKg, autumnKg: dailyAutumnKg, hrs, eff: detail.eff,
+        })
+        totalKg += dailyKg
+        totalHrs += hrs
+      }
+
+      const pickers = Math.ceil(totalHrs / hoursPerDay)
+      const tier = matchStaffingTier(totalKg, staffingTiers)
+      const qc = tier?.qualityControl || 0
+      const weighing = tier?.weighingStaff || 0
+      const infra = tier?.infrastructure || 0
+
+      return {
+        dayIndex: i,
+        dayName: DAY_NAMES[i],
+        dayShort: DAY_SHORT[i],
+        date,
+        dateStr: `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}`,
+        sections: sectionBreakdown.sort((a, b) => b.kg - a.kg),
+        totalKg, totalHrs, pickers, qc, weighing, infra,
+        totalStaff: pickers + qc + weighing + infra,
+      }
+    })
+
+    // Week summary
+    const weekData = weeklyPlan.weeks.find(w => w.week === selectedWeek)
+    return { days, weekData, activeSections }
+  }, [selectedWeek, dailyViewSection, weeklyPlan, hoursPerDay, staffingTiers])
 
   // ==================== PDF EXPORT ====================
   const handleExportPdf = useCallback(async () => {
@@ -658,8 +739,11 @@ export default function PlanningPage() {
                     const cum = weeklyPlan.weeks.slice(0, wi + 1).reduce((s, x) => s + x.kg, 0)
                     const isBottleneck = w.pickers >= bottleneckThreshold
                     return (
-                      <tr key={w.week} className={`border-b ${isBottleneck ? 'bg-red-50' : ''}`}>
-                        <td className="py-2 px-3">T{w.week} <span className="text-gray-400 text-xs">({w.dates})</span></td>
+                      <tr key={w.week} className={`border-b cursor-pointer transition-colors ${w.week === selectedWeek ? 'bg-indigo-50 ring-1 ring-indigo-300' : isBottleneck ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`} onClick={() => setSelectedWeek(w.week)}>
+                        <td className="py-2 px-3">
+                          {w.week === selectedWeek && <span className="text-indigo-500 mr-1">▶</span>}
+                          T{w.week} <span className="text-gray-400 text-xs">({w.dates})</span>
+                        </td>
                         <td className="text-right px-3">{w.kg.toLocaleString('pl-PL')} kg</td>
                         <td className="text-right px-3 font-medium">{w.dailyKg.toLocaleString('pl-PL')} kg</td>
                         <td className="text-right px-3 text-gray-500">{(cum / 1000).toFixed(2)}t</td>
@@ -677,6 +761,192 @@ export default function PlanningPage() {
               </table>
             </div>
           </div>
+
+          {/* ==================== DAILY PLAN ==================== */}
+          {dailyPlan && selectedWeek && (
+            <div className="bg-white rounded-xl border p-6">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-indigo-500" />
+                  Dzienny plan zbiorów — T{selectedWeek}
+                  <span className="text-sm font-normal text-gray-400">
+                    ({dailyPlan.days[0]?.dateStr}–{dailyPlan.days[6]?.dateStr})
+                  </span>
+                </h3>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500">Tydzień:</label>
+                    <select
+                      className="h-8 border rounded-md px-2 text-xs bg-white"
+                      value={selectedWeek}
+                      onChange={e => setSelectedWeek(+e.target.value)}
+                    >
+                      {weeklyPlan.weeks.map(w => (
+                        <option key={w.week} value={w.week}>T{w.week} ({w.dates}) — {w.kg.toLocaleString('pl-PL')} kg</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500">Sekcja:</label>
+                    <select
+                      className="h-8 border rounded-md px-2 text-xs bg-white"
+                      value={dailyViewSection}
+                      onChange={e => setDailyViewSection(e.target.value)}
+                    >
+                      <option value="all">Cała plantacja</option>
+                      {weeklyPlan.sectionDetails
+                        .filter(d => d.weeklyKg.some(w => w.week === selectedWeek && w.kg > 0))
+                        .sort((a, b) => (a.section.blockName + a.section.name).localeCompare(b.section.blockName + b.section.name))
+                        .map(d => (
+                          <option key={d.section.id} value={d.section.id}>
+                            {d.section.blockName}/{d.section.name} ({d.section.variety?.name})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Daily table */}
+              <div className="overflow-x-auto mb-6">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="text-gray-500 border-b-2 border-gray-300">
+                      <th className="text-left py-2 px-3">Dzień</th>
+                      <th className="text-left py-2 px-3">Data</th>
+                      <th className="text-right py-2 px-3">kg/dzień</th>
+                      <th className="text-right py-2 px-3">h pracy</th>
+                      <th className="text-right py-2 px-3 text-blue-600">Zbieracze</th>
+                      <th className="text-right py-2 px-3 text-amber-600">KJ</th>
+                      <th className="text-right py-2 px-3 text-cyan-600">Wagi</th>
+                      <th className="text-right py-2 px-3 text-purple-600">Infra</th>
+                      <th className="text-right py-2 px-3 font-bold text-orange-700">Łącznie</th>
+                      <th className="text-right py-2 px-3">Sekcji</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dailyPlan.days.map(d => (
+                      <tr key={d.dayIndex} className={`border-b ${d.dayIndex >= 5 ? 'bg-gray-50' : ''}`}>
+                        <td className="py-2 px-3 font-medium">{d.dayShort}</td>
+                        <td className="py-2 px-3 text-gray-600">{d.dateStr}</td>
+                        <td className="text-right px-3 font-medium">{d.totalKg.toLocaleString('pl-PL')} kg</td>
+                        <td className="text-right px-3 text-gray-500">{d.totalHrs}h</td>
+                        <td className="text-right px-3 font-semibold text-blue-600">{d.pickers}</td>
+                        <td className="text-right px-3 text-amber-600">{d.qc}</td>
+                        <td className="text-right px-3 text-cyan-600">{d.weighing}</td>
+                        <td className="text-right px-3 text-purple-600">{d.infra}</td>
+                        <td className="text-right px-3 font-bold text-orange-700">{d.totalStaff}</td>
+                        <td className="text-right px-3 text-gray-500">{d.sections.length}</td>
+                      </tr>
+                    ))}
+                    {/* Summary row */}
+                    <tr className="border-t-2 border-gray-300 font-bold">
+                      <td className="py-2 px-3" colSpan={2}>SUMA tygodnia</td>
+                      <td className="text-right px-3">{dailyPlan.days.reduce((s, d) => s + d.totalKg, 0).toLocaleString('pl-PL')} kg</td>
+                      <td className="text-right px-3 text-gray-500">{dailyPlan.days.reduce((s, d) => s + d.totalHrs, 0)}h</td>
+                      <td className="text-right px-3 text-blue-600">{Math.max(...dailyPlan.days.map(d => d.pickers))}</td>
+                      <td className="text-right px-3 text-amber-600" colSpan={3}></td>
+                      <td className="text-right px-3 text-orange-700">{Math.max(...dailyPlan.days.map(d => d.totalStaff))}</td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Section breakdown for selected week */}
+              {dailyViewSection === 'all' && dailyPlan.activeSections.length > 0 && (
+                <div>
+                  <h4 className="font-semibold text-sm mb-3 text-gray-700">Aktywne sekcje w T{selectedWeek} — dzienny rozkład</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {dailyPlan.activeSections
+                      .sort((a, b) => {
+                        const aKg = a.weeklyKg.find(w => w.week === selectedWeek)?.kg || 0
+                        const bKg = b.weeklyKg.find(w => w.week === selectedWeek)?.kg || 0
+                        return bKg - aKg
+                      })
+                      .map(d => {
+                        const weekData = d.weeklyKg.find(w => w.week === selectedWeek)!
+                        const dailyKg = Math.round(weekData.kg / 7)
+                        const isAutumn = weekData.autumnKg > weekData.summerKg
+                        return (
+                          <div
+                            key={d.section.id}
+                            className={`p-3 rounded-lg border cursor-pointer transition-colors ${dailyViewSection === d.section.id ? 'ring-2 ring-indigo-400 bg-indigo-50' : 'bg-gray-50 hover:bg-gray-100'}`}
+                            onClick={() => setDailyViewSection(d.section.id)}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-medium text-sm">
+                                <span className="text-gray-400">{d.section.blockName}/</span>{d.section.name}
+                              </span>
+                              <span className={`text-xs px-1.5 py-0.5 rounded ${isAutumn ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                                {isAutumn ? 'jesień' : 'lato'}
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500">{d.section.variety?.name}</div>
+                            <div className="flex items-center justify-between mt-1">
+                              <span className="font-bold text-sm">{dailyKg.toLocaleString('pl-PL')} kg/dzień</span>
+                              <span className="text-xs text-gray-400">{weekData.kg.toLocaleString('pl-PL')} kg/tydz.</span>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              {Math.ceil(Math.round(dailyKg / d.eff) / hoursPerDay)} zbieraczy × {hoursPerDay}h ({d.eff} kg/h)
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* Single section detail view */}
+              {dailyViewSection !== 'all' && (() => {
+                const detail = weeklyPlan.sectionDetails.find(d => d.section.id === dailyViewSection)
+                if (!detail) return null
+                const weekData = detail.weeklyKg.find(w => w.week === selectedWeek)
+                if (!weekData) return null
+                const dailyKg = Math.round(weekData.kg / 7)
+                const dailyHrs = Math.round(dailyKg / detail.eff)
+                const pickers = Math.ceil(dailyHrs / hoursPerDay)
+                return (
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-semibold text-sm text-indigo-800">
+                        {detail.section.blockName}/{detail.section.name} — {detail.section.variety?.name}
+                      </h4>
+                      <button
+                        onClick={() => setDailyViewSection('all')}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 underline"
+                      >
+                        ← Pokaż całą plantację
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                      <div>
+                        <div className="text-xs text-indigo-600">Tygodniowo</div>
+                        <div className="font-bold">{weekData.kg.toLocaleString('pl-PL')} kg</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-indigo-600">Dziennie</div>
+                        <div className="font-bold">{dailyKg.toLocaleString('pl-PL')} kg</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-indigo-600">Zbieracze/dzień</div>
+                        <div className="font-bold">{pickers}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-indigo-600">Wydajność</div>
+                        <div className="font-bold">{detail.eff} kg/h × {hoursPerDay}h</div>
+                      </div>
+                    </div>
+                    {weekData.summerKg > 0 && weekData.autumnKg > 0 && (
+                      <div className="mt-2 text-xs text-indigo-600">
+                        Lato: {Math.round(weekData.summerKg / 7).toLocaleString('pl-PL')} kg/dzień | Jesień: {Math.round(weekData.autumnKg / 7).toLocaleString('pl-PL')} kg/dzień
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
 
           {/* Per-section breakdown */}
           <div className="bg-white rounded-xl border p-6">

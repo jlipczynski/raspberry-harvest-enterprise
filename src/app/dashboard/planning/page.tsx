@@ -222,6 +222,12 @@ export default function PlanningPage() {
       const eff = v?.pickingEfficiency || 6 // kg/h
       const varietyName = v?.name || ''
 
+      // Gross multiplier: MaxCrop yields = I klasa, but workers pick EVERYTHING
+      // grossMultiplier = 100 / (100 - secondCat% - waste%)
+      const secondCat = v?.secondCategoryPercent ?? 22
+      const waste = v?.wastePercent ?? 3
+      const grossMultiplier = 100 / (100 - secondCat - waste)
+
       // Yields from DB: section-level overrides variety-level
       // --- SUMMER ---
       const summerYield = section.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
@@ -235,8 +241,9 @@ export default function PlanningPage() {
         : (varietyName.includes('Diamond') || varietyName.includes('DJ')) ? DJ_CURVE_AUTUMN
         : (v?.harvestCurveAutumn as number[] || defaultCurveAutumn)
 
-      const summerKg = shoots * summerYield
-      const autumnKg = shoots * autumnYield
+      // Gross kg = shoots × yield × grossMultiplier (everything to pick)
+      const summerKg = shoots * summerYield * grossMultiplier
+      const autumnKg = shoots * autumnYield * grossMultiplier
       const totalKg = summerKg + autumnKg
 
       const weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }> = []
@@ -505,6 +512,7 @@ export default function PlanningPage() {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <h4 className="font-semibold text-blue-800 mb-1">Przeliczenie total (weryfikacja)</h4>
             <div className="font-mono text-[11px] space-y-0.5 text-blue-700">
+              <div className="font-semibold text-blue-900 mb-1">I klasa (MaxCrop):</div>
               <div>A1-9:  10 584 pędów × (1.47+0.63) = 22 228 kg</div>
               <div>A10-19: 9 360 pędów × (1.48+0.70) = 20 405 kg</div>
               <div>B01-07: 8 400 pędów × (1.55+0.00) = 13 020 kg</div>
@@ -513,7 +521,9 @@ export default function PlanningPage() {
               <div>C06-11: 7 200 pędów × (0.00+0.22) =  1 584 kg</div>
               <div>D01-09: 10 800 pędów × (1.74+0.13) = 20 196 kg</div>
               <div>D10-18: 10 800 pędów × (1.74+0.13) = 20 196 kg</div>
-              <div className="font-bold border-t border-blue-300 pt-1">SUMA: 114 285 kg ≈ 114 ton (MaxCrop real: 118t, diff -3%)</div>
+              <div className="font-bold border-t border-blue-300 pt-1">I klasa: 114 285 kg ≈ 114t (MaxCrop: 118t)</div>
+              <div className="font-bold text-green-700 mt-1">Brutto (do zerwania): 114 285 × 1.33 ≈ 150t (I kl + ~22% II kl + ~3% odpad)</div>
+              <div className="text-blue-500">Zbieracze zbierają WSZYSTKO — prognoza brutto to podstawa planowania załogi</div>
             </div>
           </div>
         </div>
@@ -537,7 +547,7 @@ export default function PlanningPage() {
             </div>
             <div className="bg-green-50 rounded-xl p-4 border border-green-200 text-center">
               <p className="text-3xl font-bold text-green-700">{(totalKgAll / 1000).toFixed(1)}t</p>
-              <p className="text-xs text-green-600">Prognoza total</p>
+              <p className="text-xs text-green-600">Zbiór brutto (do zerwania)</p>
               <p className="text-[10px] text-gray-500 mt-0.5">
                 <span className="text-green-600">{(totalSummerKg / 1000).toFixed(1)}t lato</span>
                 {' + '}

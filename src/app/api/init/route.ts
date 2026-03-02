@@ -36,8 +36,8 @@ export async function POST() {
           harvestCurveSummer: [0.5, 1.8, 2.5, 8.3, 18.2, 19.9, 22.1, 17.0, 7.8, 2.6],  // MaxCrop 2025 real
           harvestCurveAutumn: [2.8, 10.1, 10.0, 17.1, 22.9, 15.1, 11.8, 5.9, 3.5, 0.4, 0.2],  // MaxCrop 2025 real, 11 tyg.
           pickingEfficiency: 8,
-          wastePercent: 2,
-          secondCategoryPercent: 8,
+          wastePercent: 3,
+          secondCategoryPercent: 22,  // real 2025: ~22% II klasa
           isCustom: false,
           tenantId: tenant.id,
         }
@@ -55,8 +55,8 @@ export async function POST() {
           harvestCurveSummer: [0.5, 3.8, 6.3, 14.3, 12.4, 16.3, 17.4, 19.1, 5.9, 3.9],  // MaxCrop 2025 real
           harvestCurveAutumn: [],  // brak jesieni
           pickingEfficiency: 8.5,
-          wastePercent: 2,
-          secondCategoryPercent: 7,
+          wastePercent: 3,
+          secondCategoryPercent: 20,  // real 2025: ~20% II klasa
           isCustom: false,
           tenantId: tenant.id,
         }

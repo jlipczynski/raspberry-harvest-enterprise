@@ -38,7 +38,6 @@ export async function POST() {
           pickingEfficiency: 8,
           wastePercent: 3,
           secondCategoryPercent: 22,  // real 2025: ~22% II klasa
-          autumnStartWeek: 33,       // jesień od T33
           isCustom: false,
           tenantId: tenant.id,
         }

@@ -37,6 +37,7 @@ interface GdhApiResponse {
 interface PlantationSection {
   id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number
   yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; varietyId: string
+  harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]
   variety?: { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]; pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number }
 }
 interface Block { id: string; name: string; sections: PlantationSection[] }
@@ -225,23 +226,27 @@ export default function PlanningPage() {
       const varietyName = v?.name || ''
 
       // Gross multiplier: MaxCrop yields = I klasa, but workers pick EVERYTHING
-      // Hardcoded like curves — not dependent on DB migration
-      const secondCat = varietyName.includes('Ruby') ? 20 : 22
-      const waste = 3
+      // Read from DB (set by migration), fallback to safe defaults
+      const secondCat = v?.secondCategoryPercent ?? 22
+      const waste = v?.wastePercent ?? 3
       const grossMultiplier = 100 / (100 - secondCat - waste)
 
       // Yields from DB: section-level overrides variety-level
       // --- SUMMER ---
       const summerYield = section.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
-      const summerCurve = varietyName.includes('Ruby') ? RUBY_CURVE_SUMMER
-        : (varietyName.includes('Diamond') || varietyName.includes('DJ')) ? DJ_CURVE_SUMMER
-        : (v?.harvestCurveSummer as number[] || defaultCurveSummer)
+      const sectionSummerCurve = (section.harvestCurveSummer as number[] | undefined)
+      const varietySummerCurve = (v?.harvestCurveSummer as number[] | undefined)
+      const summerCurve = (sectionSummerCurve?.length ? sectionSummerCurve : null)
+        ?? (varietySummerCurve?.length ? varietySummerCurve : null)
+        ?? defaultCurveSummer
 
       // --- AUTUMN ---
       const autumnYield = section.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
-      const autumnCurve = varietyName.includes('Ruby') ? RUBY_CURVE_AUTUMN
-        : (varietyName.includes('Diamond') || varietyName.includes('DJ')) ? DJ_CURVE_AUTUMN
-        : (v?.harvestCurveAutumn as number[] || defaultCurveAutumn)
+      const sectionAutumnCurve = (section.harvestCurveAutumn as number[] | undefined)
+      const varietyAutumnCurve = (v?.harvestCurveAutumn as number[] | undefined)
+      const autumnCurve = (sectionAutumnCurve?.length ? sectionAutumnCurve : null)
+        ?? (varietyAutumnCurve?.length ? varietyAutumnCurve : null)
+        ?? defaultCurveAutumn
 
       // Gross kg = shoots × yield × grossMultiplier (everything to pick)
       const summerKg = shoots * summerYield * grossMultiplier

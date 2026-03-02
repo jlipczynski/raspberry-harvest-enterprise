@@ -16,6 +16,7 @@ async function main() {
         harvestCurveAutumn: [2.8, 10.1, 10.0, 17.1, 22.9, 15.1, 11.8, 5.9, 3.5, 0.4, 0.2],
         secondCategoryPercent: 22,  // real 2025: ~22% II klasa (było 8%)
         wastePercent: 3,            // ~3% odpad na polu
+        autumnStartWeek: 33,       // jesień startuje od T33 (połowa sierpnia)
       }
     })
     console.log('  DJ variety: autumn=0.67, secondCat=22%, waste=3%, curves set')
@@ -33,6 +34,7 @@ async function main() {
         harvestCurveAutumn: [],
         secondCategoryPercent: 20,  // real 2025: ~20% II klasa (było 7%)
         wastePercent: 3,            // ~3% odpad na polu
+        autumnStartWeek: null,      // Ruby nie ma jesieni
       }
     })
     console.log('  Ruby variety: autumn=0, secondCat=20%, waste=3%, curves set')

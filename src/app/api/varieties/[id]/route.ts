@@ -30,6 +30,7 @@ export async function PATCH(
         gdhAutumnFruit: body.gdhAutumnFruit ?? null,
         harvestCurveSummer: body.harvestCurveSummer || null,
         harvestCurveAutumn: body.harvestCurveAutumn || null,
+        autumnStartWeek: body.autumnStartWeek ?? null,
         pickingEfficiency: body.pickingEfficiency ?? null,
         wastePercent: body.wastePercent ?? null,
         secondCategoryPercent: body.secondCategoryPercent ?? null,

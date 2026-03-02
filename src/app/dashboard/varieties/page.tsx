@@ -15,12 +15,11 @@ interface Variety {
   gdhLcFlower?: number; gdhLcFruit?: number
   gdhAutumnFlower?: number; gdhAutumnFruit?: number
   harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]
-  pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number
+  pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number; autumnStartWeek?: number
   isCustom?: boolean
 }
 
-const defaultCurveSummer = [2, 6, 12, 16, 15, 13, 11, 9, 7, 5, 3, 1]
-const defaultCurveAutumn = [5, 15, 25, 25, 15, 10, 5]
+// No hardcoded default curves — user enters their own data
 
 export default function VarietiesPage() {
   const [varieties, setVarieties] = useState<Variety[]>([])
@@ -36,11 +35,12 @@ export default function VarietiesPage() {
     yieldSummerPerShoot: 1.5,
     yieldAutumnPerShoot: 0.5,
     baseTemp: 6.0, gdhWinteredFlower: 0, gdhWinteredFruit: 0, gdhLcFlower: 0, gdhLcFruit: 0, gdhAutumnFlower: 0, gdhAutumnFruit: 0,
-    harvestCurveSummer: defaultCurveSummer.join(', '),
-    harvestCurveAutumn: defaultCurveAutumn.join(', '),
+    harvestCurveSummer: '',
+    harvestCurveAutumn: '',
     pickingEfficiency: 8,
-    wastePercent: 2,
-    secondCategoryPercent: 8,
+    wastePercent: 0,
+    secondCategoryPercent: 0,
+    autumnStartWeek: 33,
   })
 
   useEffect(() => {
@@ -67,11 +67,12 @@ export default function VarietiesPage() {
       yieldSummerPerShoot: 1.5,
       yieldAutumnPerShoot: 0.5,
     baseTemp: 6.0, gdhWinteredFlower: 0, gdhWinteredFruit: 0, gdhLcFlower: 0, gdhLcFruit: 0, gdhAutumnFlower: 0, gdhAutumnFruit: 0,
-      harvestCurveSummer: defaultCurveSummer.join(', '),
-      harvestCurveAutumn: defaultCurveAutumn.join(', '),
+      harvestCurveSummer: '',
+      harvestCurveAutumn: '',
       pickingEfficiency: 8,
-      wastePercent: 2,
-      secondCategoryPercent: 8,
+      wastePercent: 0,
+      secondCategoryPercent: 0,
+      autumnStartWeek: 33,
     })
     setEditingVariety(null)
     setShowForm(false)
@@ -86,11 +87,12 @@ export default function VarietiesPage() {
       yieldSummerPerShoot: variety.yieldSummerPerShoot || 1.5,
       yieldAutumnPerShoot: variety.yieldAutumnPerShoot || 0.5,
       baseTemp: variety.baseTemp || 6.0, gdhWinteredFlower: variety.gdhWinteredFlower || 0, gdhWinteredFruit: variety.gdhWinteredFruit || 0, gdhLcFlower: variety.gdhLcFlower || 0, gdhLcFruit: variety.gdhLcFruit || 0, gdhAutumnFlower: variety.gdhAutumnFlower || 0, gdhAutumnFruit: variety.gdhAutumnFruit || 0,
-      harvestCurveSummer: (variety.harvestCurveSummer || defaultCurveSummer).join(', '),
-      harvestCurveAutumn: (variety.harvestCurveAutumn || defaultCurveAutumn).join(', '),
-      pickingEfficiency: variety.pickingEfficiency || 8,
-      wastePercent: variety.wastePercent || 2,
-      secondCategoryPercent: variety.secondCategoryPercent || 8,
+      harvestCurveSummer: (variety.harvestCurveSummer || []).join(', '),
+      harvestCurveAutumn: (variety.harvestCurveAutumn || []).join(', '),
+      pickingEfficiency: variety.pickingEfficiency ?? 8,
+      wastePercent: variety.wastePercent ?? 0,
+      secondCategoryPercent: variety.secondCategoryPercent ?? 0,
+      autumnStartWeek: variety.autumnStartWeek ?? 33,
     })
     setShowForm(true)
   }
@@ -114,6 +116,7 @@ export default function VarietiesPage() {
       pickingEfficiency: formData.pickingEfficiency,
       wastePercent: formData.wastePercent,
       secondCategoryPercent: formData.secondCategoryPercent,
+      autumnStartWeek: formData.autumnStartWeek || null,
     }
     
     try {
@@ -478,6 +481,19 @@ export default function VarietiesPage() {
                     onChange={(e) => setFormData({...formData, secondCategoryPercent: parseFloat(e.target.value) || 0})}
                   />
                 </div>
+                <div>
+                  <Label>Start jesieni (nr tygodnia)</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    min="1"
+                    max="52"
+                    placeholder="np. 33"
+                    value={formData.autumnStartWeek || ''}
+                    onChange={(e) => setFormData({...formData, autumnStartWeek: parseInt(e.target.value) || 0})}
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Puste = brak jesieni</p>
+                </div>
               </div>
             </div>
 
@@ -564,18 +580,22 @@ export default function VarietiesPage() {
                     <p className="text-gray-600">{variety.description}</p>
                   )}
                   
-                  <div className="grid grid-cols-3 gap-3 text-sm">
+                  <div className="grid grid-cols-4 gap-3 text-sm">
                     <div className="bg-gray-50 p-3 rounded">
                       <div className="text-gray-500 text-xs">Wydajność zbierania</div>
-                      <div className="font-semibold">{variety.pickingEfficiency || 8} kg/h</div>
+                      <div className="font-semibold">{variety.pickingEfficiency ?? '–'} kg/h</div>
                     </div>
                     <div className="bg-red-50 p-3 rounded">
                       <div className="text-red-600 text-xs">% odpadu</div>
-                      <div className="font-semibold">{variety.wastePercent || 0}%</div>
+                      <div className="font-semibold">{variety.wastePercent ?? 0}%</div>
                     </div>
                     <div className="bg-yellow-50 p-3 rounded">
                       <div className="text-yellow-600 text-xs">% II kategorii</div>
-                      <div className="font-semibold">{variety.secondCategoryPercent || 0}%</div>
+                      <div className="font-semibold">{variety.secondCategoryPercent ?? 0}%</div>
+                    </div>
+                    <div className="bg-amber-50 p-3 rounded">
+                      <div className="text-amber-600 text-xs">Start jesieni</div>
+                      <div className="font-semibold">{variety.autumnStartWeek ? `T${variety.autumnStartWeek}` : 'brak'}</div>
                     </div>
                   </div>
 
@@ -584,7 +604,7 @@ export default function VarietiesPage() {
                     <div>
                       <h4 className="text-sm font-medium text-gray-700 mb-2">Krzywa zbioru LATO</h4>
                       <div className="flex items-end gap-1 h-20">
-                        {(variety.harvestCurveSummer || defaultCurveSummer).map((val, i) => (
+                        {(variety.harvestCurveSummer || []).map((val, i) => (
                           <div
                             key={i}
                             className="bg-orange-400 rounded-t flex-1 min-w-[8px]"
@@ -594,13 +614,13 @@ export default function VarietiesPage() {
                         ))}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {(variety.harvestCurveSummer || defaultCurveSummer).length} tygodni
+                        {(variety.harvestCurveSummer || []).length} tygodni
                       </div>
                     </div>
                     <div>
                       <h4 className="text-sm font-medium text-gray-700 mb-2">Krzywa zbioru JESIEŃ</h4>
                       <div className="flex items-end gap-1 h-20">
-                        {(variety.harvestCurveAutumn || defaultCurveAutumn).map((val, i) => (
+                        {(variety.harvestCurveAutumn || []).map((val, i) => (
                           <div
                             key={i}
                             className="bg-amber-400 rounded-t flex-1 min-w-[8px]"
@@ -610,7 +630,7 @@ export default function VarietiesPage() {
                         ))}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {(variety.harvestCurveAutumn || defaultCurveAutumn).length} tygodni
+                        {(variety.harvestCurveAutumn || []).length} tygodni
                       </div>
                     </div>
                   </div>

@@ -38,7 +38,7 @@ interface PlantationSection {
   id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number
   yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; varietyId: string
   harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]
-  variety?: { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]; pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number }
+  variety?: { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]; pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number; autumnStartWeek?: number }
 }
 interface Block { id: string; name: string; sections: PlantationSection[] }
 
@@ -47,21 +47,9 @@ type Scenario = typeof ALL_SCENARIOS[number]
 const SCENARIO_LABELS: Record<Scenario, string> = { p90: 'P90 — ciepły rok', p50: 'P50 — typowy rok', p10: 'P10 — zimny rok', best: 'ECMWF' }
 const SCENARIO_SHORT: Record<Scenario, string> = { p90: 'P90', p50: 'P50', p10: 'P10', best: 'ECMWF' }
 
-// ==================== REAL CURVES FROM MAXCROP 2025 ====================
-// Source: sum_of_crops_2025_05_01_2025_12_06.xls — real harvest data
-// DJ SUMMER (avg A1-9, A10-19, D): 10 weeks starting ~wk 23
-const DJ_CURVE_SUMMER = [0.5, 1.8, 2.5, 8.3, 18.2, 19.9, 22.1, 17.0, 7.8, 2.6]
-// RUBY SUMMER (B08-13): 10 weeks, peaks later than DJ
-const RUBY_CURVE_SUMMER = [0.5, 3.8, 6.3, 14.3, 12.4, 16.3, 17.4, 19.1, 5.9, 3.9]
-// DJ AUTUMN (avg A1-9, A10-19): 11 weeks starting ~wk 33
-const DJ_CURVE_AUTUMN = [2.8, 10.1, 10.0, 17.1, 22.9, 15.1, 11.8, 5.9, 3.5, 0.4, 0.2]
-// Ruby has NO autumn production (confirmed by MaxCrop data: B08-13 ends Aug 6)
-const RUBY_CURVE_AUTUMN: number[] = []
-
-// Fallback for unknown varieties
-const defaultCurveSummer = DJ_CURVE_SUMMER
-const defaultCurveAutumn = DJ_CURVE_AUTUMN
-const defaultCurve = DJ_CURVE_SUMMER
+// Flat distribution fallback — used ONLY when variety has no curves in DB
+// This produces a uniform spread; real curves should always come from DB (Variety or Section)
+const FLAT_CURVE_10W = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10] // 10 weeks, 10% each
 
 // ==================== STAFFING TIERS ====================
 interface StaffingTier {
@@ -115,6 +103,7 @@ export default function PlanningPage() {
   const [loading, setLoading] = useState(true)
   const [scenario, setScenario] = useState<Scenario>('p50')
   const [hoursPerDay, setHoursPerDay] = useState(8)
+  const [workDaysPerWeek, setWorkDaysPerWeek] = useState(7)
   const [staffingTiers, setStaffingTiers] = useState<StaffingTier[]>(DEFAULT_TIERS)
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
   const [dailyViewSection, setDailyViewSection] = useState<string>('all')
@@ -222,14 +211,13 @@ export default function PlanningPage() {
 
       const startWeek = getWeekNumber(new Date(fruitDate))
       const shoots = section.metersLength * section.potsPerMeter * section.shootsPerPot
-      const eff = v?.pickingEfficiency || 6 // kg/h
+      const eff = v?.pickingEfficiency ?? 6 // kg/h — from DB, fallback only if not set
       const varietyName = v?.name || ''
 
-      // Gross multiplier: MaxCrop yields = I klasa, but workers pick EVERYTHING
-      // Read from DB (set by migration), fallback to safe defaults
-      const secondCat = v?.secondCategoryPercent ?? 22
-      const waste = v?.wastePercent ?? 3
-      const grossMultiplier = 100 / (100 - secondCat - waste)
+      // Gross multiplier — all from DB (Variety fields)
+      const secondCat = v?.secondCategoryPercent ?? 0
+      const waste = v?.wastePercent ?? 0
+      const grossMultiplier = (secondCat + waste) > 0 ? 100 / (100 - secondCat - waste) : 1
 
       // Yields from DB: section-level overrides variety-level
       // --- SUMMER ---
@@ -238,7 +226,7 @@ export default function PlanningPage() {
       const varietySummerCurve = (v?.harvestCurveSummer as number[] | undefined)
       const summerCurve = (sectionSummerCurve?.length ? sectionSummerCurve : null)
         ?? (varietySummerCurve?.length ? varietySummerCurve : null)
-        ?? defaultCurveSummer
+        ?? FLAT_CURVE_10W
 
       // --- AUTUMN ---
       const autumnYield = section.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
@@ -246,11 +234,14 @@ export default function PlanningPage() {
       const varietyAutumnCurve = (v?.harvestCurveAutumn as number[] | undefined)
       const autumnCurve = (sectionAutumnCurve?.length ? sectionAutumnCurve : null)
         ?? (varietyAutumnCurve?.length ? varietyAutumnCurve : null)
-        ?? defaultCurveAutumn
+        ?? FLAT_CURVE_10W
+
+      // Autumn start week — from DB (Variety.autumnStartWeek)
+      const autumnStartWeek = v?.autumnStartWeek ?? null
 
       // Gross kg = shoots × yield × grossMultiplier (everything to pick)
       const summerKg = shoots * summerYield * grossMultiplier
-      const autumnKg = shoots * autumnYield * grossMultiplier
+      const autumnKg = (autumnStartWeek && autumnYield > 0) ? shoots * autumnYield * grossMultiplier : 0
       const totalKg = summerKg + autumnKg
 
       const weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }> = []
@@ -269,9 +260,8 @@ export default function PlanningPage() {
         })
       }
 
-      // Autumn weeks — start at week 33 (mid-August), independent of summer
-      if (autumnKg > 0 && autumnCurve.length > 0) {
-        const autumnStartWeek = 33
+      // Autumn weeks — start from variety's autumnStartWeek (from DB)
+      if (autumnKg > 0 && autumnCurve.length > 0 && autumnStartWeek) {
         autumnCurve.forEach((pct, i) => {
           const week = autumnStartWeek + i
           const kg = Math.round(autumnKg * pct / 100)
@@ -290,9 +280,8 @@ export default function PlanningPage() {
 
     const weeks = Object.entries(weekMap)
       .map(([wk, data]) => {
-        // Daily values — farm operates 7 days/week
-        const dailyKg = Math.round(data.kg / 7)
-        const dailyHrs = Math.round(data.hrs / 7)
+        const dailyKg = Math.round(data.kg / workDaysPerWeek)
+        const dailyHrs = Math.round(data.hrs / workDaysPerWeek)
         const pickers = Math.ceil(dailyHrs / hoursPerDay)
 
         // Match staffing tier based on daily kg
@@ -322,7 +311,7 @@ export default function PlanningPage() {
       .sort((a, b) => a.week - b.week)
 
     return { weeks, sectionDetails }
-  }, [allPlantationSections, sectionFruitDates, hoursPerDay, staffingTiers])
+  }, [allPlantationSections, sectionFruitDates, hoursPerDay, workDaysPerWeek, staffingTiers])
 
   const peakPickers = Math.max(...weeklyPlan.weeks.map(w => w.pickers), 0)
   const peakTotalStaff = Math.max(...weeklyPlan.weeks.map(w => w.totalStaff), 0)
@@ -360,7 +349,7 @@ export default function PlanningPage() {
       })
       .filter(d => dailyViewSection === 'all' || d.section.id === dailyViewSection)
 
-    const days = Array.from({ length: 7 }, (_, i) => {
+    const days = Array.from({ length: workDaysPerWeek }, (_, i) => {
       const date = new Date(monday)
       date.setDate(monday.getDate() + i)
 
@@ -373,9 +362,9 @@ export default function PlanningPage() {
 
       for (const detail of activeSections) {
         const weekData = detail.weeklyKg.find(w => w.week === selectedWeek)!
-        const dailyKg = Math.round(weekData.kg / 7)
-        const dailySummerKg = Math.round(weekData.summerKg / 7)
-        const dailyAutumnKg = Math.round(weekData.autumnKg / 7)
+        const dailyKg = Math.round(weekData.kg / workDaysPerWeek)
+        const dailySummerKg = Math.round(weekData.summerKg / workDaysPerWeek)
+        const dailyAutumnKg = Math.round(weekData.autumnKg / workDaysPerWeek)
         const hrs = Math.round(dailyKg / detail.eff)
 
         sectionBreakdown.push({
@@ -409,7 +398,7 @@ export default function PlanningPage() {
     // Week summary
     const weekData = weeklyPlan.weeks.find(w => w.week === selectedWeek)
     return { days, weekData, activeSections }
-  }, [selectedWeek, dailyViewSection, weeklyPlan, hoursPerDay, staffingTiers])
+  }, [selectedWeek, dailyViewSection, weeklyPlan, hoursPerDay, workDaysPerWeek, staffingTiers])
 
   // ==================== PDF EXPORT ====================
   const handleExportPdf = useCallback(async () => {
@@ -423,7 +412,7 @@ export default function PlanningPage() {
     doc.text('Planowanie zbiorów — zapotrzebowanie na pracowników', 14, 16)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
-    doc.text(`Scenariusz: ${SCENARIO_SHORT[scenario]} | 7 dni/tydz. × ${hoursPerDay}h/dzień | Wygenerowano: ${new Date().toLocaleDateString('pl-PL')}`, 14, 22)
+    doc.text(`Scenariusz: ${SCENARIO_SHORT[scenario]} | ${workDaysPerWeek} dni/tydz. × ${hoursPerDay}h/dzień | Wygenerowano: ${new Date().toLocaleDateString('pl-PL')}`, 14, 22)
 
     const head = [['Tydzień', 'Daty', 'Zbiór/tydz.', 'Zbiór/dzień', 'h/dzień', 'Zbieracze', 'KJ', 'Wagi', 'Infra', 'Łącznie', 'Sekcji']]
     const body = weeklyPlan.weeks.map(w => [
@@ -481,7 +470,7 @@ export default function PlanningPage() {
         @media print { body { padding: 0; } }
       </style></head><body>
       <h1>Planowanie zbiorów — zapotrzebowanie na pracowników</h1>
-      <p class="meta">Scenariusz: ${SCENARIO_SHORT[scenario]} | 7 dni/tydz. × ${hoursPerDay}h/dzień | ${new Date().toLocaleDateString('pl-PL')}</p>
+      <p class="meta">Scenariusz: ${SCENARIO_SHORT[scenario]} | ${workDaysPerWeek} dni/tydz. × ${hoursPerDay}h/dzień | ${new Date().toLocaleDateString('pl-PL')}</p>
       ${tableRef.current.innerHTML}
       <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}</script>
     </body></html>`)
@@ -507,6 +496,10 @@ export default function PlanningPage() {
             <select className="h-8 border rounded-md px-2 text-xs bg-white" value={scenario} onChange={e => setScenario(e.target.value as Scenario)}>
               {ALL_SCENARIOS.map(sc => <option key={sc} value={sc}>{SCENARIO_LABELS[sc]}</option>)}
             </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500">dni/tydz.:</label>
+            <input type="number" className="h-8 w-14 border rounded-md px-2 text-xs bg-white text-center" value={workDaysPerWeek} onChange={e => setWorkDaysPerWeek(Math.max(1, Math.min(7, +e.target.value)))} />
           </div>
           <div className="flex items-center gap-2">
             <label className="text-xs text-gray-500">h/dzień:</label>
@@ -675,7 +668,7 @@ export default function PlanningPage() {
           {/* Workers bar chart — stacked */}
           <div className="bg-white rounded-xl border p-6">
             <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-500" />Zapotrzebowanie na personel (osób/dzień zbioru)</h3>
-            <p className="text-xs text-gray-500 -mt-3 mb-4">Zbiór 7 dni/tydz. × {hoursPerDay}h/dzień — zbieracze + KJ + wagi + infrastruktura</p>
+            <p className="text-xs text-gray-500 -mt-3 mb-4">Zbiór {workDaysPerWeek} dni/tydz. × {hoursPerDay}h/dzień — zbieracze + KJ + wagi + infrastruktura</p>
             <div className="flex items-end gap-1 h-48 mb-2">
               {weeklyPlan.weeks.map(w => {
                 const isBottleneck = w.pickers >= bottleneckThreshold
@@ -871,7 +864,7 @@ export default function PlanningPage() {
                       })
                       .map(d => {
                         const weekData = d.weeklyKg.find(w => w.week === selectedWeek)!
-                        const dailyKg = Math.round(weekData.kg / 7)
+                        const dailyKg = Math.round(weekData.kg / workDaysPerWeek)
                         const isAutumn = weekData.autumnKg > weekData.summerKg
                         return (
                           <div
@@ -908,7 +901,7 @@ export default function PlanningPage() {
                 if (!detail) return null
                 const weekData = detail.weeklyKg.find(w => w.week === selectedWeek)
                 if (!weekData) return null
-                const dailyKg = Math.round(weekData.kg / 7)
+                const dailyKg = Math.round(weekData.kg / workDaysPerWeek)
                 const dailyHrs = Math.round(dailyKg / detail.eff)
                 const pickers = Math.ceil(dailyHrs / hoursPerDay)
                 return (
@@ -944,7 +937,7 @@ export default function PlanningPage() {
                     </div>
                     {weekData.summerKg > 0 && weekData.autumnKg > 0 && (
                       <div className="mt-2 text-xs text-indigo-600">
-                        Lato: {Math.round(weekData.summerKg / 7).toLocaleString('pl-PL')} kg/dzień | Jesień: {Math.round(weekData.autumnKg / 7).toLocaleString('pl-PL')} kg/dzień
+                        Lato: {Math.round(weekData.summerKg / workDaysPerWeek).toLocaleString('pl-PL')} kg/dzień | Jesień: {Math.round(weekData.autumnKg / workDaysPerWeek).toLocaleString('pl-PL')} kg/dzień
                       </div>
                     )}
                   </div>

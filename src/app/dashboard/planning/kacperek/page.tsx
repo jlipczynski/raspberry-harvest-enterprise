@@ -7,6 +7,7 @@ import { ArrowLeft, FileDown, Sun, Leaf, Printer, ChevronDown, ChevronUp } from 
 interface Variety { id: string; name: string; pickingEfficiency?: number; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number }
 interface Section {
   id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number
+  potsOverride?: number | null
   yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; varietyId: string; variety?: Variety
   harvestCurveSummer: number[]; harvestCurveAutumn: number[]
   winteredInTunnel?: boolean; plantingDate?: string
@@ -95,7 +96,7 @@ export default function KacperekReport() {
 
     allSections.forEach(section => {
       const v = varieties.find(x => x.id === section.varietyId)
-      const pots = section.metersLength * section.potsPerMeter
+      const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter
       const shoots = pots * section.shootsPerPot
       const sectionCurves = savedCurves.filter(c => c.sectionId === section.id)
       const summerCurve = sectionCurves.find(c => c.season === 'summer')
@@ -137,7 +138,7 @@ export default function KacperekReport() {
 
     allSections2.forEach(section => {
       const v = varieties.find(x => x.id === section.varietyId)
-      const pots = section.metersLength * section.potsPerMeter
+      const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter
       const shoots = pots * section.shootsPerPot
       const sectionCurves = savedCurves.filter(c => c.sectionId === section.id)
 

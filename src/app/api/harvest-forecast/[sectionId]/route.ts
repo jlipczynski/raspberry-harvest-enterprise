@@ -37,7 +37,8 @@ export async function GET(
       : (variety.harvestCurveAutumn as number[] || [5, 15, 25, 25, 15, 10, 5])
 
     // Szacowany plon: shoots * yieldPerShoot
-    const shoots = section.metersLength * section.potsPerMeter * section.shootsPerPot
+    const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter
+    const shoots = pots * section.shootsPerPot
     const yieldPerShoot = season === 'summer'
       ? (section.yieldSummerPerShoot || variety.yieldSummerPerShoot || 0)
       : (section.yieldAutumnPerShoot || variety.yieldAutumnPerShoot || 0)

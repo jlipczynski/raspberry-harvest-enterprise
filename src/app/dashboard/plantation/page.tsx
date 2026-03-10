@@ -9,7 +9,7 @@ import GDHModule from './gdh-module'
 import GDHMatrix from './gdh-matrix'
 
 interface Variety { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number }
-interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; plantingYear?: number; productionYear?: number; plantMaterialType?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string; _tempCount?: number }
+interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; potsOverride?: number | null; plantingYear?: number; productionYear?: number; plantMaterialType?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string; _tempCount?: number }
 interface Block { id: string; name: string; sections: Section[] }
 interface Farm { id: string; name: string }
 interface TempReading { id: string; timestamp: string; temperature: number; sourceFile?: string }
@@ -28,7 +28,7 @@ export default function PlantationPage() {
   const [showSectionForm, setShowSectionForm] = useState<string | null>(null)
   const [editingSection, setEditingSection] = useState<Section | null>(null)
   const [expandedBlock, setExpandedBlock] = useState<string | null>(null)
-  const [sectionForm, setSectionForm] = useState({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' })
+  const [sectionForm, setSectionForm] = useState({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '' as string | number, plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' })
 
   // PDF upload state
   const [isDragging, setIsDragging] = useState(false)
@@ -139,7 +139,7 @@ export default function PlantationPage() {
 
   const calcStats = (s: Section) => {
     const v = varieties.find(x => x.id === s.varietyId)
-    const pots = s.metersLength * s.potsPerMeter
+    const pots = (s.potsOverride != null && s.potsOverride > 0) ? s.potsOverride : s.metersLength * s.potsPerMeter
     const shoots = pots * s.shootsPerPot
     const ys = s.yieldSummerPerShoot || v?.yieldSummerPerShoot || 0
     const ya = s.yieldAutumnPerShoot || v?.yieldAutumnPerShoot || 0
@@ -155,12 +155,12 @@ export default function PlantationPage() {
   }
   const delBlock = async (id: string) => { if (confirm('Usunąć blok?')) { await fetch(`/api/plantation/block/${id}`, { method: 'DELETE' }); fetchData() } }
 
-  const resetSection = () => { setSectionForm({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' }); setEditingSection(null); setShowSectionForm(null) }
+  const resetSection = () => { setSectionForm({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '', plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' }); setEditingSection(null); setShowSectionForm(null) }
   const startAddSection = (bid: string) => { resetSection(); setShowSectionForm(bid) }
   const startEditSection = (bid: string, s: Section) => {
     setEditingSection(s)
     const v = varieties.find(x => x.id === s.varietyId)
-    setSectionForm({ name: s.name || '', metersLength: s.metersLength, potsPerMeter: s.potsPerMeter, shootsPerPot: s.shootsPerPot, plantingYear: s.plantingYear || new Date().getFullYear(), productionYear: s.productionYear || 1, plantMaterialType: s.plantMaterialType || 'SMALL_POT', varietyId: s.varietyId, yieldSummerPerShoot: s.yieldSummerPerShoot || v?.yieldSummerPerShoot || 0, yieldAutumnPerShoot: s.yieldAutumnPerShoot || v?.yieldAutumnPerShoot || 0, gdhSummer: s.gdhSummer || v?.gdhSummer || 20000, gdhAutumn: s.gdhAutumn || v?.gdhAutumn || 25000, winteredInTunnel: s.winteredInTunnel || false, plantingDate: s.plantingDate ? s.plantingDate.slice(0, 10) : '', winterShootsDate: s.winterShootsDate ? s.winterShootsDate.slice(0, 10) : '' })
+    setSectionForm({ name: s.name || '', metersLength: s.metersLength, potsPerMeter: s.potsPerMeter, shootsPerPot: s.shootsPerPot, potsOverride: s.potsOverride ?? '', plantingYear: s.plantingYear || new Date().getFullYear(), productionYear: s.productionYear || 1, plantMaterialType: s.plantMaterialType || 'SMALL_POT', varietyId: s.varietyId, yieldSummerPerShoot: s.yieldSummerPerShoot || v?.yieldSummerPerShoot || 0, yieldAutumnPerShoot: s.yieldAutumnPerShoot || v?.yieldAutumnPerShoot || 0, gdhSummer: s.gdhSummer || v?.gdhSummer || 20000, gdhAutumn: s.gdhAutumn || v?.gdhAutumn || 25000, winteredInTunnel: s.winteredInTunnel || false, plantingDate: s.plantingDate ? s.plantingDate.slice(0, 10) : '', winterShootsDate: s.winterShootsDate ? s.winterShootsDate.slice(0, 10) : '' })
     setShowSectionForm(bid)
   }
   const onVarChange = (vid: string) => {
@@ -175,7 +175,7 @@ export default function PlantationPage() {
   }
   const delSection = async (id: string) => { if (confirm('Usunąć sekcję?')) { await fetch(`/api/plantation/section/${id}`, { method: 'DELETE' }); fetchData() } }
 
-  const pv = (() => { const pots = sectionForm.metersLength * sectionForm.potsPerMeter; const shoots = pots * sectionForm.shootsPerPot; const fs = shoots * (sectionForm.yieldSummerPerShoot || 0); const fa = shoots * (sectionForm.yieldAutumnPerShoot || 0); return { pots, shoots, fs, fa, total: fs + fa } })()
+  const pv = (() => { const potsCalc = sectionForm.metersLength * sectionForm.potsPerMeter; const potsOvr = sectionForm.potsOverride !== '' && sectionForm.potsOverride !== null && Number(sectionForm.potsOverride) > 0 ? Number(sectionForm.potsOverride) : null; const pots = potsOvr ?? potsCalc; const shoots = pots * sectionForm.shootsPerPot; const fs = shoots * (sectionForm.yieldSummerPerShoot || 0); const fa = shoots * (sectionForm.yieldAutumnPerShoot || 0); return { pots, shoots, fs, fa, total: fs + fa, potsOvr } })()
   const totals = blocks.reduce((a, b) => { b.sections.forEach(s => { const st = calcStats(s); a.fs += st.fs; a.fa += st.fa; a.pots += st.pots; a.sections++ }); return a }, { fs: 0, fa: 0, pots: 0, sections: 0 })
 
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">Ładowanie...</div>
@@ -323,6 +323,26 @@ ${r.debug.contentPreview || '(brak)'}`}
                         <div><Label className="text-xs">Doniczek/m</Label><Input type="number" step="0.1" value={sectionForm.potsPerMeter} onChange={e => setSectionForm({...sectionForm, potsPerMeter: +e.target.value})} /></div>
                         <div><Label className="text-xs">Pędów/don.</Label><Input type="number" step="0.1" value={sectionForm.shootsPerPot} onChange={e => setSectionForm({...sectionForm, shootsPerPot: +e.target.value})} /></div>
                         <div><Label className="text-xs">Rok nasadz.</Label><Input type="number" value={sectionForm.plantingYear} onChange={e => setSectionForm({...sectionForm, plantingYear: +e.target.value})} /></div>
+                      </div>
+                      <div className="mt-2 flex items-center gap-3 mb-3">
+                        <Label className="text-xs whitespace-nowrap">Doniczek (ręcznie):</Label>
+                        <Input
+                          type="number"
+                          step="1"
+                          placeholder={String(Math.round(sectionForm.metersLength * sectionForm.potsPerMeter))}
+                          value={sectionForm.potsOverride}
+                          onChange={e => setSectionForm({...sectionForm, potsOverride: e.target.value === '' ? '' : +e.target.value})}
+                          className="w-32"
+                        />
+                        {sectionForm.potsOverride !== '' && sectionForm.potsOverride !== null && Number(sectionForm.potsOverride) > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setSectionForm({...sectionForm, potsOverride: ''})}
+                            className="text-xs text-red-500 hover:text-red-700"
+                          >
+                            ✕ Wyczyść (wróć do auto)
+                          </button>
+                        )}
                         <div><Label className="text-xs">Rok prod.</Label><Input type="number" value={sectionForm.productionYear} onChange={e => setSectionForm({...sectionForm, productionYear: +e.target.value})} /></div>
                       </div>
                       <div className="grid grid-cols-2 gap-3 mb-4">
@@ -391,7 +411,7 @@ ${r.debug.contentPreview || '(brak)'}`}
                       )}
 
                       <div className="bg-gray-900 text-white p-3 rounded-lg flex justify-between items-center mb-4">
-                        <div className="flex gap-6 text-sm"><div><span className="text-gray-400">Doniczki:</span> <strong>{pv.pots.toLocaleString('pl-PL')}</strong></div><div><span className="text-gray-400">Pędy:</span> <strong>{pv.shoots.toLocaleString('pl-PL')}</strong></div></div>
+                        <div className="flex gap-6 text-sm"><div><span className="text-gray-400">Doniczki:</span> <strong className={pv.potsOvr ? 'text-orange-400' : ''}>{pv.pots.toLocaleString('pl-PL')}</strong>{pv.potsOvr && <span className="text-[10px] text-orange-400 ml-1">✏️ ręcznie</span>}</div><div><span className="text-gray-400">Pędy:</span> <strong>{pv.shoots.toLocaleString('pl-PL')}</strong></div></div>
                         <div className="flex gap-4 text-sm"><div><span className="text-orange-400">Lato:</span> <strong>{pv.fs.toLocaleString('pl-PL')} kg</strong></div><div><span className="text-red-400">Jesień:</span> <strong>{pv.fa.toLocaleString('pl-PL')} kg</strong></div><div><span className="text-green-400">Razem:</span> <strong>{pv.total.toLocaleString('pl-PL')} kg</strong></div></div>
                       </div>
                       <div className="flex gap-2"><Button onClick={() => saveSection(block.id)} className="bg-green-600 hover:bg-green-700">{editingSection ? 'Zapisz' : 'Dodaj'}</Button><Button variant="outline" onClick={resetSection}>Anuluj</Button></div>
@@ -400,7 +420,7 @@ ${r.debug.contentPreview || '(brak)'}`}
                   <div className="divide-y">
                     {block.sections.map(section => { const st = calcStats(section); return (
                       <div key={section.id} className="px-5 py-3 flex items-center justify-between hover:bg-gray-50">
-                        <div className="flex items-center gap-4"><div className="w-1 h-10 rounded-full bg-gradient-to-b from-orange-400 to-red-400" /><div><p className="font-medium">{section.name}</p><p className="text-xs text-gray-500">{section.variety?.name} • {section.metersLength}m • {st.pots.toLocaleString('pl-PL')} don. • Rok {section.productionYear}</p></div></div>
+                        <div className="flex items-center gap-4"><div className="w-1 h-10 rounded-full bg-gradient-to-b from-orange-400 to-red-400" /><div><p className="font-medium">{section.name}</p><p className="text-xs text-gray-500">{section.variety?.name} • {section.metersLength}m • <span className={section.potsOverride ? 'text-orange-600 font-medium' : ''}>{st.pots.toLocaleString('pl-PL')} don.{section.potsOverride ? ' ✏️' : ''}</span> • Rok {section.productionYear}</p></div></div>
                         <div className="flex items-center gap-4">
                           {(tempCounts[section.id] || 0) > 0 && (
                             <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1"><Thermometer className="w-3 h-3" />{tempCounts[section.id]}</span>

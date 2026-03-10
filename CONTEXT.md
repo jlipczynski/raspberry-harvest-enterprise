@@ -1,69 +1,73 @@
-# CONTEXT — Raspberry Harvest Enterprise
+# Kontekst projektu — Raspberry Harvest Enterprise
 
-Plik kontekstowy do szybkiego onboardingu w nowej sesji Claude Code.
-Wklej `cat CONTEXT.md` na początku rozmowy.
+> Ten plik aktualizuj po każdej sesji roboczej.
+> Na początku rozmowy z Claude — wklej jego zawartość.
 
-## Stan projektu
+## Ostatnio zrobione
 
-**Wersja:** 0.1.0 (beta)
-**Ostatnia aktualizacja:** 2026-03-10
+- Workers module: status tracking (new, pending, confirmed, rejected), sortowanie, filtrowanie, dane kontaktowe, przypisanie rekrutera
+- Rola RECRUITER — dostęp tylko do strony workers
+- GDH tracking zintegrowany ze stroną Plantacja (nie osobna strona)
+- Progi GDH pobierane z API /api/varieties per odmiana
+- Wykres GDH z linią realną i predykcją tunelową
+- Korekta temperatury tunelu (suwak ΔT)
+- **Ręczne nadpisanie liczby doniczek (`potsOverride`)** — pole w schema, API (POST/PATCH section), frontend (formularz z placeholderem auto-wartości, przycisk "wyczyść", pomarańczowe wyróżnienie nadpisanych wartości, kaskada przez cały łańcuch obliczeń)
+- **Rewrite CLAUDE.md** — pełna dokumentacja projektu na podstawie faktycznego kodu (struktura plików, 17 modeli Prisma, wszystkie API routes, GDH engine, konwencje)
 
-### Ostatnio zrobione
-- [x] Ręczne nadpisanie liczby doniczek (`potsOverride`) — schema, API (POST/PATCH), frontend (formularz, podgląd, lista sekcji, sumy)
-- [x] Rewrite CLAUDE.md — pełna dokumentacja projektu na podstawie faktycznego kodu
+## Aktualny stan — co działa
 
-### W trakcie
-<!-- Uzupełnij czym aktualnie się zajmujesz -->
+- Multi-tenant auth (NextAuth v4, JWT, 3 role: MANAGER/RECRUITER/SUPER_ADMIN)
+- Dashboard ze stronami: Plantacja, Planning, Varieties, Weather & GDH, Templates, Workers, Reports, Settings, Admin Panel
+- Zarządzanie odmianami (Variety) z progami GDH (wintered/LC/autumn), krzywymi zbiorów, waste%, II kategoria%
+- Import temperatury z PDF/CSV/TXT (Testo loggery, standard CSV)
+- Krzywe zbiorów (HarvestCurve, ProductionCurveTemplate z importem XLSX)
+- GDH engine: dane realne + model inercji tunelowej + prognoza 16d (Open-Meteo) + 150d (klimatologia P10/P50/P90 + anomalia ECMWF)
+- Prognoza zbiorów: 3 warstwy (oryginalna z GDH, skalowana, aktualna z MaxCrop)
+- Workers: rekrutacja, tier'y zatrudnienia, statusy, kontakty
+- Raport Kacperek: tygodniowy/dzienny plan zbiorów z odchyleniami
+- PDF export: raport GDH (jsPDF)
+- CI/CD: GitHub Actions (lint → test → build) → Vercel
 
-### Do zrobienia
-<!-- Uzupełnij swoimi planami/pomysłami, np.:
-- [ ] Import zbiorów z MaxCrop (CSV/XLSX)
-- [ ] Wykresy prognoz na stronie Planning
-- [ ] Powiadomienia SMS/WhatsApp dla pracowników
-- [ ] Eksport raportów do PDF z wykresami
--->
+## W trakcie / niedokończone
 
-## Kluczowe pliki (szybki dostęp)
+- [ ] (uzupełnij co zostało w połowie)
 
-| Co | Gdzie |
-|----|-------|
-| Schema DB | `prisma/schema.prisma` (17 modeli) |
-| Plantacja — frontend | `src/app/dashboard/plantation/page.tsx` |
-| Plantacja — API | `src/app/api/plantation/` (route.ts, section/, block/) |
-| GDH engine | `src/app/api/gdh/route.ts` (400+ linii) |
-| Forecast lib | `src/lib/harvest-forecast.ts` |
-| GDH calculator | `src/lib/forecast-calculator.ts` |
-| Parsery temp. | `src/lib/csv-temperature-parser.ts`, `pdf-temperature-parser.ts` |
-| Planning page | `src/app/dashboard/planning/page.tsx` |
-| Varieties page | `src/app/dashboard/varieties/page.tsx` |
-| Workers page | `src/app/dashboard/workers/page.tsx` |
-| Templates page | `src/app/dashboard/templates/page.tsx` |
-| Auth config | `src/lib/auth.ts` |
-| Tenant helper | `src/lib/tenant.ts` |
-| Init/seed data | `src/app/api/init/route.ts`, `prisma/seed.ts` |
+## Do zrobienia
 
-## Architektura w skrócie
+- [ ] (uzupełnij backlog)
 
-- **Multi-tenant SaaS** — każdy query musi mieć `tenantId`
-- **Stack:** Next.js 16 + React 19 + Prisma 6 + Neon PostgreSQL + NextAuth v4
-- **Frontend:** `"use client"` pages z `fetch()` do API routes (nie React Query hooks)
-- **GDH:** base=4.5°C, upper=26°C, tunnel inertia model (α=0.3)
-- **Prognoza:** 3 warstwy (oryginalna z GDH, skalowana do danych, aktualna z MaxCrop)
-- **Role:** MANAGER (pełny dostęp), RECRUITER (tylko pracownicy), SUPER_ADMIN (+admin panel)
+## Ważne decyzje techniczne
 
-## Komendy
+- GDH base temp: 4.5°C w silniku obliczeniowym (`/api/gdh/route.ts`), 6.0°C jako domyślna `baseTemp` w schema Variety/Section
+- GDH upper temp: 26°C (heat stress cap)
+- Tunnel inertia: α=0.3, dynamic offset z radiacji lub static +4°C
+- Progi GDH zawsze z bazy — nigdy hardcode w kodzie
+- WeatherData: nigdy nie nadpisywać istniejących rekordów, tylko dopisywać nowe daty
+- tenantId: każde zapytanie DB musi być scopowane
+- Typy materiału roślinnego (enum w kodzie): `SMALL_POT` | `ROOT` | `LONGCANE` | `PLUG`
+- `potsOverride`: jeśli != null && > 0 → nadpisuje `metersLength × potsPerMeter`, kaskada przez shoots → yields
+- Frontend: strony używają `"use client"` + `useState`/`useEffect`/`fetch()` (nie TanStack Query hooks)
 
-```bash
-npm run dev          # Dev server
-npm run test         # Testy (54 testy, Vitest)
-npm run build        # Build produkcyjny
-npx prisma db push   # Push schema do DB
-npx prisma studio    # GUI do bazy
-```
+## Znane problemy / rzeczy do uważania
 
-## Znane problemy / dług techniczny
-<!-- Uzupełnij, np.:
-- ESLint warnings w varieties/page.tsx (join on never type)
-- next.config.ts: deprecated eslint key
-- middleware.ts: "middleware" convention deprecated, use "proxy"
--->
+- ESLint errors w `varieties/page.tsx` (`.join` on `never` type, brakujące pola `gdhSummer`/`gdhAutumn` w typie)
+- `next.config.ts`: deprecated `eslint` key (warning przy build)
+- `middleware.ts`: convention deprecated, Next.js sugeruje "proxy" zamiast "middleware"
+- Build wymaga dostępu do Google Fonts (Geist) — offline build failuje na fontach
+- `src/app/api/workers/route.ts.bak` — plik backup, do usunięcia
+
+## Stack
+
+- Next.js 16.1.6, React 19, TypeScript 5 strict
+- PostgreSQL (Neon) + Prisma 6 (db push, bez migracji)
+- NextAuth v4 (credentials, JWT, bcryptjs)
+- shadcn/ui (New York) + Radix UI + Lucide icons
+- Recharts 3, TanStack Query 5, Zod 4, date-fns 4
+- jsPDF + jspdf-autotable (generowanie PDF), pdf-parse (czytanie PDF), xlsx (import Excel)
+- Vitest 4 (54 testy), GitHub Actions (CI/CD), Vercel (hosting)
+
+## Linki
+
+- Repo: https://github.com/jlipczynski/raspberry-harvest-enterprise
+- Produkcja: https://raspberry-harvest-enterprise.vercel.app (sprawdź aktualny URL)
+- Neon DB: https://console.neon.tech

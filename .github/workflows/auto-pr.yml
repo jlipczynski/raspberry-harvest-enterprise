@@ -1,7 +1,9 @@
 name: Auto PR for Claude branches
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - 'claude/**'
 
 permissions:
   contents: read
@@ -15,23 +17,33 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create Pull Request
-        continue-on-error: true
+      - name: Check for existing PR
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH="${GITHUB_REF_NAME}"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
-          # Check if PR already exists for this branch
-          EXISTING=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq 'if length > 0 then .[0].number else "" end')
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
-          if [ -n "$EXISTING" ]; then
-            echo "PR #$EXISTING already exists for branch $BRANCH — skipping."
-            exit 0
+          if [ -n "$PR_NUMBER" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "PR #$PR_NUMBER already exists for $BRANCH"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No PR found for $BRANCH — will create one"
           fi
 
+      - name: Create Pull Request
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="${{ steps.check.outputs.branch }}"
           TITLE=$(git log -1 --format='%s')
-          COMMITS=$(git log origin/main..HEAD --format='- %s' 2>/dev/null || echo "- $TITLE")
+          COMMITS=$(git log origin/main..HEAD --format='- %s')
 
           gh pr create \
             --title "$TITLE" \
@@ -41,4 +53,6 @@ jobs:
           ### Commits
           ${COMMITS}" \
             --base main \
-            --head "$BRANCH" || echo "PR creation failed or already exists"
+            --head "$BRANCH"
+
+          echo "PR created for $BRANCH"

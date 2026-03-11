@@ -140,8 +140,8 @@ export default function PlantationPage() {
     const v = varieties.find(x => x.id === s.varietyId)
     const pots = (s.potsOverride != null && s.potsOverride > 0) ? s.potsOverride : s.metersLength * s.potsPerMeter
     const shoots = pots * s.shootsPerPot
-    const ys = s.yieldSummerPerShoot || v?.yieldSummerPerShoot || 0
-    const ya = s.yieldAutumnPerShoot || v?.yieldAutumnPerShoot || 0
+    const ys = s.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
+    const ya = s.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
     return { pots, shoots, fs: shoots * ys, fa: shoots * ya }
   }
 

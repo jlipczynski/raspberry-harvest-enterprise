@@ -181,7 +181,10 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      if (!res.ok) throw new Error('Błąd zapisu szablonu')
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Nieznany błąd' }))
+        throw new Error(errData.error || `Błąd HTTP ${res.status}`)
+      }
 
       setSelectedCurveIds([])
       setShowCreateForm(false)

@@ -187,12 +187,13 @@ export default function PlantationPage() {
         <Button onClick={() => setShowBlockForm(true)} className="bg-green-600 hover:bg-green-700"><Plus className="w-4 h-4 mr-2" />Nowy blok</Button>
       </div>
 
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-6 gap-3">
         <div className="bg-white rounded-xl p-4 border text-center"><p className="text-2xl font-bold">{blocks.length}</p><p className="text-xs text-gray-500">Bloków</p></div>
         <div className="bg-white rounded-xl p-4 border text-center"><p className="text-2xl font-bold">{totals.sections}</p><p className="text-xs text-gray-500">Sekcji</p></div>
         <div className="bg-white rounded-xl p-4 border text-center"><p className="text-2xl font-bold">{totals.pots.toLocaleString('pl-PL')}</p><p className="text-xs text-gray-500">Doniczek</p></div>
         <div className="bg-orange-50 rounded-xl p-4 border border-orange-200 text-center"><p className="text-2xl font-bold text-orange-600">{(totals.fs / 1000).toFixed(1)}t</p><p className="text-xs text-orange-600">Lato ☀️</p></div>
         <div className="bg-red-50 rounded-xl p-4 border border-red-200 text-center"><p className="text-2xl font-bold text-red-600">{(totals.fa / 1000).toFixed(1)}t</p><p className="text-xs text-red-600">Jesień 🍂</p></div>
+        <div className="bg-green-50 rounded-xl p-4 border border-green-200 text-center"><p className="text-2xl font-bold text-green-700">{((totals.fs + totals.fa) / 1000).toFixed(1)}t</p><p className="text-xs text-green-700">Razem</p></div>
       </div>
 
       {/* GDH Module */}

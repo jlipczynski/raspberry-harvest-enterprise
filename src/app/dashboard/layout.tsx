@@ -110,7 +110,7 @@ export default function DashboardLayout({
           {session?.user && (
             <div className="px-3 py-2">
               <p className="text-white text-sm font-medium truncate">{session.user.name}</p>
-              <p className="text-green-200 text-xs truncate">{tenantName || session.user.email}</p>
+              <p className="text-green-200 text-xs truncate">{(tenantName || session.user.email) as React.ReactNode}</p>
               <p className="text-green-300/60 text-[10px] mt-0.5">{role === 'SUPER_ADMIN' ? 'Super Admin' : role === 'RECRUITER' ? 'Rekruter' : 'Zarządca'}</p>
             </div>
           )}

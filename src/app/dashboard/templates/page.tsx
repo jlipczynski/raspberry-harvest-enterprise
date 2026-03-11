@@ -579,7 +579,8 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
 // ===== TEMPLATE DETAIL =====
 function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: { template: Template; varieties: Variety[]; sections: PlantationSection[]; onSave: () => void; onDelete: (id: string) => void }) {
   const [editing, setEditing] = useState(false)
-  const [editForm, setEditForm] = useState<Record<string, unknown>>({})
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [fetchingTemps, setFetchingTemps] = useState(false)
   const gdhFileRef = useRef<HTMLInputElement>(null)
   const [showCurveTable, setShowCurveTable] = useState(false)
@@ -680,10 +681,10 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as Record<string, unknown>[]
 
       // Flexible column name detection
-      const getVal = (r: Record<string, unknown>, ...keys: string[]) => {
+      const getVal = (r: Record<string, unknown>, ...keys: string[]): string | null => {
         for (const k of keys) {
           for (const col of Object.keys(r)) {
-            if (col.toLowerCase().includes(k.toLowerCase())) return r[col]
+            if (col.toLowerCase().includes(k.toLowerCase())) return String(r[col] ?? '')
           }
         }
         return null
@@ -754,32 +755,32 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
   if (editing) return (
     <div className="space-y-4 p-6 bg-gray-50 border-t">
       <div className="grid grid-cols-2 gap-4">
-        <div><label className="text-xs font-medium text-gray-500">Nazwa</label><input value={editForm.name||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,name:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"/></div>
+        <div><label className="text-xs font-medium text-gray-500">Nazwa</label><input value={String(editForm.name||'')} onChange={e=>setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p,name:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"/></div>
         <div><label className="text-xs font-medium text-gray-500">Odmiana</label>
-          <select value={editForm.varietyId||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,varietyId:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1">
+          <select value={String(editForm.varietyId||'')} onChange={e=>setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p,varietyId:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1">
             <option value="">—</option>{varieties.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
           </select></div>
         <div><label className="text-xs font-medium text-gray-500">Sekcja źródłowa</label>
-          <select value={editForm.sourceSectionId||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,sourceSectionId:e.target.value||null}))} className="w-full border rounded-lg px-3 py-2 mt-1">
+          <select value={String(editForm.sourceSectionId||'')} onChange={e=>setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p,sourceSectionId:e.target.value||null}))} className="w-full border rounded-lg px-3 py-2 mt-1">
             <option value="">— brak —</option>{sections.map(s=><option key={s.id} value={s.id}>{s.blockName}/{s.name} ({s.varietyName})</option>)}
           </select></div>
-        <div><label className="text-xs font-medium text-gray-500">Cykl produkcji</label><select value={editForm.productionCycle||1} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,productionCycle:parseInt(e.target.value)}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value={1}>1. rok</option><option value={2}>2. rok</option><option value={3}>3. rok</option></select></div>
-        <div><label className="text-xs font-medium text-gray-500">Data sadzenia</label><input type="date" value={editForm.plantingDate||''} onChange={e=>{
+        <div><label className="text-xs font-medium text-gray-500">Cykl produkcji</label><select value={String(editForm.productionCycle||1)} onChange={e=>setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p,productionCycle:parseInt(e.target.value)}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value={1}>1. rok</option><option value={2}>2. rok</option><option value={3}>3. rok</option></select></div>
+        <div><label className="text-xs font-medium text-gray-500">Data sadzenia</label><input type="date" value={String(editForm.plantingDate||'')} onChange={e=>{
               const val = e.target.value
-              if (val) setEditForm((p: Record<string, unknown>)=>({...p, plantingDate:val, winteredInTunnel:false}))
-              else setEditForm((p: Record<string, unknown>)=>({...p, plantingDate:''}))
-            }} className="w-full border rounded-lg px-3 py-2 mt-1" disabled={editForm.winteredInTunnel}/>{editForm.winteredInTunnel && <p className="text-xs text-gray-400 mt-1">Wyłączone — rośliny zimowane</p>}</div>
-        <div><label className="text-xs font-medium text-gray-500">Źródło sadzonek</label><select value={editForm.plantSource||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,plantSource:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value="">—</option><option value="long_canes">Long canes</option><option value="tray_plants">Tray plants</option><option value="nursery">Szkółka</option></select></div>
+              if (val) setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p, plantingDate:val, winteredInTunnel:false}))
+              else setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p, plantingDate:''}))
+            }} className="w-full border rounded-lg px-3 py-2 mt-1" disabled={!!editForm.winteredInTunnel}/>{editForm.winteredInTunnel && <p className="text-xs text-gray-400 mt-1">Wyłączone — rośliny zimowane</p>}</div>
+        <div><label className="text-xs font-medium text-gray-500">Źródło sadzonek</label><select value={String(editForm.plantSource||'')} onChange={e=>setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p,plantSource:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value="">—</option><option value="long_canes">Long canes</option><option value="tray_plants">Tray plants</option><option value="nursery">Szkółka</option></select></div>
         <div className="flex items-center gap-2 mt-6">
-            <input type="checkbox" checked={editForm.winteredInTunnel||false} onChange={e=>{
-              if (e.target.checked) setEditForm((p: Record<string, unknown>)=>({...p, winteredInTunnel:true, plantingDate:'', plantSource:''}))
-              else setEditForm((p: Record<string, unknown>)=>({...p, winteredInTunnel:false}))
+            <input type="checkbox" checked={!!editForm.winteredInTunnel} onChange={e=>{
+              if (e.target.checked) setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p, winteredInTunnel:true, plantingDate:'', plantSource:''}))
+              else setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p, winteredInTunnel:false}))
             }} className="w-4 h-4"/>
             <label className="text-sm">Zimowane w tunelu</label>
             {editForm.winteredInTunnel && editForm.plantingDate && <span className="text-xs text-red-500 ml-2">⚠️ Zimowane = brak daty sadzenia</span>}
           </div>
       </div>
-      <div><label className="text-xs font-medium text-gray-500">Notatki</label><textarea value={editForm.notes||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,notes:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1" rows={2}/></div>
+      <div><label className="text-xs font-medium text-gray-500">Notatki</label><textarea value={String(editForm.notes||'')} onChange={e=>setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p,notes:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1" rows={2}/></div>
       <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
         <h4 className="font-medium text-sm text-blue-800 mb-2">Import danych z czujników (temp. wewnętrzna + GDH)</h4>
         <p className="text-xs text-blue-600 mb-2">CSV/XLSX — kolumny z datą i temperaturą (dane co 15 min lub dzienne, automatyczna agregacja)</p>
@@ -1202,7 +1203,7 @@ export default function TemplatesPage() {
       const date = parseExcelDate(row[dateIdx]); if (!date) continue
       const area = String(row[areaIdx] || '')
       if (!area || area === 'Cala plantacja' || area.startsWith('CaBy')) continue
-      rows.push({ date, area, weightReal: parseFloat(row[weightIdx]) || 0 })
+      rows.push({ date, area, weightReal: parseFloat(String(row[weightIdx])) || 0 })
     }
     if (rows.length > 0) setImportYear(new Date(rows[0].date).getFullYear())
     const areaMap: Record<string, Record<number, number>> = {}

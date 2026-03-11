@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     if (body.varietyId) data.variety = { connect: { id: body.varietyId } }
     if (body.sourceSectionId) data.sourceSection = { connect: { id: body.sourceSectionId } }
     const template = await prisma.productionCurveTemplate.create({
-      data, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, sourceSection: { select: { id: true, name: true } } },
+      data: data as Parameters<typeof prisma.productionCurveTemplate.create>[0]['data'], include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, sourceSection: { select: { id: true, name: true } } },
     })
     return NextResponse.json({ template })
   } catch (error) {

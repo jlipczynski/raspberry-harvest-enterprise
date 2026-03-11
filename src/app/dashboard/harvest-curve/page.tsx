@@ -168,7 +168,7 @@ export default function HarvestCurvePage() {
           const date = parseExcelDate(row[dateIdx]); if (!date) continue
           const area = String(row[areaIdx] || '')
           if (!area || area === 'Cala plantacja' || area.startsWith('CaBy')) continue
-          rows.push({ date, area, weightReal: parseFloat(row[weightIdx]) || 0 })
+          rows.push({ date, area, weightReal: parseFloat(String(row[weightIdx])) || 0 })
         }
 
         // Auto-detect year

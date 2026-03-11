@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
           }
           if (c.sectionId) data.section = { connect: { id: c.sectionId } }
           if (c.varietyId) data.variety = { connect: { id: c.varietyId } }
-          return prisma.harvestCurve.create({ data })
+          return prisma.harvestCurve.create({ data: data as Parameters<typeof prisma.harvestCurve.create>[0]['data'] })
         })
       )
       return NextResponse.json({ curves: created })
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     if (body.sectionId) data.section = { connect: { id: body.sectionId } }
     if (body.varietyId) data.variety = { connect: { id: body.varietyId } }
     const curve = await prisma.harvestCurve.create({
-      data,
+      data: data as Parameters<typeof prisma.harvestCurve.create>[0]['data'],
       include: {
         section: { select: { id: true, name: true } },
         variety: { select: { id: true, name: true } },

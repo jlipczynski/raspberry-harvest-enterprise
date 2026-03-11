@@ -1,9 +1,7 @@
 name: Auto PR for Claude branches
 
 on:
-  push:
-    branches:
-      - 'claude/**'
+  workflow_dispatch:
 
 permissions:
   contents: read

@@ -147,7 +147,7 @@ export default function SettingsPage() {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-    } catch (_e) {
+    } catch {
       setImportStatus('❌ Błąd eksportu')
       setTimeout(() => setImportStatus(''), 3000)
     }
@@ -159,14 +159,14 @@ export default function SettingsPage() {
     const reader = new FileReader()
     reader.onload = async (e) => {
       try {
-        const _data = JSON.parse(e.target?.result as string)
+        JSON.parse(e.target?.result as string)
         setImportStatus('⏳ Importowanie danych...')
         
         // Import przez API (do zaimplementowania)
         setImportStatus('✓ Dane zaimportowane pomyślnie!')
         setTimeout(() => setImportStatus(''), 3000)
         setTimeout(() => window.location.reload(), 1000)
-      } catch (_error) {
+      } catch {
         setImportStatus('❌ Błąd importu - nieprawidłowy format pliku')
         setTimeout(() => setImportStatus(''), 3000)
       }

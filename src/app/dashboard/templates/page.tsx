@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
@@ -72,15 +71,14 @@ const daysBetween = (a: string, b: string) => Math.round((new Date(b).getTime() 
 const fmtDate = (d: string) => { const p = d.split('-'); return p[2]+'.'+p[1]+'.'+p[0] }
 
 // ===== UNIFIED CHART COMPONENT =====
-function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summerEndWeek, onSummerEndChange: _onSummerEndChange }: {
+function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summerEndWeek }: {
   template: Template; outsideTemps: TempPoint[]; insideTemps: TempPoint[]; gdhPoints: GdhPoint[]
-  summerEndWeek?: number; onSummerEndChange?: (week: number) => void
+  summerEndWeek?: number
 }) {
   const [tooltip, setTooltip] = useState<{ x: number; content: string } | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const [viewRange, setViewRange] = useState<[number, number]>([0, 1])
   const [isDragging, setIsDragging] = useState(false)
-  const [_isFullscreen, _setIsFullscreen] = useState(false)
 
   useEffect(() => {
     const el = svgRef.current
@@ -283,11 +281,8 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
         const plantD = plantDate || gdhPoints[0]?.date || ''
 
         const flowerPct = flowerGdh ? Math.min((flowerGdh / (fruitGdh || maxCumGdh)) * 100, 100) : 0
-        const _fruitPct = fruitGdh ? 100 : 0
-        const _actualGdhAtFruit = fruitDate ? gdhPoints.find(p => p.date === fruitDate)?.cumulativeGdh || fruitGdh : null
 
         const daysToFlower = flowerDate && plantD ? daysBetween(plantD, flowerDate) : null
-        const _daysToFruit = fruitDate && plantD ? daysBetween(plantD, fruitDate) : null
         const daysFlowerToFruit = flowerDate && fruitDate ? daysBetween(flowerDate, fruitDate) : null
         const gdhFlowerToFruit = flowerGdh && fruitGdh ? fruitGdh - flowerGdh : null
         
@@ -839,7 +834,7 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
       </div>
 
       {/* UNIFIED CHART */}
-      <UnifiedChart template={t} outsideTemps={outsideTemps} insideTemps={insideTemps} gdhPoints={gdhPoints} summerEndWeek={summerEndWeek} onSummerEndChange={saveSummerEnd} />
+      <UnifiedChart template={t} outsideTemps={outsideTemps} insideTemps={insideTemps} gdhPoints={gdhPoints} summerEndWeek={summerEndWeek} />
 
       {/* Season boundary selector + curve table toggle */}
       <div className="flex items-center gap-4 flex-wrap">
@@ -887,7 +882,7 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
                 </tr>
               </thead>
               <tbody>
-                {summerWeeks.map((w, _wi) => {
+                {summerWeeks.map((w) => {
                   const pct = (w.kg / summerTotalKg) * 100
                   return (
                     <tr key={w.week} className="border-b hover:bg-gray-50">

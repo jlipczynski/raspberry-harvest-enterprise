@@ -3,6 +3,9 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
 import { Database, Upload, Thermometer, Sprout, ChevronDown, ChevronUp, Trash2, Edit, Search, Snowflake, BarChart3, Calendar, Truck, TrendingUp } from 'lucide-react'
 import * as XLSX from 'xlsx'
+import HistoricalDataTab from './historical-data-tab'
+
+type MainTab = 'szablony' | 'historyczne'
 
 
 // Raspberry SVG icon
@@ -1151,6 +1154,7 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
 
 // ===== MAIN PAGE =====
 export default function TemplatesPage() {
+  const [mainTab, setMainTab] = useState<MainTab>('szablony')
   const [templates, setTemplates] = useState<Template[]>([])
   const [varieties, setVarieties] = useState<Variety[]>([])
   const [plantationSections, setPlantationSections] = useState<PlantationSection[]>([])
@@ -1281,9 +1285,29 @@ export default function TemplatesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Database className="w-7 h-7 text-green-600"/>Baza Krzywych Produkcji</h1>
-          <p className="text-gray-500 mt-1">{templates.length} szablonów</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Database className="w-7 h-7 text-green-600"/>Krzywe zbiorów</h1>
+          <p className="text-gray-500 mt-1">{mainTab === 'szablony' ? `${templates.length} szablonów` : 'Dane historyczne z MaxCrop'}</p>
         </div>
+      </div>
+
+      {/* Main tabs */}
+      <div className="flex gap-2 border-b pb-0">
+        <button onClick={() => setMainTab('szablony')}
+          className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border border-b-0 transition-colors ${mainTab === 'szablony' ? 'bg-white text-green-700 border-gray-200' : 'bg-gray-50 text-gray-500 border-transparent hover:text-gray-700'}`}>
+          <Database className="w-4 h-4 inline mr-2" />Szablony wzorcowe
+        </button>
+        <button onClick={() => setMainTab('historyczne')}
+          className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border border-b-0 transition-colors ${mainTab === 'historyczne' ? 'bg-white text-green-700 border-gray-200' : 'bg-gray-50 text-gray-500 border-transparent hover:text-gray-700'}`}>
+          <BarChart3 className="w-4 h-4 inline mr-2" />Dane historyczne
+        </button>
+      </div>
+
+      {mainTab === 'historyczne' && (
+        <HistoricalDataTab onTemplateCreated={() => { setMainTab('szablony'); fetchAll() }} />
+      )}
+
+      {mainTab === 'szablony' && (<>
+      <div className="flex items-center justify-end">
         <Button onClick={()=>setShowImport(!showImport)} className={showImport?'bg-gray-600':'bg-green-600 hover:bg-green-700'}>
           <Upload className="w-4 h-4 mr-2"/>{showImport ? 'Zamknij' : 'Import MaxCrop'}
         </Button>
@@ -1405,6 +1429,7 @@ export default function TemplatesPage() {
           })}
         </div>
       )}
+      </>)}
     </div>
   )
 }

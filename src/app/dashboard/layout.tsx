@@ -27,7 +27,7 @@ const menuItems = [
   { title: 'Plantacja', href: '/dashboard/plantation', icon: Map },
   { title: 'Odmiany', href: '/dashboard/varieties', icon: Leaf },
   { title: 'Pogoda & GDH', href: '/dashboard/weather', icon: Cloud },
-  { title: 'Baza krzywych', href: '/dashboard/templates', icon: Database },
+  { title: 'Krzywe zbiorów', href: '/dashboard/templates', icon: Database },
   { title: 'Pracownicy', href: '/dashboard/workers', icon: Users },
   { title: 'Raporty', href: '/dashboard/reports', icon: BarChart3 },
   { title: 'Ustawienia', href: '/dashboard/settings', icon: Settings },

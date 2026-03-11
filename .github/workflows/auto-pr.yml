@@ -24,10 +24,10 @@ jobs:
           BRANCH="${GITHUB_REF_NAME}"
 
           # Check if PR already exists for this branch
-          EXISTING=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          PR_COUNT=$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')
 
-          if [ -n "$EXISTING" ]; then
-            echo "PR #$EXISTING already exists for branch $BRANCH — skipping."
+          if [ "$PR_COUNT" != "0" ]; then
+            echo "PR already exists for branch $BRANCH — skipping."
             exit 0
           fi
 
@@ -37,16 +37,14 @@ jobs:
           # Build PR body from all commits on this branch (vs main)
           COMMITS=$(git log origin/main..HEAD --format='- %s' 2>/dev/null || echo "- $TITLE")
 
-          BODY="## Summary
+          gh pr create \
+            --title "$TITLE" \
+            --body "## Summary
 
           Auto-generated PR from Claude Code branch.
 
           ### Commits
-          ${COMMITS}"
-
-          gh pr create \
-            --title "$TITLE" \
-            --body "$BODY" \
+          ${COMMITS}" \
             --base main \
             --head "$BRANCH"
 

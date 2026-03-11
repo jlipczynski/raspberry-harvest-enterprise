@@ -1170,12 +1170,12 @@ export default function TemplatesPage() {
     const data = await file.arrayBuffer()
     const workbook = XLSX.read(new Uint8Array(data), { type: 'array' })
     const worksheet = workbook.Sheets[workbook.SheetNames[0]]
-    const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][]
+    const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][]
     let headerIdx = 0
     for (let i = 0; i < Math.min(10, json.length); i++) {
-      if (json[i]?.some((c: any) => String(c).toLowerCase().includes('data') || String(c).toLowerCase().includes('date'))) { headerIdx = i; break }
+      if (json[i]?.some((c: unknown) => String(c).toLowerCase().includes('data') || String(c).toLowerCase().includes('date'))) { headerIdx = i; break }
     }
-    const headers = json[headerIdx].map((h: any) => String(h||'').toLowerCase())
+    const headers = json[headerIdx].map((h: unknown) => String(h||'').toLowerCase())
     const dateIdx = headers.findIndex(h => h.includes('data') || h.includes('date'))
     const areaIdx = headers.findIndex(h => h.includes('obszar') || h.includes('area'))
     const weightIdx = headers.findIndex(h => h.includes('waga') && h.includes('rzecz'))
@@ -1229,7 +1229,7 @@ export default function TemplatesPage() {
         startDate: days[0]?.date||null, endDate: days[days.length-1]?.date||null,
         startWeek: weeks[0].week, totalKg: total, sourceFile: fileName }
     }
-    const ts: any[] = []
+    const ts: Record<string, unknown>[] = []
     const sw = area.weeks.filter(w=>w.season==='summer'); if(sw.length>0) ts.push(build(sw,'Lato','summer'))
     const aw = area.weeks.filter(w=>w.season==='autumn'); if(aw.length>0) ts.push(build(aw,'Jesień','autumn'))
     for (const t of ts) { await fetch('/api/templates', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(t) }) }

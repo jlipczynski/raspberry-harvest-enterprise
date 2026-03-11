@@ -25,15 +25,13 @@ jobs:
           BRANCH="${GITHUB_REF_NAME}"
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
-          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq 'if length > 0 then .[0].number else "" end')
-          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          PR_COUNT=$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')
+          echo "Found $PR_COUNT open PRs for $BRANCH"
 
-          if [ -n "$PR_NUMBER" ]; then
+          if [ "$PR_COUNT" -gt 0 ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "PR #$PR_NUMBER already exists for $BRANCH"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "No PR found for $BRANCH — will create one"
           fi
 
       - name: Create Pull Request

@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     if (searchParams.get('cycle')) where.productionCycle = parseInt(searchParams.get('cycle')!)
     if (searchParams.get('tunnel')) where.winteredInTunnel = searchParams.get('tunnel') === 'true'
     const templates = await prisma.productionCurveTemplate.findMany({
-      where, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, _count: { select: { sectionAssignments: true } } },
+      where, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, sourceSection: { select: { id: true, name: true } }, _count: { select: { sectionAssignments: true } } },
       orderBy: [{ productionYear: 'desc' }, { name: 'asc' }],
     })
     return NextResponse.json({ templates })
@@ -40,8 +40,9 @@ export async function POST(request: NextRequest) {
       sourceFile: body.sourceFile || null, notes: body.notes || null,
     }
     if (body.varietyId) data.variety = { connect: { id: body.varietyId } }
+    if (body.sourceSectionId) data.sourceSection = { connect: { id: body.sourceSectionId } }
     const template = await prisma.productionCurveTemplate.create({
-      data, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } } },
+      data, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, sourceSection: { select: { id: true, name: true } } },
     })
     return NextResponse.json({ template })
   } catch (error) {

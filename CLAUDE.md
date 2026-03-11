@@ -1,3 +1,9 @@
+## ⛔ ABSOLUTNE ZAKAZY
+- NIGDY nie modyfikuj .github/workflows/
+- NIGDY nie twórz nowych branchy — zawsze commit na main
+- NIGDY nie naprawiaj CI/CD bez wyraźnego polecenia
+- Zawsze pracuj na main: git checkout main przed rozpoczęciem pracy
+
 # Raspberry Harvest Enterprise
 
 ## ⛔ ABSOLUTNE ZAKAZY

@@ -129,6 +129,7 @@ model Section {
   metersLength          Float
   potsPerMeter          Float
   shootsPerPot          Float
+  potsOverride          Int?
   
   plantingYear          Int?
   productionYear        Int?

@@ -36,6 +36,7 @@ interface GdhApiResponse {
 
 interface PlantationSection {
   id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number
+  potsOverride?: number | null
   yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; varietyId: string
   harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]
   variety?: { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]; pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number; autumnStartWeek?: number }
@@ -209,7 +210,8 @@ export default function PlanningPage() {
       if (!fruitDate) continue // no fruit date prediction → skip
 
       const startWeek = getWeekNumber(new Date(fruitDate))
-      const shoots = section.metersLength * section.potsPerMeter * section.shootsPerPot
+      const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter
+      const shoots = pots * section.shootsPerPot
       const eff = v?.pickingEfficiency ?? 6 // kg/h — from DB, fallback only if not set
       const varietyName = v?.name || ''
 

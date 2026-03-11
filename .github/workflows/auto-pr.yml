@@ -18,34 +18,29 @@ jobs:
           fetch-depth: 0
 
       - name: Create Pull Request
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH="${GITHUB_REF_NAME}"
 
           # Check if PR already exists for this branch
-          PR_COUNT=$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')
+          EXISTING=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)
 
-          if [ "$PR_COUNT" != "0" ]; then
-            echo "PR already exists for branch $BRANCH — skipping."
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already exists for branch $BRANCH — skipping."
             exit 0
           fi
 
-          # Extract title from last commit message (first line)
           TITLE=$(git log -1 --format='%s')
-
-          # Build PR body from all commits on this branch (vs main)
           COMMITS=$(git log origin/main..HEAD --format='- %s' 2>/dev/null || echo "- $TITLE")
 
           gh pr create \
             --title "$TITLE" \
             --body "## Summary
-
           Auto-generated PR from Claude Code branch.
 
           ### Commits
           ${COMMITS}" \
             --base main \
-            --head "$BRANCH"
-
-          echo "PR created successfully for $BRANCH"
+            --head "$BRANCH" || echo "PR creation failed or already exists"

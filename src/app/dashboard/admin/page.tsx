@@ -9,10 +9,19 @@ interface UserData {
   tenantId?: string; tenant?: { id: string; name: string }; createdAt: string
 }
 
+interface FeedbackItem {
+  id: string; category: string; userName: string; userEmail: string
+  createdAt: string; message: string; page?: string
+}
+
+interface SessionUser {
+  role?: string; userId?: string
+}
+
 export default function AdminPage() {
   const { data: session } = useSession()
-  const role = (session?.user as any)?.role
-  const userId = (session?.user as any)?.userId
+  const role = (session?.user as SessionUser | undefined)?.role
+  const userId = (session?.user as SessionUser | undefined)?.userId
   const [users, setUsers] = useState<UserData[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -20,7 +29,7 @@ export default function AdminPage() {
   const [form, setForm] = useState({ email: "", password: "", name: "", farmName: "", role: "MANAGER" })
   const [saving, setSaving] = useState(false)
   const [tab, setTab] = useState<'users'|'feedback'>('users')
-  const [feedbacks, setFeedbacks] = useState<any[]>([])
+  const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([])
   const [fbLoading, setFbLoading] = useState(false)
 
   const loadFeedback = async () => {
@@ -41,7 +50,10 @@ export default function AdminPage() {
     setLoading(false)
   }
 
-  useEffect(() => { loadUsers() }, [])
+  useEffect(() => {
+    const load = async () => { await loadUsers() }
+    load()
+  }, [])
 
   const resetForm = () => {
     setForm({ email: "", password: "", name: "", farmName: "", role: "MANAGER" })
@@ -136,7 +148,7 @@ export default function AdminPage() {
           </div>
           {fbLoading ? <p className="text-center py-8 text-gray-400">Ładowanie...</p> : feedbacks.length === 0 ? <p className="text-center py-8 text-gray-400">Brak feedbacku</p> : (
             <div className="divide-y">
-              {feedbacks.map((fb: any) => (
+              {feedbacks.map((fb: FeedbackItem) => (
                 <div key={fb.id} className="px-6 py-4">
                   <div className="flex items-center gap-3 mb-1">
                     <span className={"text-xs px-2 py-0.5 rounded-full " + (

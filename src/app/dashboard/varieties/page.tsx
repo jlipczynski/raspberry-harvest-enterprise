@@ -645,7 +645,7 @@ export default function VarietiesPage() {
         <Card>
           <CardContent className="py-8">
             <p className="text-center text-gray-500">
-              Brak odmian. Kliknij "Dodaj odmianę" żeby dodać pierwszą.
+              Brak odmian. Kliknij &quot;Dodaj odmianę&quot; żeby dodać pierwszą.
             </p>
           </CardContent>
         </Card>

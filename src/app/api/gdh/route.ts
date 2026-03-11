@@ -333,8 +333,6 @@ export async function GET(request: Request) {
               // Build best-estimate line: interpolate between P10/P50/P90 based on anomaly
               // anomaly > 0 → interpolate P50→P90, anomaly < 0 → interpolate P10→P50
               // Scale: ±2K maps to full P10/P90 range
-              let tunnelBest = lastMeteoTunnel
-
               for (let i = 0; i < scenarioP50.length; i++) {
                 const dp10 = scenarioP10[i]
                 const dp50 = scenarioP50[i]

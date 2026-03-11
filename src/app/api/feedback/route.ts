@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const session = await getServerSession(authOptions)
-  if (!session || (session.user as any).role !== "SUPER_ADMIN") {
+  if (!session || (session.user as Record<string, unknown>).role !== "SUPER_ADMIN") {
     return NextResponse.json({ error: "Brak uprawnień" }, { status: 403 })
   }
   const feedback = await prisma.feedback.findMany({ orderBy: { createdAt: 'desc' } })
@@ -23,9 +23,9 @@ export async function POST(request: NextRequest) {
         message: body.message,
         category: body.category || 'general',
         page: body.page || null,
-        userName: (session?.user as any)?.name || 'Anonim',
-        userEmail: (session?.user as any)?.email || null,
-        tenantName: (session?.user as any)?.tenantName || null,
+        userName: (session?.user as Record<string, unknown>)?.name as string || 'Anonim',
+        userEmail: (session?.user as Record<string, unknown>)?.email as string || null,
+        tenantName: (session?.user as Record<string, unknown>)?.tenantName as string || null,
       }
     })
     return NextResponse.json({ feedback: fb })

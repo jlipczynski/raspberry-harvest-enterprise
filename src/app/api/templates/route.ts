@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const where: any = {}
+    const where: Record<string, unknown> = {}
     if (searchParams.get('varietyId')) where.varietyId = searchParams.get('varietyId')
     if (searchParams.get('season')) where.season = searchParams.get('season')
     if (searchParams.get('cycle')) where.productionCycle = parseInt(searchParams.get('cycle')!)
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const data: any = {
+    const data: Record<string, unknown> = {
       name: body.name, description: body.description || null, tenantId: await requireTenantId(),
       productionYear: body.productionYear, productionCycle: body.productionCycle || 1,
       season: body.season, plantingDate: body.plantingDate || null,

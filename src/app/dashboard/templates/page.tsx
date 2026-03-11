@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
-import { Database, Upload, Thermometer, Sprout, ChevronDown, ChevronUp, Trash2, Edit, Search, Snowflake, Flower2, BarChart3, Calendar, FileUp, Truck, TrendingUp } from 'lucide-react'
+import { Database, Upload, Thermometer, Sprout, ChevronDown, ChevronUp, Trash2, Edit, Search, Snowflake, BarChart3, Calendar, Truck, TrendingUp } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 
@@ -28,8 +29,8 @@ interface Template {
   id: string; name: string; description?: string; productionYear: number; productionCycle: number
   season: string; plantingDate?: string; winteredInTunnel: boolean; plantSource?: string
   dailyCurve: number[]; weeklyCurve: number[]; startDate?: string; endDate?: string; startWeek?: number
-  totalKg: number; outsideTemps?: any; insideTunnelTemps?: any; tempAdjustmentFactor?: number
-  gdhData?: any; gdhToFlowering?: number; gdhToFirstFruit?: number; tempSources: string[]
+  totalKg: number; outsideTemps?: TempPoint[]; insideTunnelTemps?: TempPoint[]; tempAdjustmentFactor?: number
+  gdhData?: GdhPoint[]; gdhToFlowering?: number; gdhToFirstFruit?: number; tempSources: string[]
   sourceFile?: string; notes?: string; summerEndWeek?: number
   variety?: { id: string; name: string; baseTemp?: number; gdhWinteredFlower?: number; gdhWinteredFruit?: number; gdhLcFlower?: number; gdhLcFruit?: number; gdhAutumnFlower?: number; gdhAutumnFruit?: number; autumnShootsDay?: number }
   _count?: { sectionAssignments: number }
@@ -57,7 +58,7 @@ const getWeekDates = (weekNum: number, year: number) => {
   const fmt = (d: Date) => `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`
   return `${fmt(monday)}-${fmt(sunday)}`
 }
-const parseExcelDate = (value: any): string => {
+const parseExcelDate = (value: unknown): string => {
   if (!value) return ''
   if (value instanceof Date) return value.toISOString().split('T')[0]
   if (typeof value === 'number') { const d = XLSX.SSF.parse_date_code(value); if (d) return new Date(d.y, d.m - 1, d.d).toISOString().split('T')[0] }
@@ -71,13 +72,16 @@ const daysBetween = (a: string, b: string) => Math.round((new Date(b).getTime() 
 const fmtDate = (d: string) => { const p = d.split('-'); return p[2]+'.'+p[1]+'.'+p[0] }
 
 // ===== UNIFIED CHART COMPONENT =====
-function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summerEndWeek, onSummerEndChange }: {
+function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summerEndWeek, onSummerEndChange: _onSummerEndChange }: {
   template: Template; outsideTemps: TempPoint[]; insideTemps: TempPoint[]; gdhPoints: GdhPoint[]
   summerEndWeek?: number; onSummerEndChange?: (week: number) => void
 }) {
   const [tooltip, setTooltip] = useState<{ x: number; content: string } | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-  
+  const [viewRange, setViewRange] = useState<[number, number]>([0, 1])
+  const [isDragging, setIsDragging] = useState(false)
+  const [_isFullscreen, _setIsFullscreen] = useState(false)
+
   useEffect(() => {
     const el = svgRef.current
     if (!el) return
@@ -93,10 +97,7 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
-  }, [])
-  const [viewRange, setViewRange] = useState<[number, number]>([0, 1]) // 0-1 fraction
-  const [isDragging, setIsDragging] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  }, [setViewRange])
   const [layers, setLayers] = useState({
     harvest: true,
     tempOutside: true,
@@ -272,21 +273,21 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
         // Use tunnel GDH if inside temps available, otherwise outside GDH
         const gdhSource = insideTemps.length > 0 ? (() => {
           let cum = 0
-          return insideTemps.map((t: any) => {
-            cum += Math.max(0, (t.avg - baseTemp)) * 24
-            return { date: t.date, cumulativeGdh: cum }
+          return insideTemps.map((tp) => {
+            cum += Math.max(0, (tp.avg - baseTemp)) * 24
+            return { date: tp.date, cumulativeGdh: cum }
           })
         })() : gdhPoints
         const flowerDate = flowerGdh ? gdhSource.find(p => p.cumulativeGdh >= flowerGdh)?.date : null
         const fruitDate = fruitGdh ? gdhSource.find(p => p.cumulativeGdh >= fruitGdh)?.date : null
         const plantD = plantDate || gdhPoints[0]?.date || ''
-        
+
         const flowerPct = flowerGdh ? Math.min((flowerGdh / (fruitGdh || maxCumGdh)) * 100, 100) : 0
-        const fruitPct = fruitGdh ? 100 : 0
-        const actualGdhAtFruit = fruitDate ? gdhPoints.find(p => p.date === fruitDate)?.cumulativeGdh || fruitGdh : null
-        
+        const _fruitPct = fruitGdh ? 100 : 0
+        const _actualGdhAtFruit = fruitDate ? gdhPoints.find(p => p.date === fruitDate)?.cumulativeGdh || fruitGdh : null
+
         const daysToFlower = flowerDate && plantD ? daysBetween(plantD, flowerDate) : null
-        const daysToFruit = fruitDate && plantD ? daysBetween(plantD, fruitDate) : null
+        const _daysToFruit = fruitDate && plantD ? daysBetween(plantD, fruitDate) : null
         const daysFlowerToFruit = flowerDate && fruitDate ? daysBetween(flowerDate, fruitDate) : null
         const gdhFlowerToFruit = flowerGdh && fruitGdh ? fruitGdh - flowerGdh : null
         
@@ -460,10 +461,10 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
         {/* GDH tunnel cumulative line */}
         {layers.gdhTunnel && insideTemps.length > 0 && (() => {
           let cumGdh = 0
-          const tunnelGdhPoints = insideTemps.map((t: any) => {
-            const gdh = Math.max(0, (t.avg - baseTemp)) * 24
+          const tunnelGdhPoints = insideTemps.map((tp) => {
+            const gdh = Math.max(0, (tp.avg - baseTemp)) * 24
             cumGdh += gdh
-            return { date: t.date, cumulativeGdh: cumGdh }
+            return { date: tp.date, cumulativeGdh: cumGdh }
           })
           if (tunnelGdhPoints.length === 0) return null
           const maxTunnelGdh = tunnelGdhPoints[tunnelGdhPoints.length - 1].cumulativeGdh
@@ -581,7 +582,7 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
 // ===== TEMPLATE DETAIL =====
 function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template: Template; varieties: Variety[]; onSave: () => void; onDelete: (id: string) => void }) {
   const [editing, setEditing] = useState(false)
-  const [editForm, setEditForm] = useState<any>({})
+  const [editForm, setEditForm] = useState<Record<string, unknown>>({})
   const [fetchingTemps, setFetchingTemps] = useState(false)
   const gdhFileRef = useRef<HTMLInputElement>(null)
   const [showCurveTable, setShowCurveTable] = useState(false)
@@ -679,10 +680,10 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
     try {
       const data = await file.arrayBuffer()
       const wb = XLSX.read(new Uint8Array(data), { type: 'array' })
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[]
-      
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as Record<string, unknown>[]
+
       // Flexible column name detection
-      const getVal = (r: any, ...keys: string[]) => {
+      const getVal = (r: Record<string, unknown>, ...keys: string[]) => {
         for (const k of keys) {
           for (const col of Object.keys(r)) {
             if (col.toLowerCase().includes(k.toLowerCase())) return r[col]

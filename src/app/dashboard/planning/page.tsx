@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Button } from "@/components/ui/button"
 import { Users, AlertTriangle, BarChart3, Target, Loader2, FileDown, Printer, Calendar, TrendingUp, Info } from 'lucide-react'
 
 // ==================== TYPES ====================
@@ -213,7 +212,7 @@ export default function PlanningPage() {
       const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter
       const shoots = pots * section.shootsPerPot
       const eff = v?.pickingEfficiency ?? 6 // kg/h — from DB, fallback only if not set
-      const varietyName = v?.name || ''
+      const _varietyName = v?.name || ''
 
       // Gross multiplier — all from DB (Variety fields)
       const secondCat = v?.secondCategoryPercent ?? 0
@@ -429,7 +428,7 @@ export default function PlanningPage() {
     })
 
     // Section breakdown table
-    const lastY = (doc as any).lastAutoTable?.finalY ?? 100
+    const lastY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 100
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     doc.text('Szczegóły per sekcja', 14, lastY + 10)

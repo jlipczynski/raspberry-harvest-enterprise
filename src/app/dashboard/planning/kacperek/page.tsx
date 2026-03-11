@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, FileDown, Sun, Leaf, Printer, ChevronDown, ChevronUp } from 'lucide-react'
 
@@ -64,13 +64,13 @@ export default function KacperekReport() {
   const [loading, setLoading] = useState(true)
   const [dailyData, setDailyData] = useState<DayRow[]>([])
   const [weeklyData, setWeeklyData] = useState<{ week: number; dates: string; kg: number; delivered: number; season: 'summer' | 'autumn' }[]>([])
-  const [expandedWeeksChart, setExpandedWeeksChart] = useState<Set<number>>(new Set())
-  const [expandedWeeksDaily, setExpandedWeeksDaily] = useState<Set<number>>(new Set())
+  const [_expandedWeeksChart, setExpandedWeeksChart] = useState<Set<number>>(new Set())
+  const [_expandedWeeksDaily, setExpandedWeeksDaily] = useState<Set<number>>(new Set())
   const [weeklyRangeEnd, setWeeklyRangeEnd] = useState(99)
   const [dailyRangeEnd, setDailyRangeEnd] = useState(99)
   const reportRef = useRef<HTMLDivElement>(null)
 
-  const today = new Date()
+  const today = useMemo(() => new Date(), [])
   const year = today.getFullYear()
   const reportDate = today.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })
   const currentWeek = getWeekNumber(today)
@@ -88,9 +88,9 @@ export default function KacperekReport() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { if (blocks.length > 0) generateReport() }, [blocks, savedCurves])
+  useEffect(() => { if (blocks.length > 0) generateReport() }, [blocks, savedCurves, varieties, generateReport])
 
-  const generateReport = () => {
+  const generateReport = useCallback(() => {
     const allSections = blocks.flatMap(b => b.sections.map(s => ({ ...s, blockName: b.name })))
     const weeklyMap: Record<number, { kg: number; summerKg: number; autumnKg: number }> = {}
 
@@ -102,7 +102,7 @@ export default function KacperekReport() {
       const summerCurve = sectionCurves.find(c => c.season === 'summer')
       const autumnCurve = sectionCurves.find(c => c.season === 'autumn')
 
-      const summerYield = section.yieldSummerPerShoot || (v as any)?.yieldSummerPerShoot || 0
+      const summerYield = section.yieldSummerPerShoot || (v as Variety)?.yieldSummerPerShoot || 0
       const totalSummer = shoots * summerYield
       if (summerCurve && summerCurve.curve.length > 0) {
         summerCurve.curve.forEach((pct, i) => { const wk = summerCurve.startWeek + i; if (!weeklyMap[wk]) weeklyMap[wk] = { kg: 0, summerKg: 0, autumnKg: 0 }; weeklyMap[wk].kg += (pct / 100) * totalSummer; weeklyMap[wk].summerKg += (pct / 100) * totalSummer })
@@ -110,7 +110,7 @@ export default function KacperekReport() {
         section.harvestCurveSummer.forEach((pct, i) => { const wk = 22 + i; if (!weeklyMap[wk]) weeklyMap[wk] = { kg: 0, summerKg: 0, autumnKg: 0 }; weeklyMap[wk].kg += (pct / 100) * totalSummer; weeklyMap[wk].summerKg += (pct / 100) * totalSummer })
       }
 
-      const autumnYield = section.yieldAutumnPerShoot || (v as any)?.yieldAutumnPerShoot || 0
+      const autumnYield = section.yieldAutumnPerShoot || (v as Variety)?.yieldAutumnPerShoot || 0
       const totalAutumn = shoots * autumnYield
       if (autumnCurve && autumnCurve.curve.length > 0) {
         autumnCurve.curve.forEach((pct, i) => { const wk = autumnCurve.startWeek + i; if (!weeklyMap[wk]) weeklyMap[wk] = { kg: 0, summerKg: 0, autumnKg: 0 }; weeklyMap[wk].kg += (pct / 100) * totalAutumn; weeklyMap[wk].autumnKg += (pct / 100) * totalAutumn })
@@ -146,8 +146,8 @@ export default function KacperekReport() {
         if (curve.dailyCurve && curve.dailyCurve.length > 0 && curve.startDate) {
           // Use actual daily data - scale from historical to projected
           const yieldPerShoot = curve.season === 'summer'
-            ? (section.yieldSummerPerShoot || (v as any)?.yieldSummerPerShoot || 0)
-            : (section.yieldAutumnPerShoot || (v as any)?.yieldAutumnPerShoot || 0)
+            ? (section.yieldSummerPerShoot || (v as Variety)?.yieldSummerPerShoot || 0)
+            : (section.yieldAutumnPerShoot || (v as Variety)?.yieldAutumnPerShoot || 0)
           const projectedTotal = shoots * yieldPerShoot
           const historicalTotal = curve.dailyCurve.reduce((s, kg) => s + kg, 0)
           const scale = historicalTotal > 0 ? projectedTotal / historicalTotal : 0
@@ -203,7 +203,7 @@ export default function KacperekReport() {
       })
     }
     setDailyData(days)
-  }
+  }, [blocks, varieties, savedCurves, currentWeek, year, today])
 
   const updateDailyKg = (idx: number, value: number) => { setDailyData(prev => prev.map((d, i) => i === idx ? { ...d, kg: value } : d)) }
   const updateDailyDelivered = (idx: number, value: number) => { setDailyData(prev => prev.map((d, i) => i === idx ? { ...d, delivered: value } : d)) }

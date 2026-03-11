@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Cloud, Thermometer, TrendingUp, Calendar, Target, RefreshCw } from 'lucide-react'
+import { Cloud, Thermometer, TrendingUp, Target, RefreshCw } from 'lucide-react'
 
 interface WeatherRecord {
   id: string
@@ -53,8 +53,8 @@ export default function WeatherPage() {
       }
       
       if (plantationJson.blocks) {
-        const allSections = plantationJson.blocks.flatMap((b: any) => 
-          b.sections.map((s: any) => ({ ...s, blockName: b.name }))
+        const allSections = plantationJson.blocks.flatMap((b: { name: string; sections: Section[] }) =>
+          b.sections.map((s: Section) => ({ ...s, blockName: b.name }))
         )
         setSections(allSections)
       }
@@ -247,7 +247,7 @@ export default function WeatherPage() {
             <div className="text-center py-12 text-gray-500">
               <Cloud className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <p className="mb-2">Brak danych pogodowych</p>
-              <p className="text-sm">Idź do Ustawień i kliknij "Pobierz dane historyczne"</p>
+              <p className="text-sm">Idź do Ustawień i kliknij &quot;Pobierz dane historyczne&quot;</p>
             </div>
           ) : (
             <div className="overflow-x-auto max-h-96">

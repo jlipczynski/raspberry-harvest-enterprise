@@ -191,7 +191,7 @@ function StaffingConfig() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {tiers.map((tier, idx) => (
+                {tiers.map((tier) => (
                   <tr key={tier.id} className="hover:bg-gray-50">
                     <td className="px-2 py-2">
                       <input type="number" min="0" step="100" value={tier.dailyKgFrom}
@@ -307,7 +307,7 @@ export default function WorkersPage() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-  const [editing, setEditing] = useState<Worker | null>(null)
+  const [editing, setEditing] = useState<WorkerFormData | null>(null)
   const [detail, setDetail] = useState<Worker | null>(null)
   const [letterModal, setLetterModal] = useState<{ worker: Worker; type: 'list' | 'arrival' } | null>(null)
 
@@ -322,7 +322,7 @@ export default function WorkersPage() {
     finally { setLoading(false) }
   }
 
-  const saveWorker = async (data: any) => {
+  const saveWorker = async (data: WorkerFormData) => {
     try {
       const url = data.id ? `/api/workers/${data.id}` : '/api/workers'
       const method = data.id ? 'PATCH' : 'POST'
@@ -377,7 +377,7 @@ export default function WorkersPage() {
     onList: workers.filter(w => w.acceptedToList).length,
   }), [workers])
 
-  const emptyWorker: any = {
+  const emptyWorker: WorkerFormData = {
     firstName: '', lastName: '', passport: '', availableFrom: '', availableTo: '',
     suggestedArrival: '', confirmedArrival: '', referredBy: '', yearsAtPlantation: 0,
     status: 'new', acceptedToList: false, acceptedToListMsg: '', arrivalConfirmed: false,
@@ -708,11 +708,33 @@ function InfoField({ label, value, mono, warn, highlight }: {
   )
 }
 
+interface WorkerFormData {
+  id?: string
+  firstName: string
+  lastName: string
+  passport?: string
+  availableFrom?: string
+  availableTo?: string
+  suggestedArrival?: string
+  confirmedArrival?: string
+  referredBy?: string
+  yearsAtPlantation: number
+  status: string
+  acceptedToList: boolean
+  acceptedToListMsg?: string
+  arrivalConfirmed: boolean
+  arrivalConfirmMsg?: string
+  whatsapp?: string
+  viber?: string
+  phone?: string
+  efficiencyKgH: number
+}
+
 function WorkerForm({ worker, onSave, onCancel }: {
-  worker: any; onSave: (data: any) => void; onCancel: () => void
+  worker: WorkerFormData; onSave: (data: WorkerFormData) => void; onCancel: () => void
 }) {
-  const [f, setF] = useState({ ...worker })
-  const u = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }))
+  const [f, setF] = useState<WorkerFormData>({ ...worker })
+  const u = <K extends keyof WorkerFormData>(k: K, v: WorkerFormData[K]) => setF(p => ({ ...p, [k]: v }))
 
   return (
     <div>

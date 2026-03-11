@@ -18,8 +18,7 @@ import {
   X,
   Database,
   LogOut,
-  Shield,
-  ChevronDown
+  Shield
 } from 'lucide-react'
 
 const menuItems = [
@@ -44,8 +43,8 @@ export default function DashboardLayout({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pathname = usePathname()
   const { data: session } = useSession()
-  const role = (session?.user as any)?.role
-  const tenantName = (session?.user as any)?.tenantName
+  const role = (session?.user as Record<string, unknown>)?.role
+  const tenantName = (session?.user as Record<string, unknown>)?.tenantName
 
   return (
     <div className="min-h-screen bg-gray-100">

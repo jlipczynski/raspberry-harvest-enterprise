@@ -1,4 +1,3 @@
-import { requireTenantId } from '@/lib/tenant'
 import { prisma } from '@/lib/prisma'
 import { NextRequest, NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
@@ -10,7 +9,7 @@ export async function GET(request: NextRequest) {
     const varietyId = searchParams.get('varietyId')
     const season = searchParams.get('season')
     const sectionId = searchParams.get('sectionId')
-    const where: any = {}
+    const where: Record<string, unknown> = {}
     if (year) where.year = parseInt(year)
     if (varietyId) where.varietyId = varietyId
     if (season) where.season = season
@@ -35,8 +34,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     if (Array.isArray(body.curves)) {
       const created = await prisma.$transaction(
-        body.curves.map((c: any) => {
-          const data: any = {
+        body.curves.map((c: Record<string, unknown>) => {
+          const data: Record<string, unknown> = {
             year: c.year,
             season: c.season,
             curve: c.curve,
@@ -53,7 +52,7 @@ export async function POST(request: NextRequest) {
       )
       return NextResponse.json({ curves: created })
     }
-    const data: any = {
+    const data: Record<string, unknown> = {
       year: body.year,
       season: body.season,
       curve: body.curve,

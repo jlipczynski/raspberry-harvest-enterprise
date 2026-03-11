@@ -1,8 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Thermometer, Calendar, Target } from 'lucide-react'
+import { Target } from 'lucide-react'
 
 interface Section {
   id: string

@@ -8,7 +8,7 @@ const prisma = new PrismaClient()
 
 async function checkAdmin() {
   const session = await getServerSession(authOptions)
-  if (!session || (session.user as any).role !== "SUPER_ADMIN") return null
+  if (!session || (session.user as Record<string, unknown>).role !== "SUPER_ADMIN") return null
   return session
 }
 
@@ -45,7 +45,7 @@ export async function PUT(req: Request) {
   const { id, email, name, role, password, farmName } = await req.json()
   if (!id) return NextResponse.json({ error: "Brak ID" }, { status: 400 })
   
-  const data: any = {}
+  const data: Record<string, unknown> = {}
   if (email) data.email = email
   if (name) data.name = name
   if (role) data.role = role
@@ -66,7 +66,7 @@ export async function DELETE(req: Request) {
   if (!id) return NextResponse.json({ error: "Brak ID" }, { status: 400 })
   
   const session = await getServerSession(authOptions)
-  if ((session?.user as any)?.userId === id) {
+  if ((session?.user as Record<string, unknown>)?.userId === id) {
     return NextResponse.json({ error: "Nie możesz usunąć siebie" }, { status: 400 })
   }
   

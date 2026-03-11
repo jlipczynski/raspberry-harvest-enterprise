@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Upload, FileSpreadsheet, Save, Sun, Leaf, Trash2, BarChart3, Pencil, X, Check, TrendingUp, Anchor, AlertCircle } from 'lucide-react'
+import { Upload, FileSpreadsheet, Save, Sun, Leaf, Trash2, BarChart3, Pencil, X, TrendingUp, Anchor, AlertCircle } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // ==================== TYPES ====================
@@ -64,7 +64,7 @@ const getWeekDates = (weekNum: number, year: number) => {
   return `${fmt(monday)}-${fmt(sunday)}`
 }
 
-const parseExcelDate = (value: any): string => {
+const parseExcelDate = (value: unknown): string => {
   if (!value) return ''
   if (typeof value === 'number') {
     const d = XLSX.SSF.parse_date_code(value)
@@ -113,7 +113,7 @@ export default function HarvestCurvePage() {
   const [forecastLoading, setForecastLoading] = useState(false)
 
   useEffect(() => { fetchAll() }, [])
-  useEffect(() => { if (activeTab === 'history') fetchCurves() }, [activeTab, filterVariety])
+  useEffect(() => { if (activeTab === 'history') fetchCurves() }, [activeTab, filterVariety, fetchCurves])
 
   const fetchAll = async () => {
     try {
@@ -121,14 +121,14 @@ export default function HarvestCurvePage() {
       const pData = await pRes.json()
       const vData = await vRes.json()
       const allSections: Section[] = []
-      pData.blocks?.forEach((b: any) => b.sections?.forEach((s: any) => allSections.push({ ...s, blockName: b.name })))
+      pData.blocks?.forEach((b: { name: string; sections?: Section[] }) => b.sections?.forEach((s: Section) => allSections.push({ ...s, blockName: b.name })))
       setSections(allSections)
       setVarieties(vData.varieties || [])
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
 
-  const fetchCurves = async () => {
+  const fetchCurves = useCallback(async () => {
     try {
       const params = new URLSearchParams()
       if (filterVariety) params.set('varietyId', filterVariety)
@@ -136,7 +136,7 @@ export default function HarvestCurvePage() {
       const data = await res.json()
       setSavedCurves(data.curves || [])
     } catch (e) { console.error(e) }
-  }
+  }, [filterVariety])
 
   // ==================== FILE UPLOAD ====================
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -149,14 +149,14 @@ export default function HarvestCurvePage() {
         const data = new Uint8Array(event.target?.result as ArrayBuffer)
         const workbook = XLSX.read(data, { type: 'array' })
         const worksheet = workbook.Sheets[workbook.SheetNames[0]]
-        const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][]
+        const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][]
 
         // Find header row
         let headerIdx = 0
         for (let i = 0; i < Math.min(10, json.length); i++) {
-          if (json[i]?.some((c: any) => String(c).toLowerCase().includes('data') || String(c).toLowerCase().includes('date'))) { headerIdx = i; break }
+          if (json[i]?.some((c: unknown) => String(c).toLowerCase().includes('data') || String(c).toLowerCase().includes('date'))) { headerIdx = i; break }
         }
-        const headers = json[headerIdx].map((h: any) => String(h || '').toLowerCase())
+        const headers = json[headerIdx].map((h: unknown) => String(h || '').toLowerCase())
         const dateIdx = headers.findIndex(h => h.includes('data') || h.includes('date'))
         const areaIdx = headers.findIndex(h => h.includes('obszar') || h.includes('area'))
         const weightIdx = headers.findIndex(h => h.includes('waga') && h.includes('rzecz'))
@@ -237,7 +237,7 @@ export default function HarvestCurvePage() {
 
     const summerWeeks = area.weeks.filter(w => w.season === 'summer')
     const autumnWeeks = area.weeks.filter(w => w.season === 'autumn')
-    const curvesToCreate: any[] = []
+    const curvesToCreate: { year: number; season: string; curve: number[]; totalKg: number; startWeek: number; sectionId: string; varietyId: string | null; sourceFile: string; dailyCurve: number[]; startDate: string | null }[] = []
     const sectionNames: string[] = []
 
     for (const sectionId of area.assignedSectionIds) {
@@ -381,38 +381,6 @@ export default function HarvestCurvePage() {
   }
 
   // ==================== POŚPIECH / START TOGGLE ====================
-  const toggleDayPreHarvest = (areaIdx: number, dayIdx: number) => {
-    setAreas(prev => prev.map((a, ai) => {
-      if (ai !== areaIdx) return a
-      // Jeśli commercialStartDate jest już ustawione, nie pozwalamy zmieniać
-      if (a.commercialStartDate) return a
-
-      const newDays = [...a.days]
-      const clickedDay = newDays[dayIdx]
-
-      if (clickedDay.isPreHarvest) {
-        // Kliknięto na "pośpiech" — oznacz jako start komercyjny
-        // Wszystkie dni od tego momentu = nie-pośpiech
-        for (let i = dayIdx; i < newDays.length; i++) {
-          newDays[i] = { ...newDays[i], isPreHarvest: false }
-        }
-        // Wszystkie dni przed = pośpiech
-        for (let i = 0; i < dayIdx; i++) {
-          newDays[i] = { ...newDays[i], isPreHarvest: true }
-        }
-        return { ...a, days: newDays, commercialStartDate: clickedDay.date }
-      } else {
-        // Pierwszy dzień — zaznacz jako pośpiech
-        newDays[dayIdx] = { ...newDays[dayIdx], isPreHarvest: true }
-        // Wszystkie wcześniejsze też pośpiech
-        for (let i = 0; i < dayIdx; i++) {
-          newDays[i] = { ...newDays[i], isPreHarvest: true }
-        }
-        return { ...a, days: newDays, commercialStartDate: null }
-      }
-    }))
-  }
-
   const markCommercialStart = (areaIdx: number, dayIdx: number) => {
     setAreas(prev => prev.map((a, ai) => {
       if (ai !== areaIdx) return a
@@ -922,7 +890,7 @@ export default function HarvestCurvePage() {
           {savedCurves.length === 0 && (
             <div className="bg-gray-50 rounded-xl p-12 text-center">
               <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500">Brak zapisanych krzywych. Zaimportuj dane z zakładki "Import MaxCrop".</p>
+              <p className="text-gray-500">Brak zapisanych krzywych. Zaimportuj dane z zakładki &quot;Import MaxCrop&quot;.</p>
             </div>
           )}
         </>
@@ -1229,7 +1197,7 @@ export default function HarvestCurvePage() {
           {!forecastData && !forecastLoading && (
             <div className="bg-gray-50 rounded-xl p-12 text-center">
               <TrendingUp className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500">Wybierz sekcję i kliknij "Pokaż prognozę" aby zobaczyć 3-warstwowy wykres.</p>
+              <p className="text-gray-500">Wybierz sekcję i kliknij &quot;Pokaż prognozę&quot; aby zobaczyć 3-warstwowy wykres.</p>
               <p className="text-gray-400 text-sm mt-2">Oryginalna prognoza (GDH) + Auto-skalowana + Realne dane</p>
             </div>
           )}

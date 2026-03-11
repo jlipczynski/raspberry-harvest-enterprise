@@ -729,7 +729,7 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
         return { date: d.date, gdh: Math.round(dg), cumulativeGdh: Math.round(cumGdh) }
       })
       
-      const updateData: any = {}
+      const updateData: Record<string, unknown> = {}
       if (insideData.length > 0) updateData.insideTunnelTemps = insideData
       if (gdhCalc.length > 0) updateData.gdhData = gdhCalc
       await fetch('/api/templates/' + t.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updateData) })
@@ -756,28 +756,28 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
   if (editing) return (
     <div className="space-y-4 p-6 bg-gray-50 border-t">
       <div className="grid grid-cols-2 gap-4">
-        <div><label className="text-xs font-medium text-gray-500">Nazwa</label><input value={editForm.name||''} onChange={e=>setEditForm((p:any)=>({...p,name:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"/></div>
+        <div><label className="text-xs font-medium text-gray-500">Nazwa</label><input value={editForm.name||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,name:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"/></div>
         <div><label className="text-xs font-medium text-gray-500">Odmiana</label>
-          <select value={editForm.varietyId||''} onChange={e=>setEditForm((p:any)=>({...p,varietyId:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1">
+          <select value={editForm.varietyId||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,varietyId:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1">
             <option value="">—</option>{varieties.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
           </select></div>
-        <div><label className="text-xs font-medium text-gray-500">Cykl produkcji</label><select value={editForm.productionCycle||1} onChange={e=>setEditForm((p:any)=>({...p,productionCycle:parseInt(e.target.value)}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value={1}>1. rok</option><option value={2}>2. rok</option><option value={3}>3. rok</option></select></div>
+        <div><label className="text-xs font-medium text-gray-500">Cykl produkcji</label><select value={editForm.productionCycle||1} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,productionCycle:parseInt(e.target.value)}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value={1}>1. rok</option><option value={2}>2. rok</option><option value={3}>3. rok</option></select></div>
         <div><label className="text-xs font-medium text-gray-500">Data sadzenia</label><input type="date" value={editForm.plantingDate||''} onChange={e=>{
               const val = e.target.value
-              if (val) setEditForm((p:any)=>({...p, plantingDate:val, winteredInTunnel:false}))
-              else setEditForm((p:any)=>({...p, plantingDate:''}))
+              if (val) setEditForm((p: Record<string, unknown>)=>({...p, plantingDate:val, winteredInTunnel:false}))
+              else setEditForm((p: Record<string, unknown>)=>({...p, plantingDate:''}))
             }} className="w-full border rounded-lg px-3 py-2 mt-1" disabled={editForm.winteredInTunnel}/>{editForm.winteredInTunnel && <p className="text-xs text-gray-400 mt-1">Wyłączone — rośliny zimowane</p>}</div>
-        <div><label className="text-xs font-medium text-gray-500">Źródło sadzonek</label><select value={editForm.plantSource||''} onChange={e=>setEditForm((p:any)=>({...p,plantSource:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value="">—</option><option value="long_canes">Long canes</option><option value="tray_plants">Tray plants</option><option value="nursery">Szkółka</option></select></div>
+        <div><label className="text-xs font-medium text-gray-500">Źródło sadzonek</label><select value={editForm.plantSource||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,plantSource:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value="">—</option><option value="long_canes">Long canes</option><option value="tray_plants">Tray plants</option><option value="nursery">Szkółka</option></select></div>
         <div className="flex items-center gap-2 mt-6">
             <input type="checkbox" checked={editForm.winteredInTunnel||false} onChange={e=>{
-              if (e.target.checked) setEditForm((p:any)=>({...p, winteredInTunnel:true, plantingDate:'', plantSource:''}))
-              else setEditForm((p:any)=>({...p, winteredInTunnel:false}))
+              if (e.target.checked) setEditForm((p: Record<string, unknown>)=>({...p, winteredInTunnel:true, plantingDate:'', plantSource:''}))
+              else setEditForm((p: Record<string, unknown>)=>({...p, winteredInTunnel:false}))
             }} className="w-4 h-4"/>
             <label className="text-sm">Zimowane w tunelu</label>
             {editForm.winteredInTunnel && editForm.plantingDate && <span className="text-xs text-red-500 ml-2">⚠️ Zimowane = brak daty sadzenia</span>}
           </div>
       </div>
-      <div><label className="text-xs font-medium text-gray-500">Notatki</label><textarea value={editForm.notes||''} onChange={e=>setEditForm((p:any)=>({...p,notes:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1" rows={2}/></div>
+      <div><label className="text-xs font-medium text-gray-500">Notatki</label><textarea value={editForm.notes||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,notes:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1" rows={2}/></div>
       <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
         <h4 className="font-medium text-sm text-blue-800 mb-2">Import danych z czujników (temp. wewnętrzna + GDH)</h4>
         <p className="text-xs text-blue-600 mb-2">CSV/XLSX — kolumny z datą i temperaturą (dane co 15 min lub dzienne, automatyczna agregacja)</p>
@@ -887,7 +887,7 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
                 </tr>
               </thead>
               <tbody>
-                {summerWeeks.map((w, wi) => {
+                {summerWeeks.map((w, _wi) => {
                   const pct = (w.kg / summerTotalKg) * 100
                   return (
                     <tr key={w.week} className="border-b hover:bg-gray-50">
@@ -1160,7 +1160,7 @@ export default function TemplatesPage() {
     try {
       const [tRes, vRes] = await Promise.all([fetch('/api/templates'), fetch('/api/varieties')])
       const tData = await tRes.json(); const vData = await vRes.json()
-      setTemplates((tData.templates || []).map((t: any) => ({ ...t, tenantName: t.tenant?.name || null }))); setVarieties(vData.varieties || [])
+      setTemplates((tData.templates || []).map((t: Record<string, unknown>) => ({ ...t, tenantName: (t.tenant as Record<string, unknown> | null)?.name || null })) as Template[]); setVarieties(vData.varieties || [])
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }
 

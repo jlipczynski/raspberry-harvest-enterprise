@@ -13,7 +13,14 @@ export async function GET() {
         blocks: {
           include: {
             sections: {
-              include: { variety: true }
+              include: {
+                variety: true,
+                templateAssignments: {
+                  where: { isActive: true },
+                  include: { template: { select: { id: true, name: true, season: true, weeklyCurve: true, dailyCurve: true, startWeek: true, totalKg: true } } },
+                  orderBy: { createdAt: 'desc' as const },
+                },
+              }
             }
           },
           orderBy: { name: 'asc' }

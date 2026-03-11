@@ -112,9 +112,6 @@ export default function HarvestCurvePage() {
   const [forecastData, setForecastData] = useState<ForecastData | null>(null)
   const [forecastLoading, setForecastLoading] = useState(false)
 
-  useEffect(() => { fetchAll() }, [])
-  useEffect(() => { if (activeTab === 'history') fetchCurves() }, [activeTab, filterVariety, fetchCurves])
-
   const fetchAll = async () => {
     try {
       const [pRes, vRes] = await Promise.all([fetch('/api/plantation'), fetch('/api/varieties')])
@@ -137,6 +134,9 @@ export default function HarvestCurvePage() {
       setSavedCurves(data.curves || [])
     } catch (e) { console.error(e) }
   }, [filterVariety])
+
+  useEffect(() => { fetchAll() }, [])
+  useEffect(() => { if (activeTab === 'history') fetchCurves() }, [activeTab, filterVariety, fetchCurves])
 
   // ==================== FILE UPLOAD ====================
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

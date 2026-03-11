@@ -248,7 +248,6 @@ export default function PlanningPage() {
       const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter
       const shoots = pots * section.shootsPerPot
       const eff = v?.pickingEfficiency ?? 6 // kg/h — from DB, fallback only if not set
-      const _varietyName = v?.name || ''
 
       // Gross multiplier — all from DB (Variety fields)
       const secondCat = v?.secondCategoryPercent ?? 0

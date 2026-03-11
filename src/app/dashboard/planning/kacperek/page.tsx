@@ -75,8 +75,6 @@ export default function KacperekReport() {
   const reportDate = today.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })
   const currentWeek = getWeekNumber(today)
 
-  useEffect(() => { fetchData() }, [])
-
   const fetchData = async () => {
     try {
       const [pRes, vRes, cRes] = await Promise.all([
@@ -87,8 +85,6 @@ export default function KacperekReport() {
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
-
-  useEffect(() => { if (blocks.length > 0) generateReport() }, [blocks, savedCurves, varieties, generateReport])
 
   const generateReport = useCallback(() => {
     const allSections = blocks.flatMap(b => b.sections.map(s => ({ ...s, blockName: b.name })))
@@ -204,6 +200,10 @@ export default function KacperekReport() {
     }
     setDailyData(days)
   }, [blocks, varieties, savedCurves, currentWeek, year, today])
+
+  useEffect(() => { fetchData() }, [])
+
+  useEffect(() => { if (blocks.length > 0) generateReport() }, [blocks, savedCurves, varieties, generateReport])
 
   const updateDailyKg = (idx: number, value: number) => { setDailyData(prev => prev.map((d, i) => i === idx ? { ...d, kg: value } : d)) }
   const updateDailyDelivered = (idx: number, value: number) => { setDailyData(prev => prev.map((d, i) => i === idx ? { ...d, delivered: value } : d)) }

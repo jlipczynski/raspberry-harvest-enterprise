@@ -165,7 +165,7 @@ export default function PlantationPage() {
   }
   const onVarChange = (vid: string) => {
     const v = varieties.find(x => x.id === vid)
-    setSectionForm({ ...sectionForm, varietyId: vid, yieldSummerPerShoot: v?.yieldSummerPerShoot || 0, yieldAutumnPerShoot: v?.yieldAutumnPerShoot || 0, gdhSummer: v?.gdhSummer || 20000, gdhAutumn: v?.gdhAutumn || 25000 })
+    setSectionForm({ ...sectionForm, varietyId: vid, gdhSummer: v?.gdhSummer || 20000, gdhAutumn: v?.gdhAutumn || 25000 })
   }
   const saveSection = async (bid: string) => {
     if (!sectionForm.name || !sectionForm.varietyId) return

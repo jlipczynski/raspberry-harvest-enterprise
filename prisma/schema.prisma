@@ -166,6 +166,7 @@ model Section {
   temperatureReadings   TemperatureReading[]
   winteredInTunnel      Boolean   @default(false)
   templateAssignments   SectionTemplateAssignment[]
+  sourceTemplates       ProductionCurveTemplate[] @relation("TemplateSource")
   harvestSeasons        HarvestSeason[]
   plantingDate          DateTime?
   winterShootsDate      DateTime?
@@ -198,9 +199,11 @@ model HarvestCurve {
   sourceFile    String?                      // nazwa pliku MaxCrop
   importedAt    DateTime @default(now())
   
+  templateAssignments SectionTemplateAssignment[]
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-  
+
   @@map("harvest_curves")
 }
 
@@ -373,37 +376,46 @@ model ProductionCurveTemplate {
   // Temperature data sources
   tempSources         String[]                      // ['MANUAL','API','SENSORS']
   
+  sourceSectionId     String?
+  sourceSection       Section?  @relation("TemplateSource", fields: [sourceSectionId], references: [id], onDelete: SetNull)
+
   sourceFile          String?
   notes               String?
-  
+
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
-  
+
   // Sections using this template
   sectionAssignments  SectionTemplateAssignment[]
-  
+
   @@map("production_curve_templates")
 }
 
 model SectionTemplateAssignment {
   id                  String   @id @default(cuid())
-  
+
   sectionId           String
   section             Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  
+
   templateId          String
   template            ProductionCurveTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  
+
   targetYear          Int                          // which year this assignment is for (2026)
+  season              String   @default("summer")  // 'summer' | 'autumn'
   adjustmentPercent   Float    @default(0)          // +/- % adjustment to curve
   adjustedCurve       Float[]                       // final adjusted daily curve
-  
+
+  harvestCurveId      String?
+  harvestCurve        HarvestCurve? @relation(fields: [harvestCurveId], references: [id], onDelete: SetNull)
+
+  isActive            Boolean  @default(true)
+
   plantingDate        String?                       // actual planting date for this assignment
-  
+
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
-  
-  @@unique([sectionId, templateId, targetYear])
+
+  @@unique([sectionId, templateId, targetYear, season])
   @@map("section_template_assignments")
 }
 

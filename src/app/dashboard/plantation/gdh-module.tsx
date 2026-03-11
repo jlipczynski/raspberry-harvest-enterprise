@@ -6,7 +6,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, ReferenceArea
 } from 'recharts'
-import { TrendingUp, Thermometer, Target, Loader2, CloudSun, CalendarDays, Info, ChevronDown, ChevronUp, FileDown } from 'lucide-react'
+import { TrendingUp, Thermometer, Target, Loader2, CloudSun, Info, ChevronDown, ChevronUp, FileDown } from 'lucide-react'
 import { generateGdhReport } from './gdh-report-pdf'
 
 // ── Types ──
@@ -308,7 +308,7 @@ export default function GDHModule() {
     )
 
     return rows
-  }, [selectedSection, chartData])
+  }, [selectedSection, chartData, forecast?.scenarios?.best, forecast?.seasonalAnomaly])
 
   // ── Progress ──
   const currentProgress = useMemo(() => {

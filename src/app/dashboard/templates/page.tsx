@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
-import { Database, Upload, Thermometer, Sprout, ChevronDown, ChevronUp, Trash2, Edit, Search, Snowflake, Flower2, BarChart3, Calendar, FileUp, Truck, TrendingUp } from 'lucide-react'
+import { Database, Upload, Thermometer, Sprout, ChevronDown, ChevronUp, Trash2, Edit, Search, Snowflake, BarChart3, Calendar, Truck, TrendingUp } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 
@@ -23,14 +23,16 @@ const RaspberryIcon = ({ size = 16, className = '' }: { size?: number; className
 
 // ===== TYPES =====
 interface Variety { id: string; name: string; baseTemp?: number; gdhWinteredFlower?: number; gdhWinteredFruit?: number; gdhLcFlower?: number; gdhLcFruit?: number; gdhAutumnFlower?: number; gdhAutumnFruit?: number; autumnShootsDay?: number }
+interface PlantationSection { id: string; name: string; blockName: string; varietyName: string; winteredInTunnel?: boolean; plantMaterialType?: string }
 interface Template {
   tenantName?: string
   id: string; name: string; description?: string; productionYear: number; productionCycle: number
   season: string; plantingDate?: string; winteredInTunnel: boolean; plantSource?: string
   dailyCurve: number[]; weeklyCurve: number[]; startDate?: string; endDate?: string; startWeek?: number
-  totalKg: number; outsideTemps?: any; insideTunnelTemps?: any; tempAdjustmentFactor?: number
-  gdhData?: any; gdhToFlowering?: number; gdhToFirstFruit?: number; tempSources: string[]
+  totalKg: number; outsideTemps?: TempPoint[]; insideTunnelTemps?: TempPoint[]; tempAdjustmentFactor?: number
+  gdhData?: GdhPoint[]; gdhToFlowering?: number; gdhToFirstFruit?: number; tempSources: string[]
   sourceFile?: string; notes?: string; summerEndWeek?: number
+  sourceSectionId?: string; sourceSection?: { id: string; name: string }
   variety?: { id: string; name: string; baseTemp?: number; gdhWinteredFlower?: number; gdhWinteredFruit?: number; gdhLcFlower?: number; gdhLcFruit?: number; gdhAutumnFlower?: number; gdhAutumnFruit?: number; autumnShootsDay?: number }
   _count?: { sectionAssignments: number }
 }
@@ -57,7 +59,7 @@ const getWeekDates = (weekNum: number, year: number) => {
   const fmt = (d: Date) => `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`
   return `${fmt(monday)}-${fmt(sunday)}`
 }
-const parseExcelDate = (value: any): string => {
+const parseExcelDate = (value: unknown): string => {
   if (!value) return ''
   if (value instanceof Date) return value.toISOString().split('T')[0]
   if (typeof value === 'number') { const d = XLSX.SSF.parse_date_code(value); if (d) return new Date(d.y, d.m - 1, d.d).toISOString().split('T')[0] }
@@ -71,13 +73,15 @@ const daysBetween = (a: string, b: string) => Math.round((new Date(b).getTime() 
 const fmtDate = (d: string) => { const p = d.split('-'); return p[2]+'.'+p[1]+'.'+p[0] }
 
 // ===== UNIFIED CHART COMPONENT =====
-function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summerEndWeek, onSummerEndChange }: {
+function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summerEndWeek }: {
   template: Template; outsideTemps: TempPoint[]; insideTemps: TempPoint[]; gdhPoints: GdhPoint[]
-  summerEndWeek?: number; onSummerEndChange?: (week: number) => void
+  summerEndWeek?: number
 }) {
   const [tooltip, setTooltip] = useState<{ x: number; content: string } | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-  
+  const [viewRange, setViewRange] = useState<[number, number]>([0, 1])
+  const [isDragging, setIsDragging] = useState(false)
+
   useEffect(() => {
     const el = svgRef.current
     if (!el) return
@@ -93,10 +97,7 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
-  }, [])
-  const [viewRange, setViewRange] = useState<[number, number]>([0, 1]) // 0-1 fraction
-  const [isDragging, setIsDragging] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  }, [setViewRange])
   const [layers, setLayers] = useState({
     harvest: true,
     tempOutside: true,
@@ -272,21 +273,18 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
         // Use tunnel GDH if inside temps available, otherwise outside GDH
         const gdhSource = insideTemps.length > 0 ? (() => {
           let cum = 0
-          return insideTemps.map((t: any) => {
-            cum += Math.max(0, (t.avg - baseTemp)) * 24
-            return { date: t.date, cumulativeGdh: cum }
+          return insideTemps.map((tp) => {
+            cum += Math.max(0, (tp.avg - baseTemp)) * 24
+            return { date: tp.date, cumulativeGdh: cum }
           })
         })() : gdhPoints
         const flowerDate = flowerGdh ? gdhSource.find(p => p.cumulativeGdh >= flowerGdh)?.date : null
         const fruitDate = fruitGdh ? gdhSource.find(p => p.cumulativeGdh >= fruitGdh)?.date : null
         const plantD = plantDate || gdhPoints[0]?.date || ''
-        
+
         const flowerPct = flowerGdh ? Math.min((flowerGdh / (fruitGdh || maxCumGdh)) * 100, 100) : 0
-        const fruitPct = fruitGdh ? 100 : 0
-        const actualGdhAtFruit = fruitDate ? gdhPoints.find(p => p.date === fruitDate)?.cumulativeGdh || fruitGdh : null
-        
+
         const daysToFlower = flowerDate && plantD ? daysBetween(plantD, flowerDate) : null
-        const daysToFruit = fruitDate && plantD ? daysBetween(plantD, fruitDate) : null
         const daysFlowerToFruit = flowerDate && fruitDate ? daysBetween(flowerDate, fruitDate) : null
         const gdhFlowerToFruit = flowerGdh && fruitGdh ? fruitGdh - flowerGdh : null
         
@@ -460,10 +458,10 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
         {/* GDH tunnel cumulative line */}
         {layers.gdhTunnel && insideTemps.length > 0 && (() => {
           let cumGdh = 0
-          const tunnelGdhPoints = insideTemps.map((t: any) => {
-            const gdh = Math.max(0, (t.avg - baseTemp)) * 24
+          const tunnelGdhPoints = insideTemps.map((tp) => {
+            const gdh = Math.max(0, (tp.avg - baseTemp)) * 24
             cumGdh += gdh
-            return { date: t.date, cumulativeGdh: cumGdh }
+            return { date: tp.date, cumulativeGdh: cumGdh }
           })
           if (tunnelGdhPoints.length === 0) return null
           const maxTunnelGdh = tunnelGdhPoints[tunnelGdhPoints.length - 1].cumulativeGdh
@@ -579,9 +577,9 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
 }
 
 // ===== TEMPLATE DETAIL =====
-function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template: Template; varieties: Variety[]; onSave: () => void; onDelete: (id: string) => void }) {
+function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: { template: Template; varieties: Variety[]; sections: PlantationSection[]; onSave: () => void; onDelete: (id: string) => void }) {
   const [editing, setEditing] = useState(false)
-  const [editForm, setEditForm] = useState<any>({})
+  const [editForm, setEditForm] = useState<Record<string, unknown>>({})
   const [fetchingTemps, setFetchingTemps] = useState(false)
   const gdhFileRef = useRef<HTMLInputElement>(null)
   const [showCurveTable, setShowCurveTable] = useState(false)
@@ -679,10 +677,10 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
     try {
       const data = await file.arrayBuffer()
       const wb = XLSX.read(new Uint8Array(data), { type: 'array' })
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[]
-      
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as Record<string, unknown>[]
+
       // Flexible column name detection
-      const getVal = (r: any, ...keys: string[]) => {
+      const getVal = (r: Record<string, unknown>, ...keys: string[]) => {
         for (const k of keys) {
           for (const col of Object.keys(r)) {
             if (col.toLowerCase().includes(k.toLowerCase())) return r[col]
@@ -728,7 +726,7 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
         return { date: d.date, gdh: Math.round(dg), cumulativeGdh: Math.round(cumGdh) }
       })
       
-      const updateData: any = {}
+      const updateData: Record<string, unknown> = {}
       if (insideData.length > 0) updateData.insideTunnelTemps = insideData
       if (gdhCalc.length > 0) updateData.gdhData = gdhCalc
       await fetch('/api/templates/' + t.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updateData) })
@@ -745,7 +743,8 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
     setEditing(true)
     setEditForm({ name: t.name, description: t.description, productionCycle: t.productionCycle,
       plantingDate: t.plantingDate, winteredInTunnel: t.winteredInTunnel, plantSource: t.plantSource,
-      notes: t.notes, gdhToFlowering: t.gdhToFlowering, gdhToFirstFruit: t.gdhToFirstFruit, varietyId: t.variety?.id || '' })
+      notes: t.notes, gdhToFlowering: t.gdhToFlowering, gdhToFirstFruit: t.gdhToFirstFruit, varietyId: t.variety?.id || '',
+      sourceSectionId: t.sourceSectionId || '' })
   }
   const saveEdit = async () => {
     await fetch('/api/templates/' + t.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editForm) })
@@ -755,28 +754,32 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
   if (editing) return (
     <div className="space-y-4 p-6 bg-gray-50 border-t">
       <div className="grid grid-cols-2 gap-4">
-        <div><label className="text-xs font-medium text-gray-500">Nazwa</label><input value={editForm.name||''} onChange={e=>setEditForm((p:any)=>({...p,name:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"/></div>
+        <div><label className="text-xs font-medium text-gray-500">Nazwa</label><input value={editForm.name||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,name:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"/></div>
         <div><label className="text-xs font-medium text-gray-500">Odmiana</label>
-          <select value={editForm.varietyId||''} onChange={e=>setEditForm((p:any)=>({...p,varietyId:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1">
+          <select value={editForm.varietyId||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,varietyId:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1">
             <option value="">—</option>{varieties.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
           </select></div>
-        <div><label className="text-xs font-medium text-gray-500">Cykl produkcji</label><select value={editForm.productionCycle||1} onChange={e=>setEditForm((p:any)=>({...p,productionCycle:parseInt(e.target.value)}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value={1}>1. rok</option><option value={2}>2. rok</option><option value={3}>3. rok</option></select></div>
+        <div><label className="text-xs font-medium text-gray-500">Sekcja źródłowa</label>
+          <select value={editForm.sourceSectionId||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,sourceSectionId:e.target.value||null}))} className="w-full border rounded-lg px-3 py-2 mt-1">
+            <option value="">— brak —</option>{sections.map(s=><option key={s.id} value={s.id}>{s.blockName}/{s.name} ({s.varietyName})</option>)}
+          </select></div>
+        <div><label className="text-xs font-medium text-gray-500">Cykl produkcji</label><select value={editForm.productionCycle||1} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,productionCycle:parseInt(e.target.value)}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value={1}>1. rok</option><option value={2}>2. rok</option><option value={3}>3. rok</option></select></div>
         <div><label className="text-xs font-medium text-gray-500">Data sadzenia</label><input type="date" value={editForm.plantingDate||''} onChange={e=>{
               const val = e.target.value
-              if (val) setEditForm((p:any)=>({...p, plantingDate:val, winteredInTunnel:false}))
-              else setEditForm((p:any)=>({...p, plantingDate:''}))
+              if (val) setEditForm((p: Record<string, unknown>)=>({...p, plantingDate:val, winteredInTunnel:false}))
+              else setEditForm((p: Record<string, unknown>)=>({...p, plantingDate:''}))
             }} className="w-full border rounded-lg px-3 py-2 mt-1" disabled={editForm.winteredInTunnel}/>{editForm.winteredInTunnel && <p className="text-xs text-gray-400 mt-1">Wyłączone — rośliny zimowane</p>}</div>
-        <div><label className="text-xs font-medium text-gray-500">Źródło sadzonek</label><select value={editForm.plantSource||''} onChange={e=>setEditForm((p:any)=>({...p,plantSource:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value="">—</option><option value="long_canes">Long canes</option><option value="tray_plants">Tray plants</option><option value="nursery">Szkółka</option></select></div>
+        <div><label className="text-xs font-medium text-gray-500">Źródło sadzonek</label><select value={editForm.plantSource||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,plantSource:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value="">—</option><option value="long_canes">Long canes</option><option value="tray_plants">Tray plants</option><option value="nursery">Szkółka</option></select></div>
         <div className="flex items-center gap-2 mt-6">
             <input type="checkbox" checked={editForm.winteredInTunnel||false} onChange={e=>{
-              if (e.target.checked) setEditForm((p:any)=>({...p, winteredInTunnel:true, plantingDate:'', plantSource:''}))
-              else setEditForm((p:any)=>({...p, winteredInTunnel:false}))
+              if (e.target.checked) setEditForm((p: Record<string, unknown>)=>({...p, winteredInTunnel:true, plantingDate:'', plantSource:''}))
+              else setEditForm((p: Record<string, unknown>)=>({...p, winteredInTunnel:false}))
             }} className="w-4 h-4"/>
             <label className="text-sm">Zimowane w tunelu</label>
             {editForm.winteredInTunnel && editForm.plantingDate && <span className="text-xs text-red-500 ml-2">⚠️ Zimowane = brak daty sadzenia</span>}
           </div>
       </div>
-      <div><label className="text-xs font-medium text-gray-500">Notatki</label><textarea value={editForm.notes||''} onChange={e=>setEditForm((p:any)=>({...p,notes:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1" rows={2}/></div>
+      <div><label className="text-xs font-medium text-gray-500">Notatki</label><textarea value={editForm.notes||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,notes:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1" rows={2}/></div>
       <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
         <h4 className="font-medium text-sm text-blue-800 mb-2">Import danych z czujników (temp. wewnętrzna + GDH)</h4>
         <p className="text-xs text-blue-600 mb-2">CSV/XLSX — kolumny z datą i temperaturą (dane co 15 min lub dzienne, automatyczna agregacja)</p>
@@ -835,10 +838,15 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
             <div className="text-xs text-gray-400">Źródło</div><div className="font-bold">{t.plantSource === 'long_canes' ? '🌿 Long canes' : t.plantSource === 'tray_plants' ? '🌱 Tray plants' : t.plantSource}</div>
           </div>
         )}
+        {t.sourceSection && (
+          <div className="bg-indigo-50 rounded-lg px-4 py-3 border border-indigo-200">
+            <div className="text-xs text-indigo-600">Sekcja źródłowa</div><div className="font-bold text-indigo-800">{t.sourceSection.name}</div>
+          </div>
+        )}
       </div>
 
       {/* UNIFIED CHART */}
-      <UnifiedChart template={t} outsideTemps={outsideTemps} insideTemps={insideTemps} gdhPoints={gdhPoints} summerEndWeek={summerEndWeek} onSummerEndChange={saveSummerEnd} />
+      <UnifiedChart template={t} outsideTemps={outsideTemps} insideTemps={insideTemps} gdhPoints={gdhPoints} summerEndWeek={summerEndWeek} />
 
       {/* Season boundary selector + curve table toggle */}
       <div className="flex items-center gap-4 flex-wrap">
@@ -886,7 +894,7 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
                 </tr>
               </thead>
               <tbody>
-                {summerWeeks.map((w, wi) => {
+                {summerWeeks.map((w) => {
                   const pct = (w.kg / summerTotalKg) * 100
                   return (
                     <tr key={w.week} className="border-b hover:bg-gray-50">
@@ -1144,6 +1152,7 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([])
   const [varieties, setVarieties] = useState<Variety[]>([])
+  const [plantationSections, setPlantationSections] = useState<PlantationSection[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState({ varietyId: '', season: '', cycle: '', tunnel: '', search: '' })
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -1157,9 +1166,18 @@ export default function TemplatesPage() {
   useEffect(() => { fetchAll() }, [])
   const fetchAll = async () => {
     try {
-      const [tRes, vRes] = await Promise.all([fetch('/api/templates'), fetch('/api/varieties')])
-      const tData = await tRes.json(); const vData = await vRes.json()
-      setTemplates((tData.templates || []).map((t: any) => ({ ...t, tenantName: t.tenant?.name || null }))); setVarieties(vData.varieties || [])
+      const [tRes, vRes, pRes] = await Promise.all([fetch('/api/templates'), fetch('/api/varieties'), fetch('/api/plantation')])
+      const tData = await tRes.json(); const vData = await vRes.json(); const pData = await pRes.json()
+      setTemplates((tData.templates || []).map((t: Record<string, unknown>) => ({ ...t, tenantName: (t.tenant as Record<string, unknown> | null)?.name || null })) as Template[]); setVarieties(vData.varieties || [])
+      const sections: PlantationSection[] = (pData.blocks || []).flatMap((b: Record<string, unknown>) =>
+        ((b.sections as Record<string, unknown>[]) || []).map((s: Record<string, unknown>) => ({
+          id: s.id as string, name: (s.name || 'Bez nazwy') as string, blockName: b.name as string,
+          varietyName: ((s.variety as Record<string, unknown> | null)?.name || '?') as string,
+          winteredInTunnel: s.winteredInTunnel as boolean | undefined,
+          plantMaterialType: s.plantMaterialType as string | undefined,
+        }))
+      )
+      setPlantationSections(sections)
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }
 
@@ -1169,12 +1187,12 @@ export default function TemplatesPage() {
     const data = await file.arrayBuffer()
     const workbook = XLSX.read(new Uint8Array(data), { type: 'array' })
     const worksheet = workbook.Sheets[workbook.SheetNames[0]]
-    const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][]
+    const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][]
     let headerIdx = 0
     for (let i = 0; i < Math.min(10, json.length); i++) {
-      if (json[i]?.some((c: any) => String(c).toLowerCase().includes('data') || String(c).toLowerCase().includes('date'))) { headerIdx = i; break }
+      if (json[i]?.some((c: unknown) => String(c).toLowerCase().includes('data') || String(c).toLowerCase().includes('date'))) { headerIdx = i; break }
     }
-    const headers = json[headerIdx].map((h: any) => String(h||'').toLowerCase())
+    const headers = json[headerIdx].map((h: unknown) => String(h||'').toLowerCase())
     const dateIdx = headers.findIndex(h => h.includes('data') || h.includes('date'))
     const areaIdx = headers.findIndex(h => h.includes('obszar') || h.includes('area'))
     const weightIdx = headers.findIndex(h => h.includes('waga') && h.includes('rzecz'))
@@ -1228,7 +1246,7 @@ export default function TemplatesPage() {
         startDate: days[0]?.date||null, endDate: days[days.length-1]?.date||null,
         startWeek: weeks[0].week, totalKg: total, sourceFile: fileName }
     }
-    const ts: any[] = []
+    const ts: Record<string, unknown>[] = []
     const sw = area.weeks.filter(w=>w.season==='summer'); if(sw.length>0) ts.push(build(sw,'Lato','summer'))
     const aw = area.weeks.filter(w=>w.season==='autumn'); if(aw.length>0) ts.push(build(aw,'Jesień','autumn'))
     for (const t of ts) { await fetch('/api/templates', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(t) }) }
@@ -1360,7 +1378,9 @@ export default function TemplatesPage() {
                       <span>{t.variety?.name||'—'}</span><span>•</span><span>{t.productionYear}</span>
                       <span>•</span><span>{t.productionCycle}. rok</span>
                       {t.winteredInTunnel && <><span>•</span><Snowflake className="w-3 h-3 text-blue-500 inline"/></>}
+                      {t.plantSource && <><span>•</span><span className="text-gray-500">{t.plantSource === 'long_canes' ? 'LC' : t.plantSource === 'tray_plants' ? 'Tray' : t.plantSource}</span></>}
                       {t.plantingDate && !t.winteredInTunnel && <><span>•</span><span className="text-green-600">🌱 {fmtDate(t.plantingDate)}</span></>}
+                      {t.sourceSection && <><span>•</span><span className="text-indigo-600">{t.sourceSection.name}</span></>}
                     </div>
                   </div>
                   <div className="flex items-end gap-px h-8 w-28">
@@ -1378,7 +1398,7 @@ export default function TemplatesPage() {
                   </div>
                   {isExp?<ChevronUp className="w-5 h-5 text-gray-400"/>:<ChevronDown className="w-5 h-5 text-gray-400"/>}
                 </div>
-                {isExp && <TemplateDetail template={t} varieties={varieties} onSave={fetchAll} onDelete={deleteTemplate}/>}
+                {isExp && <TemplateDetail template={t} varieties={varieties} sections={plantationSections} onSave={fetchAll} onDelete={deleteTemplate}/>}
               </div>
             )
           })}

@@ -1,7 +1,36 @@
-import { NextAuthOptions } from "next-auth"
+import { NextAuthOptions, User } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { PrismaClient } from "@prisma/client"
 import bcrypt from "bcryptjs"
+
+interface AppUser extends User {
+  role: string
+  tenantId: string
+  tenantName: string
+}
+
+declare module "next-auth" {
+  interface Session {
+    user: {
+      name?: string | null
+      email?: string | null
+      image?: string | null
+      role?: string
+      tenantId?: string
+      tenantName?: string
+      userId?: string
+    }
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    role?: string
+    tenantId?: string
+    tenantName?: string
+    userId?: string
+  }
+}
 
 const prisma = new PrismaClient()
 
@@ -36,19 +65,20 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.role = (user as any).role
-        token.tenantId = (user as any).tenantId
-        token.tenantName = (user as any).tenantName
+        const appUser = user as AppUser
+        token.role = appUser.role
+        token.tenantId = appUser.tenantId
+        token.tenantName = appUser.tenantName
         token.userId = user.id
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).role = token.role
-        ;(session.user as any).tenantId = token.tenantId
-        ;(session.user as any).tenantName = token.tenantName
-        ;(session.user as any).userId = token.userId
+        session.user.role = token.role
+        session.user.tenantId = token.tenantId
+        session.user.tenantName = token.tenantName
+        session.user.userId = token.userId
       }
       return session
     }

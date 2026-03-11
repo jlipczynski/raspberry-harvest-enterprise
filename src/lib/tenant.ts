@@ -3,7 +3,7 @@ import { authOptions } from "@/lib/auth"
 
 export async function getTenantId(): Promise<string | null> {
   const session = await getServerSession(authOptions)
-  return (session?.user as any)?.tenantId || null
+  return (session?.user as { tenantId?: string })?.tenantId || null
 }
 
 export async function requireTenantId(): Promise<string> {

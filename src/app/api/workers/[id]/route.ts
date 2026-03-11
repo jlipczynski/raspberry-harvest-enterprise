@@ -31,7 +31,7 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
 
-    const data: any = { ...body }
+    const data: Record<string, unknown> = { ...body }
     const dateFields = ['availableFrom', 'availableTo', 'suggestedArrival', 'confirmedArrival']
     for (const field of dateFields) {
       if (data[field] !== undefined) {

@@ -100,7 +100,7 @@ export default function GDHMatrix() {
     fetchData()
   }, [])
 
-  const sections = data?.sections?.filter(s => s.totalReadings > 0 || s.flowerThreshold || s.fruitThreshold) || []
+  const sections = useMemo(() => data?.sections?.filter(s => s.totalReadings > 0 || s.flowerThreshold || s.fruitThreshold) || [], [data?.sections])
   const forecast = data?.forecast
 
   // Build week-by-week data for each section

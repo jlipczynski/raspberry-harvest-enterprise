@@ -73,7 +73,7 @@ export default function SettingsPage() {
         setImportStatus('❌ Błąd zapisu')
         setTimeout(() => setImportStatus(''), 3000)
       }
-    } catch (e) {
+    } catch {
       setImportStatus('❌ Błąd połączenia')
       setTimeout(() => setImportStatus(''), 3000)
     }
@@ -111,7 +111,7 @@ export default function SettingsPage() {
         setImportStatus(`❌ ${error.error || 'Błąd pobierania'}`)
         setTimeout(() => setImportStatus(''), 5000)
       }
-    } catch (e) {
+    } catch {
       setImportStatus('❌ Błąd połączenia z API pogody')
       setTimeout(() => setImportStatus(''), 5000)
     }
@@ -147,7 +147,7 @@ export default function SettingsPage() {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-    } catch (e) {
+    } catch {
       setImportStatus('❌ Błąd eksportu')
       setTimeout(() => setImportStatus(''), 3000)
     }
@@ -159,14 +159,14 @@ export default function SettingsPage() {
     const reader = new FileReader()
     reader.onload = async (e) => {
       try {
-        const data = JSON.parse(e.target?.result as string)
+        JSON.parse(e.target?.result as string)
         setImportStatus('⏳ Importowanie danych...')
         
         // Import przez API (do zaimplementowania)
         setImportStatus('✓ Dane zaimportowane pomyślnie!')
         setTimeout(() => setImportStatus(''), 3000)
         setTimeout(() => window.location.reload(), 1000)
-      } catch (error) {
+      } catch {
         setImportStatus('❌ Błąd importu - nieprawidłowy format pliku')
         setTimeout(() => setImportStatus(''), 3000)
       }

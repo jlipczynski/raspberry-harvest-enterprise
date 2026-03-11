@@ -4,7 +4,7 @@ import { requireTenantId } from '@/lib/tenant'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const tenantId = await requireTenantId()
     const farm = await prisma.farm.findFirst({ where: { tenantId } })

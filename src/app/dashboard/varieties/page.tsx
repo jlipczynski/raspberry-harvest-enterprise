@@ -5,7 +5,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, Leaf, X, Pencil, Trash2, Save, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Leaf, X, Pencil, Trash2, Save, ChevronDown, ChevronUp, BarChart3, Database } from 'lucide-react'
+
+interface HarvestCurveData {
+  id: string; year: number; season: string; curve: number[]; dailyCurve: number[]
+  startDate?: string; totalKg: number; startWeek: number
+  section?: { id: string; name: string } | null
+  variety?: { id: string; name: string } | null
+  sourceFile?: string
+}
 
 interface Variety {
   id: string; name: string; origin?: string; description?: string
@@ -27,6 +35,10 @@ export default function VarietiesPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingVariety, setEditingVariety] = useState<Variety | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<Record<string, 'info' | 'curves'>>({})
+  const [varietyCurves, setVarietyCurves] = useState<Record<string, HarvestCurveData[]>>({})
+  const [loadingCurves, setLoadingCurves] = useState<Record<string, boolean>>({})
+  const [savingTemplate, setSavingTemplate] = useState<string | null>(null)
   
   const [formData, setFormData] = useState({
     name: '',
@@ -139,6 +151,43 @@ export default function VarietiesPage() {
     } catch (error) {
       console.error('Error saving variety:', error)
     }
+  }
+
+  const fetchCurvesForVariety = async (varietyId: string) => {
+    if (varietyCurves[varietyId]) return
+    setLoadingCurves(p => ({ ...p, [varietyId]: true }))
+    try {
+      const res = await fetch(`/api/harvest-curves?varietyId=${varietyId}`)
+      const data = await res.json()
+      setVarietyCurves(p => ({ ...p, [varietyId]: data.curves || [] }))
+    } catch (e) { console.error('Error fetching curves:', e) }
+    finally { setLoadingCurves(p => ({ ...p, [varietyId]: false })) }
+  }
+
+  const saveAsTemplate = async (curve: HarvestCurveData, variety: Variety) => {
+    setSavingTemplate(curve.id)
+    try {
+      const weeklyCurve = curve.curve.length > 0 ? curve.curve : []
+      await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `${variety.name} — ${curve.season === 'summer' ? 'Lato' : 'Jesień'} ${curve.year}${curve.section ? ' (' + curve.section.name + ')' : ''}`,
+          productionYear: curve.year,
+          season: curve.season,
+          varietyId: variety.id,
+          dailyCurve: curve.dailyCurve || [],
+          weeklyCurve,
+          startDate: curve.startDate || null,
+          startWeek: curve.startWeek,
+          totalKg: curve.totalKg,
+          sourceFile: curve.sourceFile || null,
+          productionCycle: 1,
+        }),
+      })
+      alert('Szablon utworzony!')
+    } catch (e) { console.error('Error saving template:', e); alert('Błąd zapisu szablonu') }
+    finally { setSavingTemplate(null) }
   }
 
   const deleteVariety = async (id: string) => {
@@ -576,10 +625,24 @@ export default function VarietiesPage() {
               {/* Szczegóły - rozwijane */}
               {expandedId === variety.id && (
                 <div className="mt-4 pt-4 border-t space-y-4">
+                  {/* Tabs */}
+                  <div className="flex gap-1 border-b">
+                    <button
+                      onClick={() => setActiveTab(p => ({ ...p, [variety.id]: 'info' }))}
+                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${(activeTab[variety.id] || 'info') === 'info' ? 'border-green-600 text-green-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                    >Parametry</button>
+                    <button
+                      onClick={() => { setActiveTab(p => ({ ...p, [variety.id]: 'curves' })); fetchCurvesForVariety(variety.id) }}
+                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${activeTab[variety.id] === 'curves' ? 'border-purple-600 text-purple-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                    ><BarChart3 className="w-3.5 h-3.5" />Krzywe historyczne</button>
+                  </div>
+
+                  {(activeTab[variety.id] || 'info') === 'info' && (
+                    <>
                   {variety.description && (
                     <p className="text-gray-600">{variety.description}</p>
                   )}
-                  
+
                   <div className="grid grid-cols-4 gap-3 text-sm">
                     <div className="bg-gray-50 p-3 rounded">
                       <div className="text-gray-500 text-xs">Wydajność zbierania</div>
@@ -634,6 +697,63 @@ export default function VarietiesPage() {
                       </div>
                     </div>
                   </div>
+                    </>
+                  )}
+
+                  {activeTab[variety.id] === 'curves' && (
+                    <div className="space-y-3">
+                      {loadingCurves[variety.id] ? (
+                        <div className="text-center text-gray-400 py-8">Ładowanie krzywych...</div>
+                      ) : (varietyCurves[variety.id] || []).length === 0 ? (
+                        <div className="text-center text-gray-400 py-8">
+                          <BarChart3 className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                          <p>Brak krzywych historycznych dla tej odmiany</p>
+                          <p className="text-xs mt-1">Zaimportuj dane z MaxCrop w zakładce Szablony</p>
+                        </div>
+                      ) : (
+                        (varietyCurves[variety.id] || []).map(curve => {
+                          const maxVal = Math.max(...(curve.curve || []), 1)
+                          return (
+                            <div key={curve.id} className="bg-white border rounded-lg p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-3">
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${curve.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                    {curve.season === 'summer' ? '☀️ Lato' : '🍂 Jesień'} {curve.year}
+                                  </span>
+                                  <span className="text-sm font-medium">{(curve.totalKg / 1000).toFixed(1)}t</span>
+                                  <span className="text-xs text-gray-400">T{curve.startWeek}{curve.startDate ? ` (${curve.startDate.split('-').reverse().join('.')})` : ''}</span>
+                                  {curve.section && <span className="text-xs text-indigo-600">{curve.section.name}</span>}
+                                </div>
+                                <Button
+                                  size="sm" variant="outline"
+                                  disabled={savingTemplate === curve.id}
+                                  onClick={() => saveAsTemplate(curve, variety)}
+                                  className="text-xs"
+                                >
+                                  <Database className="w-3.5 h-3.5 mr-1" />
+                                  {savingTemplate === curve.id ? 'Zapisuję...' : 'Zapisz jako szablon'}
+                                </Button>
+                              </div>
+                              {/* Sparkline */}
+                              <div className="flex items-end gap-0.5 h-10">
+                                {(curve.curve || []).map((val, i) => (
+                                  <div
+                                    key={i}
+                                    className={`flex-1 rounded-t min-w-[4px] ${curve.season === 'summer' ? 'bg-orange-400' : 'bg-red-400'}`}
+                                    style={{ height: `${(val / maxVal) * 40}px`, minHeight: val > 0 ? '2px' : '0' }}
+                                    title={`Tydzień ${i + 1}: ${val.toFixed(1)}%`}
+                                  />
+                                ))}
+                              </div>
+                              <div className="text-xs text-gray-400 mt-1">
+                                {curve.curve.length} tyg. | {curve.dailyCurve?.length || 0} dni{curve.sourceFile ? ` | ${curve.sourceFile}` : ''}
+                              </div>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -645,7 +765,7 @@ export default function VarietiesPage() {
         <Card>
           <CardContent className="py-8">
             <p className="text-center text-gray-500">
-              Brak odmian. Kliknij "Dodaj odmianę" żeby dodać pierwszą.
+              Brak odmian. Kliknij &quot;Dodaj odmianę&quot; żeby dodać pierwszą.
             </p>
           </CardContent>
         </Card>

@@ -37,8 +37,17 @@ export function calculateTempAdjustmentFactor(
 }
 
 // Find best matching template based on conditions
+export interface TemplateRecord {
+  varietyId?: string
+  winteredInTunnel?: boolean
+  productionCycle?: number
+  plantingDate?: string
+  outsideTemps?: TemperatureDay[]
+  [key: string]: unknown
+}
+
 export function findBestTemplate(
-  templates: any[],
+  templates: TemplateRecord[],
   criteria: {
     varietyId?: string
     plantingDate?: string        // target planting date
@@ -46,7 +55,7 @@ export function findBestTemplate(
     productionCycle?: number
     forecastTemps?: TemperatureDay[]  // 2026 weather forecast
   }
-): { template: any; matchScore: number; adjustmentPercent: number }[] {
+): { template: TemplateRecord; matchScore: number; adjustmentPercent: number }[] {
   return templates
     .map(t => {
       let score = 0

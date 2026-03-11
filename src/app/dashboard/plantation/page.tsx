@@ -54,6 +54,23 @@ export default function PlantationPage() {
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }
 
+  // Fetch temp counts for all sections
+  const fetchTempCounts = useCallback(async () => {
+    if (blocks.length === 0) return
+    const sectionIds = blocks.flatMap(b => b.sections.map(s => s.id))
+    const counts: Record<string, number> = {}
+    await Promise.all(sectionIds.map(async (id) => {
+      try {
+        const res = await fetch(`/api/plantation/section/${id}/temperatures?limit=1`)
+        const data = await res.json()
+        counts[id] = data.total || 0
+      } catch { counts[id] = 0 }
+    }))
+    setTempCounts(counts)
+  }, [blocks])
+
+  useEffect(() => { fetchTempCounts() }, [blocks, fetchTempCounts])
+
   // File upload handlers (PDF + CSV)
   const handleFileUpload = useCallback(async (files: FileList | File[]) => {
     if (!farm) return
@@ -89,9 +106,8 @@ export default function PlantationPage() {
     }
     setUploadResults(results)
     setUploadingPdfs(false)
-    // Refresh temp counts
     fetchTempCounts()
-  }, [farm])
+  }, [farm, fetchTempCounts])
 
   const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }, [])
   const onDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false) }, [])
@@ -99,23 +115,6 @@ export default function PlantationPage() {
     e.preventDefault(); setIsDragging(false)
     if (e.dataTransfer.files.length > 0) handleFileUpload(e.dataTransfer.files)
   }, [handleFileUpload])
-
-  // Fetch temp counts for all sections
-  const fetchTempCounts = useCallback(async () => {
-    if (blocks.length === 0) return
-    const sectionIds = blocks.flatMap(b => b.sections.map(s => s.id))
-    const counts: Record<string, number> = {}
-    await Promise.all(sectionIds.map(async (id) => {
-      try {
-        const res = await fetch(`/api/plantation/section/${id}/temperatures?limit=1`)
-        const data = await res.json()
-        counts[id] = data.total || 0
-      } catch { counts[id] = 0 }
-    }))
-    setTempCounts(counts)
-  }, [blocks])
-
-  useEffect(() => { fetchTempCounts() }, [blocks, fetchTempCounts])
 
   // Fetch temp readings for a specific section
   const fetchTempReadings = async (sectionId: string, page = 1) => {
@@ -165,7 +164,7 @@ export default function PlantationPage() {
   }
   const onVarChange = (vid: string) => {
     const v = varieties.find(x => x.id === vid)
-    setSectionForm({ ...sectionForm, varietyId: vid, yieldSummerPerShoot: v?.yieldSummerPerShoot || 0, yieldAutumnPerShoot: v?.yieldAutumnPerShoot || 0, gdhSummer: v?.gdhSummer || 20000, gdhAutumn: v?.gdhAutumn || 25000 })
+    setSectionForm({ ...sectionForm, varietyId: vid, gdhSummer: v?.gdhSummer || 20000, gdhAutumn: v?.gdhAutumn || 25000 })
   }
   const saveSection = async (bid: string) => {
     if (!sectionForm.name || !sectionForm.varietyId) return
@@ -436,7 +435,7 @@ ${r.debug.contentPreview || '(brak)'}`}
             </div>
           )
         })}
-        {blocks.length === 0 && <div className="bg-white rounded-xl border-2 border-dashed p-12 text-center"><Layers className="w-12 h-12 text-gray-300 mx-auto mb-4" /><p className="text-gray-500">Brak bloków. Kliknij "Nowy blok" aby rozpocząć.</p></div>}
+        {blocks.length === 0 && <div className="bg-white rounded-xl border-2 border-dashed p-12 text-center"><Layers className="w-12 h-12 text-gray-300 mx-auto mb-4" /><p className="text-gray-500">Brak bloków. Kliknij &ldquo;Nowy blok&rdquo; aby rozpocząć.</p></div>}
       </div>
     </div>
   )

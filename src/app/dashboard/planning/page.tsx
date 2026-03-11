@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Button } from "@/components/ui/button"
-import { Users, AlertTriangle, BarChart3, Target, Loader2, FileDown, Printer, Calendar, TrendingUp, Info } from 'lucide-react'
+import { Users, AlertTriangle, BarChart3, Target, Loader2, FileDown, Printer, Calendar, TrendingUp, Info, ChevronDown } from 'lucide-react'
 
 // ==================== TYPES ====================
 interface SectionGdh {
@@ -34,11 +33,21 @@ interface GdhApiResponse {
   } | null
 }
 
+interface TemplateAssignment {
+  id: string; templateId: string; targetYear: number; season: string; adjustmentPercent: number; isActive: boolean
+  template: { id: string; name: string; season: string; weeklyCurve: number[]; dailyCurve: number[]; startWeek?: number; totalKg: number }
+}
+interface AvailableTemplate {
+  id: string; name: string; season: string; varietyId?: string; productionYear: number
+  weeklyCurve: number[]; winteredInTunnel: boolean; plantSource?: string; productionCycle: number
+}
 interface PlantationSection {
   id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number
   potsOverride?: number | null
   yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; varietyId: string
+  winteredInTunnel?: boolean; plantMaterialType?: string
   harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]
+  templateAssignments?: TemplateAssignment[]
   variety?: { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]; pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number; autumnStartWeek?: number }
 }
 interface Block { id: string; name: string; sections: PlantationSection[] }
@@ -107,6 +116,8 @@ export default function PlanningPage() {
   const [staffingTiers, setStaffingTiers] = useState<StaffingTier[]>(DEFAULT_TIERS)
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
   const [dailyViewSection, setDailyViewSection] = useState<string>('all')
+  const [availableTemplates, setAvailableTemplates] = useState<AvailableTemplate[]>([])
+  const [curveDropdownOpen, setCurveDropdownOpen] = useState<string | null>(null)
   const tableRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -119,10 +130,31 @@ export default function PlanningPage() {
     Promise.all([
       fetch('/api/gdh').then(r => r.json()),
       fetch('/api/plantation').then(r => r.json()),
-    ]).then(([gdh, plantation]) => {
+      fetch('/api/templates').then(r => r.json()),
+    ]).then(([gdh, plantation, templatesData]) => {
       setGdhData(gdh)
       setBlocks(plantation.blocks || [])
+      setAvailableTemplates((templatesData.templates || []).map((t: Record<string, unknown>) => ({
+        id: t.id, name: t.name, season: t.season, varietyId: t.varietyId,
+        productionYear: t.productionYear, weeklyCurve: t.weeklyCurve,
+        winteredInTunnel: t.winteredInTunnel, plantSource: t.plantSource, productionCycle: t.productionCycle,
+      })))
     }).catch(console.error).finally(() => setLoading(false))
+  }, [])
+
+  const assignCurve = useCallback(async (sectionId: string, templateId: string, season: string) => {
+    try {
+      await fetch(`/api/plantation/section/${sectionId}/assignment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templateId, season, targetYear: new Date().getFullYear() }),
+      })
+      // Reload plantation data
+      const pRes = await fetch('/api/plantation')
+      const pData = await pRes.json()
+      setBlocks(pData.blocks || [])
+    } catch (e) { console.error('Error assigning curve:', e) }
+    setCurveDropdownOpen(null)
   }, [])
 
   const allPlantationSections = useMemo(() =>
@@ -199,6 +231,9 @@ export default function PlanningPage() {
       totalKg: number
       totalSummerKg: number
       totalAutumnKg: number
+      curveSource: 'assignment' | 'section' | 'variety' | 'flat'
+      summerAssignment: TemplateAssignment | null
+      autumnAssignment: TemplateAssignment | null
       weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }>
       eff: number
     }> = []
@@ -213,7 +248,7 @@ export default function PlanningPage() {
       const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter
       const shoots = pots * section.shootsPerPot
       const eff = v?.pickingEfficiency ?? 6 // kg/h — from DB, fallback only if not set
-      const varietyName = v?.name || ''
+      const _varietyName = v?.name || ''
 
       // Gross multiplier — all from DB (Variety fields)
       const secondCat = v?.secondCategoryPercent ?? 0
@@ -223,17 +258,24 @@ export default function PlanningPage() {
       // Yields from DB: section-level overrides variety-level
       // --- SUMMER ---
       const summerYield = section.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
+      // Priority: 1. SectionTemplateAssignment curve  2. Section curve  3. Variety curve  4. Flat
+      const summerAssignment = (section.templateAssignments || []).find(a => a.season === 'summer' && a.isActive)
       const sectionSummerCurve = (section.harvestCurveSummer as number[] | undefined)
       const varietySummerCurve = (v?.harvestCurveSummer as number[] | undefined)
-      const summerCurve = (sectionSummerCurve?.length ? sectionSummerCurve : null)
+      const assignmentSummerCurve = summerAssignment?.template?.weeklyCurve
+      const summerCurve = (assignmentSummerCurve?.length ? assignmentSummerCurve : null)
+        ?? (sectionSummerCurve?.length ? sectionSummerCurve : null)
         ?? (varietySummerCurve?.length ? varietySummerCurve : null)
         ?? FLAT_CURVE_10W
 
       // --- AUTUMN ---
       const autumnYield = section.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
+      const autumnAssignment = (section.templateAssignments || []).find(a => a.season === 'autumn' && a.isActive)
       const sectionAutumnCurve = (section.harvestCurveAutumn as number[] | undefined)
       const varietyAutumnCurve = (v?.harvestCurveAutumn as number[] | undefined)
-      const autumnCurve = (sectionAutumnCurve?.length ? sectionAutumnCurve : null)
+      const assignmentAutumnCurve = autumnAssignment?.template?.weeklyCurve
+      const autumnCurve = (assignmentAutumnCurve?.length ? assignmentAutumnCurve : null)
+        ?? (sectionAutumnCurve?.length ? sectionAutumnCurve : null)
         ?? (varietyAutumnCurve?.length ? varietyAutumnCurve : null)
         ?? FLAT_CURVE_10W
 
@@ -276,7 +318,13 @@ export default function PlanningPage() {
         })
       }
 
-      sectionDetails.push({ section, fruitStartDate: fruitDate, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg: weeklyKg.sort((a, b) => a.week - b.week), eff })
+      const hasSummerAssignment = !!summerAssignment
+      const hasAutumnAssignment = !!autumnAssignment
+      const curveSource = hasSummerAssignment || hasAutumnAssignment ? 'assignment' as const
+        : (sectionSummerCurve?.length || sectionAutumnCurve?.length) ? 'section' as const
+        : (varietySummerCurve?.length || varietyAutumnCurve?.length) ? 'variety' as const
+        : 'flat' as const
+      sectionDetails.push({ section, fruitStartDate: fruitDate, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg: weeklyKg.sort((a, b) => a.week - b.week), eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null })
     }
 
     const weeks = Object.entries(weekMap)
@@ -429,7 +477,7 @@ export default function PlanningPage() {
     })
 
     // Section breakdown table
-    const lastY = (doc as any).lastAutoTable?.finalY ?? 100
+    const lastY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 100
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(11)
     doc.text('Szczegóły per sekcja', 14, lastY + 10)
@@ -610,6 +658,121 @@ export default function PlanningPage() {
           <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto mb-2" />
           <p className="font-semibold text-amber-800">Brak dat owocowania</p>
           <p className="text-sm text-amber-600 mt-1">Żadna sekcja nie ma jeszcze prognozowanej daty owocowania z GDH. Sprawdź macierz plantacji — czy są odczyty temperatur i progi GDH?</p>
+        </div>
+      )}
+
+      {/* Curve assignment warnings */}
+      {weeklyPlan.sectionDetails.some(d => d.curveSource === 'flat') && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-amber-600" /><h3 className="font-semibold text-amber-800">Wybierz krzywą zbiorów</h3></div>
+          <p className="text-sm text-amber-600 mb-3">Poniższe sekcje używają płaskiego rozkładu (10% × 10 tyg.) — wyniki będą niedokładne. Przypisz krzywą z szablonu.</p>
+          <div className="flex flex-wrap gap-2">
+            {weeklyPlan.sectionDetails.filter(d => d.curveSource === 'flat').map(d => (
+              <span key={d.section.id} className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm">
+                {d.section.blockName}/{d.section.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Curve assignment per section */}
+      {weeklyPlan.sectionDetails.length > 0 && (
+        <div className="bg-white rounded-xl border p-6">
+          <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-purple-500" />Krzywe zbiorów per sekcja</h3>
+          <div className="space-y-2">
+            {weeklyPlan.sectionDetails
+              .sort((a, b) => (a.section.blockName + a.section.name).localeCompare(b.section.blockName + b.section.name))
+              .map(d => {
+                const matchingTemplates = availableTemplates.filter(t =>
+                  t.varietyId === d.section.varietyId ||
+                  !t.varietyId
+                ).sort((a, b) => {
+                  let scoreA = 0, scoreB = 0
+                  if (a.varietyId === d.section.varietyId) scoreA += 10
+                  if (b.varietyId === d.section.varietyId) scoreB += 10
+                  if (a.winteredInTunnel === d.section.winteredInTunnel) scoreA += 5
+                  if (b.winteredInTunnel === d.section.winteredInTunnel) scoreB += 5
+                  return scoreB - scoreA
+                })
+                const summerTemplates = matchingTemplates.filter(t => t.season === 'summer')
+                const autumnTemplates = matchingTemplates.filter(t => t.season === 'autumn')
+                const isOpen = curveDropdownOpen === d.section.id
+                return (
+                  <div key={d.section.id} className={`border rounded-lg p-3 ${d.curveSource === 'flat' ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium"><span className="text-gray-400">{d.section.blockName}/</span>{d.section.name}</span>
+                        <span className="text-xs text-gray-500">{d.section.variety?.name}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${
+                          d.curveSource === 'assignment' ? 'bg-green-100 text-green-700' :
+                          d.curveSource === 'section' ? 'bg-blue-100 text-blue-700' :
+                          d.curveSource === 'variety' ? 'bg-purple-100 text-purple-700' :
+                          'bg-amber-100 text-amber-700'
+                        }`}>
+                          {d.curveSource === 'assignment' ? 'Szablon' :
+                           d.curveSource === 'section' ? 'Sekcja' :
+                           d.curveSource === 'variety' ? 'Odmiana' : 'Brak krzywej'}
+                        </span>
+                        {d.summerAssignment && <span className="text-xs text-green-600">{d.summerAssignment.template.name}</span>}
+                        {d.autumnAssignment && <span className="text-xs text-amber-600">{d.autumnAssignment.template.name}</span>}
+                      </div>
+                      <button
+                        onClick={() => setCurveDropdownOpen(isOpen ? null : d.section.id)}
+                        className="flex items-center gap-1 text-xs px-3 py-1.5 border rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                        Wybierz krzywą
+                      </button>
+                    </div>
+                    {isOpen && (
+                      <div className="mt-3 border-t pt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* Summer templates */}
+                        <div>
+                          <p className="text-xs font-medium text-orange-700 mb-2">☀️ Lato ({summerTemplates.length} szablonów)</p>
+                          {summerTemplates.length === 0 ? (
+                            <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
+                          ) : (
+                            <div className="space-y-1 max-h-40 overflow-y-auto">
+                              {summerTemplates.map(t => (
+                                <button
+                                  key={t.id}
+                                  onClick={() => assignCurve(d.section.id, t.id, 'summer')}
+                                  className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-orange-50 border transition-colors ${d.summerAssignment?.templateId === t.id ? 'border-orange-400 bg-orange-50' : 'border-transparent'}`}
+                                >
+                                  <div className="font-medium">{t.name}</div>
+                                  <div className="text-gray-400">{t.productionYear} | {t.weeklyCurve?.length || 0} tyg.</div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {/* Autumn templates */}
+                        <div>
+                          <p className="text-xs font-medium text-red-700 mb-2">🍂 Jesień ({autumnTemplates.length} szablonów)</p>
+                          {autumnTemplates.length === 0 ? (
+                            <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
+                          ) : (
+                            <div className="space-y-1 max-h-40 overflow-y-auto">
+                              {autumnTemplates.map(t => (
+                                <button
+                                  key={t.id}
+                                  onClick={() => assignCurve(d.section.id, t.id, 'autumn')}
+                                  className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-red-50 border transition-colors ${d.autumnAssignment?.templateId === t.id ? 'border-red-400 bg-red-50' : 'border-transparent'}`}
+                                >
+                                  <div className="font-medium">{t.name}</div>
+                                  <div className="text-gray-400">{t.productionYear} | {t.weeklyCurve?.length || 0} tyg.</div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+          </div>
         </div>
       )}
 

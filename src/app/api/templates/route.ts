@@ -6,13 +6,13 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const where: any = {}
+    const where: Record<string, unknown> = {}
     if (searchParams.get('varietyId')) where.varietyId = searchParams.get('varietyId')
     if (searchParams.get('season')) where.season = searchParams.get('season')
     if (searchParams.get('cycle')) where.productionCycle = parseInt(searchParams.get('cycle')!)
     if (searchParams.get('tunnel')) where.winteredInTunnel = searchParams.get('tunnel') === 'true'
     const templates = await prisma.productionCurveTemplate.findMany({
-      where, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, _count: { select: { sectionAssignments: true } } },
+      where, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, sourceSection: { select: { id: true, name: true } }, _count: { select: { sectionAssignments: true } } },
       orderBy: [{ productionYear: 'desc' }, { name: 'asc' }],
     })
     return NextResponse.json({ templates })
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const data: any = {
+    const data: Record<string, unknown> = {
       name: body.name, description: body.description || null, tenantId: await requireTenantId(),
       productionYear: body.productionYear, productionCycle: body.productionCycle || 1,
       season: body.season, plantingDate: body.plantingDate || null,
@@ -40,8 +40,9 @@ export async function POST(request: NextRequest) {
       sourceFile: body.sourceFile || null, notes: body.notes || null,
     }
     if (body.varietyId) data.variety = { connect: { id: body.varietyId } }
+    if (body.sourceSectionId) data.sourceSection = { connect: { id: body.sourceSectionId } }
     const template = await prisma.productionCurveTemplate.create({
-      data, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } } },
+      data, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, sourceSection: { select: { id: true, name: true } } },
     })
     return NextResponse.json({ template })
   } catch (error) {

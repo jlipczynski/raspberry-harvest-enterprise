@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Layers, Leaf, Users, CloudSun, TrendingUp } from 'lucide-react'
+import { Layers, Leaf, Users, TrendingUp } from 'lucide-react'
 
 interface Stats {
   blocks: number
@@ -188,7 +188,7 @@ export default function DashboardPage() {
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="pt-6">
             <p className="text-amber-800">
-              <strong>Wskazówka:</strong> Twoja plantacja jest pusta. Przejdź do sekcji "Plantacja" żeby dodać bloki i sekcje.
+              <strong>Wskazówka:</strong> Twoja plantacja jest pusta. Przejdź do sekcji &quot;Plantacja&quot; żeby dodać bloki i sekcje.
             </p>
           </CardContent>
         </Card>

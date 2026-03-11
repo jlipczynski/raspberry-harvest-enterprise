@@ -1,4 +1,17 @@
+## ⛔ ABSOLUTNE ZAKAZY
+- NIGDY nie modyfikuj .github/workflows/
+- NIGDY nie twórz nowych branchy — zawsze commit na main
+- NIGDY nie naprawiaj CI/CD bez wyraźnego polecenia
+- Zawsze pracuj na main: git checkout main przed rozpoczęciem pracy
+- NIGDY nie pushuj na branch — zawsze git push origin main bezpośrednio
+- Jeśli masz błąd 403 przy push — poinformuj użytkownika, nie twórz branchy
+
 # Raspberry Harvest Enterprise
+
+## ⛔ ABSOLUTNE ZAKAZY
+- NIGDY nie modyfikuj .github/workflows/
+- NIGDY nie twórz nowych branchy — zawsze commit na main
+- NIGDY nie naprawiaj CI/CD bez wyraźnego polecenia
 
 System do planowania i zarządzania zbiorami malin — multi-tenant SaaS z prognozowaniem na podstawie GDH (Growing Degree Hours).
 

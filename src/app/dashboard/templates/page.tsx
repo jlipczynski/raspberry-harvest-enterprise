@@ -23,6 +23,7 @@ const RaspberryIcon = ({ size = 16, className = '' }: { size?: number; className
 
 // ===== TYPES =====
 interface Variety { id: string; name: string; baseTemp?: number; gdhWinteredFlower?: number; gdhWinteredFruit?: number; gdhLcFlower?: number; gdhLcFruit?: number; gdhAutumnFlower?: number; gdhAutumnFruit?: number; autumnShootsDay?: number }
+interface PlantationSection { id: string; name: string; blockName: string; varietyName: string; winteredInTunnel?: boolean; plantMaterialType?: string }
 interface Template {
   tenantName?: string
   id: string; name: string; description?: string; productionYear: number; productionCycle: number
@@ -31,6 +32,7 @@ interface Template {
   totalKg: number; outsideTemps?: TempPoint[]; insideTunnelTemps?: TempPoint[]; tempAdjustmentFactor?: number
   gdhData?: GdhPoint[]; gdhToFlowering?: number; gdhToFirstFruit?: number; tempSources: string[]
   sourceFile?: string; notes?: string; summerEndWeek?: number
+  sourceSectionId?: string; sourceSection?: { id: string; name: string }
   variety?: { id: string; name: string; baseTemp?: number; gdhWinteredFlower?: number; gdhWinteredFruit?: number; gdhLcFlower?: number; gdhLcFruit?: number; gdhAutumnFlower?: number; gdhAutumnFruit?: number; autumnShootsDay?: number }
   _count?: { sectionAssignments: number }
 }
@@ -575,7 +577,7 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
 }
 
 // ===== TEMPLATE DETAIL =====
-function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template: Template; varieties: Variety[]; onSave: () => void; onDelete: (id: string) => void }) {
+function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: { template: Template; varieties: Variety[]; sections: PlantationSection[]; onSave: () => void; onDelete: (id: string) => void }) {
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState<Record<string, unknown>>({})
   const [fetchingTemps, setFetchingTemps] = useState(false)
@@ -741,7 +743,8 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
     setEditing(true)
     setEditForm({ name: t.name, description: t.description, productionCycle: t.productionCycle,
       plantingDate: t.plantingDate, winteredInTunnel: t.winteredInTunnel, plantSource: t.plantSource,
-      notes: t.notes, gdhToFlowering: t.gdhToFlowering, gdhToFirstFruit: t.gdhToFirstFruit, varietyId: t.variety?.id || '' })
+      notes: t.notes, gdhToFlowering: t.gdhToFlowering, gdhToFirstFruit: t.gdhToFirstFruit, varietyId: t.variety?.id || '',
+      sourceSectionId: t.sourceSectionId || '' })
   }
   const saveEdit = async () => {
     await fetch('/api/templates/' + t.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editForm) })
@@ -755,6 +758,10 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
         <div><label className="text-xs font-medium text-gray-500">Odmiana</label>
           <select value={editForm.varietyId||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,varietyId:e.target.value}))} className="w-full border rounded-lg px-3 py-2 mt-1">
             <option value="">—</option>{varieties.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
+          </select></div>
+        <div><label className="text-xs font-medium text-gray-500">Sekcja źródłowa</label>
+          <select value={editForm.sourceSectionId||''} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,sourceSectionId:e.target.value||null}))} className="w-full border rounded-lg px-3 py-2 mt-1">
+            <option value="">— brak —</option>{sections.map(s=><option key={s.id} value={s.id}>{s.blockName}/{s.name} ({s.varietyName})</option>)}
           </select></div>
         <div><label className="text-xs font-medium text-gray-500">Cykl produkcji</label><select value={editForm.productionCycle||1} onChange={e=>setEditForm((p: Record<string, unknown>)=>({...p,productionCycle:parseInt(e.target.value)}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value={1}>1. rok</option><option value={2}>2. rok</option><option value={3}>3. rok</option></select></div>
         <div><label className="text-xs font-medium text-gray-500">Data sadzenia</label><input type="date" value={editForm.plantingDate||''} onChange={e=>{
@@ -829,6 +836,11 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
         {t.plantSource && (
           <div className="bg-white rounded-lg px-4 py-3 border">
             <div className="text-xs text-gray-400">Źródło</div><div className="font-bold">{t.plantSource === 'long_canes' ? '🌿 Long canes' : t.plantSource === 'tray_plants' ? '🌱 Tray plants' : t.plantSource}</div>
+          </div>
+        )}
+        {t.sourceSection && (
+          <div className="bg-indigo-50 rounded-lg px-4 py-3 border border-indigo-200">
+            <div className="text-xs text-indigo-600">Sekcja źródłowa</div><div className="font-bold text-indigo-800">{t.sourceSection.name}</div>
           </div>
         )}
       </div>
@@ -1140,6 +1152,7 @@ function TemplateDetail({ template: t, varieties, onSave, onDelete }: { template
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([])
   const [varieties, setVarieties] = useState<Variety[]>([])
+  const [plantationSections, setPlantationSections] = useState<PlantationSection[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState({ varietyId: '', season: '', cycle: '', tunnel: '', search: '' })
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -1153,9 +1166,18 @@ export default function TemplatesPage() {
   useEffect(() => { fetchAll() }, [])
   const fetchAll = async () => {
     try {
-      const [tRes, vRes] = await Promise.all([fetch('/api/templates'), fetch('/api/varieties')])
-      const tData = await tRes.json(); const vData = await vRes.json()
+      const [tRes, vRes, pRes] = await Promise.all([fetch('/api/templates'), fetch('/api/varieties'), fetch('/api/plantation')])
+      const tData = await tRes.json(); const vData = await vRes.json(); const pData = await pRes.json()
       setTemplates((tData.templates || []).map((t: Record<string, unknown>) => ({ ...t, tenantName: (t.tenant as Record<string, unknown> | null)?.name || null })) as Template[]); setVarieties(vData.varieties || [])
+      const sections: PlantationSection[] = (pData.blocks || []).flatMap((b: Record<string, unknown>) =>
+        ((b.sections as Record<string, unknown>[]) || []).map((s: Record<string, unknown>) => ({
+          id: s.id as string, name: (s.name || 'Bez nazwy') as string, blockName: b.name as string,
+          varietyName: ((s.variety as Record<string, unknown> | null)?.name || '?') as string,
+          winteredInTunnel: s.winteredInTunnel as boolean | undefined,
+          plantMaterialType: s.plantMaterialType as string | undefined,
+        }))
+      )
+      setPlantationSections(sections)
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }
 
@@ -1356,7 +1378,9 @@ export default function TemplatesPage() {
                       <span>{t.variety?.name||'—'}</span><span>•</span><span>{t.productionYear}</span>
                       <span>•</span><span>{t.productionCycle}. rok</span>
                       {t.winteredInTunnel && <><span>•</span><Snowflake className="w-3 h-3 text-blue-500 inline"/></>}
+                      {t.plantSource && <><span>•</span><span className="text-gray-500">{t.plantSource === 'long_canes' ? 'LC' : t.plantSource === 'tray_plants' ? 'Tray' : t.plantSource}</span></>}
                       {t.plantingDate && !t.winteredInTunnel && <><span>•</span><span className="text-green-600">🌱 {fmtDate(t.plantingDate)}</span></>}
+                      {t.sourceSection && <><span>•</span><span className="text-indigo-600">{t.sourceSection.name}</span></>}
                     </div>
                   </div>
                   <div className="flex items-end gap-px h-8 w-28">
@@ -1374,7 +1398,7 @@ export default function TemplatesPage() {
                   </div>
                   {isExp?<ChevronUp className="w-5 h-5 text-gray-400"/>:<ChevronDown className="w-5 h-5 text-gray-400"/>}
                 </div>
-                {isExp && <TemplateDetail template={t} varieties={varieties} onSave={fetchAll} onDelete={deleteTemplate}/>}
+                {isExp && <TemplateDetail template={t} varieties={varieties} sections={plantationSections} onSave={fetchAll} onDelete={deleteTemplate}/>}
               </div>
             )
           })}

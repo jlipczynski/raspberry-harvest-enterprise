@@ -22,7 +22,8 @@ interface Variety {
   gdhWinteredFlower?: number; gdhWinteredFruit?: number
   gdhLcFlower?: number; gdhLcFruit?: number
   gdhAutumnFlower?: number; gdhAutumnFruit?: number
-  harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]
+  gdhSummer?: number; gdhAutumn?: number
+  harvestCurveSummer?: number[] | string; harvestCurveAutumn?: number[] | string
   pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number; autumnStartWeek?: number
   isCustom?: boolean
 }
@@ -40,7 +41,13 @@ export default function VarietiesPage() {
   const [loadingCurves, setLoadingCurves] = useState<Record<string, boolean>>({})
   const [savingTemplate, setSavingTemplate] = useState<string | null>(null)
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string; origin: string; description: string
+    yieldSummerPerShoot: number; yieldAutumnPerShoot: number
+    baseTemp: number; gdhWinteredFlower: number; gdhWinteredFruit: number; gdhLcFlower: number; gdhLcFruit: number; gdhAutumnFlower: number; gdhAutumnFruit: number
+    harvestCurveSummer: string | number[]; harvestCurveAutumn: string | number[]
+    pickingEfficiency: number; wastePercent: number; secondCategoryPercent: number; autumnStartWeek: number
+  }>({
     name: '',
     origin: '',
     description: '',
@@ -99,8 +106,8 @@ export default function VarietiesPage() {
       yieldSummerPerShoot: variety.yieldSummerPerShoot || 1.5,
       yieldAutumnPerShoot: variety.yieldAutumnPerShoot || 0.5,
       baseTemp: variety.baseTemp || 6.0, gdhWinteredFlower: variety.gdhWinteredFlower || 0, gdhWinteredFruit: variety.gdhWinteredFruit || 0, gdhLcFlower: variety.gdhLcFlower || 0, gdhLcFruit: variety.gdhLcFruit || 0, gdhAutumnFlower: variety.gdhAutumnFlower || 0, gdhAutumnFruit: variety.gdhAutumnFruit || 0,
-      harvestCurveSummer: (variety.harvestCurveSummer || []).join(', '),
-      harvestCurveAutumn: (variety.harvestCurveAutumn || []).join(', '),
+      harvestCurveSummer: Array.isArray(variety.harvestCurveSummer) ? variety.harvestCurveSummer.join(', ') : String(variety.harvestCurveSummer || ''),
+      harvestCurveAutumn: Array.isArray(variety.harvestCurveAutumn) ? variety.harvestCurveAutumn.join(', ') : String(variety.harvestCurveAutumn || ''),
       pickingEfficiency: variety.pickingEfficiency ?? 8,
       wastePercent: variety.wastePercent ?? 0,
       secondCategoryPercent: variety.secondCategoryPercent ?? 0,
@@ -109,8 +116,9 @@ export default function VarietiesPage() {
     setShowForm(true)
   }
 
-  const parseCurve = (str: string): number[] => {
-    return str.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
+  const parseCurve = (input: string | number[]): number[] => {
+    if (Array.isArray(input)) return input
+    return input.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
   }
 
   const saveVariety = async () => {
@@ -667,7 +675,7 @@ export default function VarietiesPage() {
                     <div>
                       <h4 className="text-sm font-medium text-gray-700 mb-2">Krzywa zbioru LATO</h4>
                       <div className="flex items-end gap-1 h-20">
-                        {(variety.harvestCurveSummer || []).map((val, i) => (
+                        {(Array.isArray(variety.harvestCurveSummer) ? variety.harvestCurveSummer : []).map((val: number, i: number) => (
                           <div
                             key={i}
                             className="bg-orange-400 rounded-t flex-1 min-w-[8px]"
@@ -677,13 +685,13 @@ export default function VarietiesPage() {
                         ))}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {(variety.harvestCurveSummer || []).length} tygodni
+                        {(Array.isArray(variety.harvestCurveSummer) ? variety.harvestCurveSummer : []).length} tygodni
                       </div>
                     </div>
                     <div>
                       <h4 className="text-sm font-medium text-gray-700 mb-2">Krzywa zbioru JESIEŃ</h4>
                       <div className="flex items-end gap-1 h-20">
-                        {(variety.harvestCurveAutumn || []).map((val, i) => (
+                        {(Array.isArray(variety.harvestCurveAutumn) ? variety.harvestCurveAutumn : []).map((val: number, i: number) => (
                           <div
                             key={i}
                             className="bg-amber-400 rounded-t flex-1 min-w-[8px]"
@@ -693,7 +701,7 @@ export default function VarietiesPage() {
                         ))}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {(variety.harvestCurveAutumn || []).length} tygodni
+                        {(Array.isArray(variety.harvestCurveAutumn) ? variety.harvestCurveAutumn : []).length} tygodni
                       </div>
                     </div>
                   </div>

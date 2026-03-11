@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Upload, FileSpreadsheet, Save, Sun, Leaf, Trash2, BarChart3, Pencil, X, TrendingUp, Anchor, AlertCircle } from 'lucide-react'
+import { Upload, FileSpreadsheet, Save, Sun, Leaf, Trash2, BarChart3, Pencil, X, TrendingUp, Anchor, AlertCircle, Plus } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // ==================== TYPES ====================
@@ -14,6 +14,16 @@ interface HarvestCurveRecord {
   id: string; year: number; season: string; curve: number[]; totalKg: number
   startWeek: number; sectionId?: string; varietyId?: string; sourceFile?: string
   importedAt: string; section?: { id: string; name: string }; variety?: { id: string; name: string }
+  dailyCurve?: number[]; startDate?: string
+}
+
+interface CreateTemplateForm {
+  name: string
+  varietyId: string
+  plantingDate: string
+  plantSource: string
+  productionYear: number
+  winteredInTunnel: boolean
 }
 
 interface RawRow { date: string; area: string; weightReal: number }
@@ -83,11 +93,107 @@ const YEAR_COLORS: Record<number, string> = {
 const getYearColor = (y: number) => YEAR_COLORS[y] || '#8b5cf6'
 
 // ==================== COMPONENT ====================
-export default function HarvestCurvePage() {
+export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCreated: () => void }) {
   const [sections, setSections] = useState<Section[]>([])
   const [varieties, setVarieties] = useState<Variety[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('import')
+
+  // Template creation from selected curves
+  const [selectedCurveIds, setSelectedCurveIds] = useState<string[]>([])
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [createForm, setCreateForm] = useState<CreateTemplateForm>({
+    name: '', varietyId: '', plantingDate: '', plantSource: '',
+    productionYear: new Date().getFullYear(), winteredInTunnel: false,
+  })
+  const [creatingTemplate, setCreatingTemplate] = useState(false)
+
+  const toggleCurveSelection = (id: string) => {
+    setSelectedCurveIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const handleCreateTemplate = async () => {
+    if (selectedCurveIds.length < 2) return
+    const selected = savedCurves.filter(c => selectedCurveIds.includes(c.id))
+    if (selected.length === 0) return
+
+    setCreatingTemplate(true)
+    try {
+      // Merge daily curves from selected sections
+      const allDailyMap: Record<string, number> = {}
+      for (const curve of selected) {
+        if (curve.dailyCurve && curve.startDate) {
+          curve.dailyCurve.forEach((kg, i) => {
+            const d = new Date(curve.startDate!)
+            d.setDate(d.getDate() + i)
+            const ds = d.toISOString().split('T')[0]
+            allDailyMap[ds] = (allDailyMap[ds] || 0) + kg
+          })
+        } else {
+          // Fallback: use weekly curve percentages to build daily estimates
+          const startDate = new Date(selected[0].startDate || `${curve.year}-01-01`)
+          curve.curve.forEach((pct, i) => {
+            const weekStart = new Date(startDate)
+            weekStart.setDate(weekStart.getDate() + i * 7)
+            for (let d = 0; d < 7; d++) {
+              const day = new Date(weekStart)
+              day.setDate(day.getDate() + d)
+              const ds = day.toISOString().split('T')[0]
+              allDailyMap[ds] = (allDailyMap[ds] || 0) + (pct / 100 * curve.totalKg / 7)
+            }
+          })
+        }
+      }
+      const sortedDates = Object.keys(allDailyMap).sort()
+      const dailyCurve = sortedDates.map(d => Math.round(allDailyMap[d] * 10) / 10)
+      const totalKg = dailyCurve.reduce((s, v) => s + v, 0)
+
+      // Build weekly curve
+      const weekMap: Record<number, number> = {}
+      sortedDates.forEach((date, i) => {
+        const wk = getWeekNumber(new Date(date))
+        weekMap[wk] = (weekMap[wk] || 0) + dailyCurve[i]
+      })
+      const weekEntries = Object.entries(weekMap).sort(([a], [b]) => Number(a) - Number(b))
+      const weeklyCurve = weekEntries.map(([, kg]) => totalKg > 0 ? Math.round((kg / totalKg) * 1000) / 10 : 0)
+
+      const body = {
+        name: createForm.name,
+        productionYear: createForm.productionYear,
+        productionCycle: 1,
+        season: selected[0].season,
+        plantingDate: createForm.plantingDate || null,
+        winteredInTunnel: createForm.winteredInTunnel,
+        plantSource: createForm.plantSource || null,
+        varietyId: createForm.varietyId || null,
+        dailyCurve,
+        weeklyCurve,
+        startDate: sortedDates[0] || null,
+        endDate: sortedDates[sortedDates.length - 1] || null,
+        startWeek: weekEntries.length > 0 ? Number(weekEntries[0][0]) : null,
+        totalKg,
+        tempSources: [],
+        sourceFile: `Utworzono z ${selected.length} krzywych: ${selected.map(c => c.section?.name || c.id).join(', ')}`,
+      }
+
+      const res = await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error('Błąd zapisu szablonu')
+
+      setSelectedCurveIds([])
+      setShowCreateForm(false)
+      setCreateForm({ name: '', varietyId: '', plantingDate: '', plantSource: '', productionYear: new Date().getFullYear(), winteredInTunnel: false })
+      onTemplateCreated()
+    } catch (e) {
+      console.error(e)
+      alert('Błąd tworzenia szablonu: ' + e)
+    } finally {
+      setCreatingTemplate(false)
+    }
+  }
 
   // Import
   const [fileName, setFileName] = useState('')
@@ -847,9 +953,10 @@ export default function HarvestCurvePage() {
                   <CardContent className="pt-4 space-y-3">
                     {renderChart(summer)}
                     <table className="w-full text-sm">
-                      <thead><tr className="border-b bg-gray-50"><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
+                      <thead><tr className="border-b bg-gray-50"><th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
                       <tbody>{summer.map(c => (
-                        <tr key={c.id} className="border-b hover:bg-gray-50">
+                        <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''}`}>
+                          <td className="py-2 px-3"><input type="checkbox" checked={selectedCurveIds.includes(c.id)} onChange={() => toggleCurveSelection(c.id)} className="w-4 h-4 accent-green-600" /></td>
                           <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span></div></td>
                           <td className="py-2 px-3 text-gray-600">{c.section?.name || '—'}</td>
                           <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
@@ -870,9 +977,10 @@ export default function HarvestCurvePage() {
                   <CardContent className="pt-4 space-y-3">
                     {renderChart(autumn)}
                     <table className="w-full text-sm">
-                      <thead><tr className="border-b bg-gray-50"><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
+                      <thead><tr className="border-b bg-gray-50"><th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
                       <tbody>{autumn.map(c => (
-                        <tr key={c.id} className="border-b hover:bg-gray-50">
+                        <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''}`}>
+                          <td className="py-2 px-3"><input type="checkbox" checked={selectedCurveIds.includes(c.id)} onChange={() => toggleCurveSelection(c.id)} className="w-4 h-4 accent-green-600" /></td>
                           <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span></div></td>
                           <td className="py-2 px-3 text-gray-600">{c.section?.name || '—'}</td>
                           <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
@@ -886,6 +994,83 @@ export default function HarvestCurvePage() {
               )}
             </div>
           ))}
+
+          {/* Create template from selected */}
+          {selectedCurveIds.length >= 2 && !showCreateForm && (
+            <div className="bg-green-50 border border-green-300 rounded-xl p-4 flex items-center justify-between">
+              <span className="text-green-800 font-medium">Zaznaczono {selectedCurveIds.length} krzywych</span>
+              <div className="flex gap-2">
+                <Button onClick={() => setShowCreateForm(true)} className="bg-green-600 hover:bg-green-700">
+                  <Plus className="w-4 h-4 mr-2" />Utwórz szablon z zaznaczonych
+                </Button>
+                <Button variant="outline" onClick={() => setSelectedCurveIds([])}>Odznacz wszystkie</Button>
+              </div>
+            </div>
+          )}
+
+          {showCreateForm && (
+            <Card className="border-green-300 bg-green-50">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2"><Plus className="w-5 h-5 text-green-600" />Utwórz szablon z {selectedCurveIds.length} zaznaczonych krzywych</span>
+                  <Button variant="ghost" size="icon" onClick={() => setShowCreateForm(false)}><X className="w-4 h-4" /></Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-xs font-medium">Nazwa szablonu</Label>
+                    <input value={createForm.name} onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))}
+                      placeholder="np. Diamond Jubilee - tunele A+B"
+                      className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium">Odmiana</Label>
+                    <select value={createForm.varietyId} onChange={e => setCreateForm(p => ({ ...p, varietyId: e.target.value }))}
+                      className="w-full border rounded-lg px-3 py-2 mt-1 text-sm">
+                      <option value="">— wybierz —</option>
+                      {varieties.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium">Rok produkcji</Label>
+                    <select value={createForm.productionYear} onChange={e => setCreateForm(p => ({ ...p, productionYear: parseInt(e.target.value) }))}
+                      className="w-full border rounded-lg px-3 py-2 mt-1 text-sm">
+                      {[2022, 2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium">Data sadzenia</Label>
+                    <input type="date" value={createForm.plantingDate} onChange={e => setCreateForm(p => ({ ...p, plantingDate: e.target.value }))}
+                      className="w-full border rounded-lg px-3 py-2 mt-1 text-sm" disabled={createForm.winteredInTunnel} />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium">Typ materiału</Label>
+                    <select value={createForm.plantSource} onChange={e => setCreateForm(p => ({ ...p, plantSource: e.target.value }))}
+                      className="w-full border rounded-lg px-3 py-2 mt-1 text-sm">
+                      <option value="">— wybierz —</option>
+                      <option value="long_canes">Long cane</option>
+                      <option value="tray_plants">Zimowane</option>
+                      <option value="nursery">Szkółka</option>
+                      <option value="plug">Plug</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2 mt-6">
+                    <input type="checkbox" checked={createForm.winteredInTunnel}
+                      onChange={e => setCreateForm(p => ({ ...p, winteredInTunnel: e.target.checked, ...(e.target.checked ? { plantingDate: '' } : {}) }))}
+                      className="w-4 h-4" />
+                    <Label className="text-sm">Zimowane w tunelu</Label>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={handleCreateTemplate} disabled={!createForm.name || creatingTemplate} className="bg-green-600 hover:bg-green-700">
+                    <Save className="w-4 h-4 mr-2" />{creatingTemplate ? 'Tworzę...' : 'Zapisz szablon'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowCreateForm(false)}>Anuluj</Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {savedCurves.length === 0 && (
             <div className="bg-gray-50 rounded-xl p-12 text-center">

@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
         harvestCurveSummer: variety.harvestCurveSummer || [],
         harvestCurveAutumn: variety.harvestCurveAutumn || [],
         pickingEfficiency: variety.pickingEfficiency ? parseFloat(variety.pickingEfficiency) : null,
-        firstCategoryPercent: variety.firstCategoryPercent ? parseFloat(variety.firstCategoryPercent) : null,
+        wastePercent: variety.wastePercent ? parseFloat(variety.wastePercent) : null,
         secondCategoryPercent: variety.secondCategoryPercent ? parseFloat(variety.secondCategoryPercent) : null,
       }
     })

@@ -140,8 +140,8 @@ export default function PlantationPage() {
     const v = varieties.find(x => x.id === s.varietyId)
     const pots = (s.potsOverride != null && s.potsOverride > 0) ? s.potsOverride : s.metersLength * s.potsPerMeter
     const shoots = pots * s.shootsPerPot
-    const ys = s.yieldSummerPerShoot || v?.yieldSummerPerShoot || 0
-    const ya = s.yieldAutumnPerShoot || v?.yieldAutumnPerShoot || 0
+    const ys = s.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
+    const ya = s.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
     return { pots, shoots, fs: shoots * ys, fa: shoots * ya }
   }
 
@@ -159,7 +159,7 @@ export default function PlantationPage() {
   const startEditSection = (bid: string, s: Section) => {
     setEditingSection(s)
     const v = varieties.find(x => x.id === s.varietyId)
-    setSectionForm({ name: s.name || '', metersLength: s.metersLength, potsPerMeter: s.potsPerMeter, shootsPerPot: s.shootsPerPot, potsOverride: s.potsOverride ?? '', plantingYear: s.plantingYear || new Date().getFullYear(), productionYear: s.productionYear || 1, plantMaterialType: s.plantMaterialType || 'SMALL_POT', varietyId: s.varietyId, yieldSummerPerShoot: s.yieldSummerPerShoot || v?.yieldSummerPerShoot || 0, yieldAutumnPerShoot: s.yieldAutumnPerShoot || v?.yieldAutumnPerShoot || 0, gdhSummer: s.gdhSummer || v?.gdhSummer || 20000, gdhAutumn: s.gdhAutumn || v?.gdhAutumn || 25000, winteredInTunnel: s.winteredInTunnel || false, plantingDate: s.plantingDate ? s.plantingDate.slice(0, 10) : '', winterShootsDate: s.winterShootsDate ? s.winterShootsDate.slice(0, 10) : '' })
+    setSectionForm({ name: s.name || '', metersLength: s.metersLength, potsPerMeter: s.potsPerMeter, shootsPerPot: s.shootsPerPot, potsOverride: s.potsOverride ?? '', plantingYear: s.plantingYear || new Date().getFullYear(), productionYear: s.productionYear || 1, plantMaterialType: s.plantMaterialType || 'SMALL_POT', varietyId: s.varietyId, yieldSummerPerShoot: s.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0, yieldAutumnPerShoot: s.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0, gdhSummer: s.gdhSummer || v?.gdhSummer || 20000, gdhAutumn: s.gdhAutumn || v?.gdhAutumn || 25000, winteredInTunnel: s.winteredInTunnel || false, plantingDate: s.plantingDate ? s.plantingDate.slice(0, 10) : '', winterShootsDate: s.winterShootsDate ? s.winterShootsDate.slice(0, 10) : '' })
     setShowSectionForm(bid)
   }
   const onVarChange = (vid: string) => {

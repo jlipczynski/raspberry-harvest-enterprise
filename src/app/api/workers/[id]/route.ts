@@ -35,7 +35,7 @@ export async function PATCH(
     const dateFields = ['availableFrom', 'availableTo', 'suggestedArrival', 'confirmedArrival']
     for (const field of dateFields) {
       if (data[field] !== undefined) {
-        data[field] = data[field] ? new Date(data[field]) : null
+        data[field] = data[field] ? new Date(data[field] as string | number) : null
       }
     }
 

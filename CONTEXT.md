@@ -71,3 +71,22 @@
 - Repo: https://github.com/jlipczynski/raspberry-harvest-enterprise
 - Produkcja: https://raspberry-harvest-enterprise.vercel.app (sprawdź aktualny URL)
 - Neon DB: https://console.neon.tech
+
+## Backlog — sesja 11.03.2026
+
+### Do naprawy
+1. Błąd zapisu szablonu — "Błąd zapisu szablonu" przy tworzeniu z zaznaczonych krzywych (API /api/templates)
+2. Duplikaty w Danych historycznych — te same sekcje wielokrotnie (Blok A10-19 × 3)
+3. Dziwny kształt wykresu w Danych historycznych — zbadać dane źródłowe
+4. Brak sensownej edycji krzywej historycznej — przemyśleć UX
+
+### Do zrobienia
+5. Import 2024 z MaxCrop — więcej danych historycznych
+6. Opisać flow: szablon → planowanie → wybór krzywej → prognoza
+7. Zainstalować zaktualizowany skill (plik .skill wygenerowany dziś)
+
+### Dziś zrobione ✅
+- Vercel deployuje (fix: prisma db push --accept-data-loss)
+- Bug yield naprawiony (?? zamiast ||)
+- Strona "Krzywe zbiorów" z dwoma zakładkami
+- Token GitHub skonfigurowany globalnie

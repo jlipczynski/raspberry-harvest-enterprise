@@ -102,9 +102,9 @@ describe("calculateTempAdjustmentFactor", () => {
 
 describe("findBestTemplate", () => {
   const templates = [
-    { id: "t1", varietyId: "v1", winteredInTunnel: true, productionCycle: 1, plantingDate: "2025-03-15", outsideTemps: null },
-    { id: "t2", varietyId: "v2", winteredInTunnel: false, productionCycle: 2, plantingDate: "2025-04-01", outsideTemps: null },
-    { id: "t3", varietyId: "v1", winteredInTunnel: false, productionCycle: 1, plantingDate: "2025-05-01", outsideTemps: null },
+    { id: "t1", varietyId: "v1", winteredInTunnel: true, productionCycle: 1, plantingDate: "2025-03-15", outsideTemps: undefined },
+    { id: "t2", varietyId: "v2", winteredInTunnel: false, productionCycle: 2, plantingDate: "2025-04-01", outsideTemps: undefined },
+    { id: "t3", varietyId: "v1", winteredInTunnel: false, productionCycle: 1, plantingDate: "2025-05-01", outsideTemps: undefined },
   ];
 
   it("ranks by variety match (highest weight)", () => {

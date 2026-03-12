@@ -24,29 +24,45 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const tenantId = await requireTenantId()
     const body = await request.json()
+
+    if (!body.name || typeof body.name !== 'string') {
+      return NextResponse.json({ error: 'Nazwa szablonu jest wymagana' }, { status: 400 })
+    }
+    if (!body.productionYear || typeof body.productionYear !== 'number') {
+      return NextResponse.json({ error: 'Rok produkcji jest wymagany' }, { status: 400 })
+    }
+    if (!body.season) {
+      return NextResponse.json({ error: 'Sezon jest wymagany' }, { status: 400 })
+    }
+
     const data: Record<string, unknown> = {
-      name: body.name, description: body.description || null, tenantId: await requireTenantId(),
+      name: body.name, description: body.description || null, tenantId,
       productionYear: body.productionYear, productionCycle: body.productionCycle || 1,
       season: body.season, plantingDate: body.plantingDate || null,
       winteredInTunnel: body.winteredInTunnel || false, plantSource: body.plantSource || null,
       dailyCurve: body.dailyCurve || [], weeklyCurve: body.weeklyCurve || [],
       startDate: body.startDate || null, endDate: body.endDate || null,
-      startWeek: body.startWeek || null, totalKg: body.totalKg || 0,
+      startWeek: body.startWeek ?? null, totalKg: body.totalKg ?? 0,
       outsideTemps: body.outsideTemps || null, insideTunnelTemps: body.insideTunnelTemps || null,
       tempAdjustmentFactor: body.tempAdjustmentFactor || null,
       gdhData: body.gdhData || null, gdhToFlowering: body.gdhToFlowering || null,
       gdhToFirstFruit: body.gdhToFirstFruit || null, tempSources: body.tempSources || [],
       sourceFile: body.sourceFile || null, notes: body.notes || null,
     }
-    if (body.varietyId) data.variety = { connect: { id: body.varietyId } }
-    if (body.sourceSectionId) data.sourceSection = { connect: { id: body.sourceSectionId } }
+    if (body.varietyId) data.varietyId = body.varietyId
+    if (body.sourceSectionId) data.sourceSectionId = body.sourceSectionId
     const template = await prisma.productionCurveTemplate.create({
       data: data as Parameters<typeof prisma.productionCurveTemplate.create>[0]['data'], include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, sourceSection: { select: { id: true, name: true } } },
     })
     return NextResponse.json({ template })
   } catch (error) {
     console.error('Error creating template:', error)
-    return NextResponse.json({ error: 'Failed to create' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Failed to create'
+    if (message.includes('Unauthorized')) {
+      return NextResponse.json({ error: message }, { status: 401 })
+    }
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

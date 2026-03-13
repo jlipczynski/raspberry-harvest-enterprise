@@ -14,6 +14,8 @@ interface HarvestCurveRecord {
   id: string; year: number; season: string; curve: number[]; totalKg: number
   startWeek: number; sectionId?: string; varietyId?: string; sourceFile?: string
   importedAt: string; section?: { id: string; name: string }; variety?: { id: string; name: string }
+  winteredInTunnel?: boolean | null; plantingDate?: string | null; plantSource?: string | null
+  plantingYear?: number | null; autumnShootDate?: string | null
 }
 
 interface RawRow { date: string; area: string; weightReal: number }
@@ -103,7 +105,7 @@ export default function HarvestCurvePage() {
 
   // Edit
   const [editingCurve, setEditingCurve] = useState<HarvestCurveRecord | null>(null)
-  const [editForm, setEditForm] = useState({ varietyId: '', sectionId: '', year: 2025, season: 'summer' })
+  const [editForm, setEditForm] = useState({ varietyId: '', sectionId: '', year: 2025, season: 'summer', winteredInTunnel: false, plantingDate: '', plantSource: '', plantingYear: '' as string | number, autumnShootDate: '' })
 
   // Forecast (Prognoza)
   const [forecastSection, setForecastSection] = useState('')
@@ -367,7 +369,7 @@ export default function HarvestCurvePage() {
 
   const startEdit = (c: HarvestCurveRecord) => {
     setEditingCurve(c)
-    setEditForm({ varietyId: c.varietyId || '', sectionId: c.sectionId || '', year: c.year, season: c.season })
+    setEditForm({ varietyId: c.varietyId || '', sectionId: c.sectionId || '', year: c.year, season: c.season, winteredInTunnel: c.winteredInTunnel || false, plantingDate: c.plantingDate ? c.plantingDate.slice(0, 10) : '', plantSource: c.plantSource || '', plantingYear: c.plantingYear ?? '', autumnShootDate: c.autumnShootDate ? c.autumnShootDate.slice(0, 10) : '' })
   }
 
   const saveEdit = async () => {
@@ -825,6 +827,13 @@ export default function HarvestCurvePage() {
                   <div><Label className="text-xs">Sezon</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.season} onChange={e => setEditForm({ ...editForm, season: e.target.value })}><option value="summer">☀️ Lato</option><option value="autumn">🍂 Jesień</option></select></div>
                   <div><Label className="text-xs">Odmiana</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.varietyId} onChange={e => setEditForm({ ...editForm, varietyId: e.target.value })}><option value="">—</option>{varieties.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
                   <div><Label className="text-xs">Sekcja</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.sectionId} onChange={e => setEditForm({ ...editForm, sectionId: e.target.value })}><option value="">—</option>{sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3 items-end">
+                  <label className="flex items-center gap-2 cursor-pointer h-9"><input type="checkbox" checked={editForm.winteredInTunnel} onChange={e => setEditForm({...editForm, winteredInTunnel: e.target.checked})} className="w-4 h-4 rounded" /><span className="text-xs">Zimowana w tunelu</span></label>
+                  {!editForm.winteredInTunnel && <div><Label className="text-xs">Data wysadzenia</Label><input type="date" className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.plantingDate} onChange={e => setEditForm({...editForm, plantingDate: e.target.value})} /></div>}
+                  <div><Label className="text-xs">Źródło sadzonek</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.plantSource} onChange={e => setEditForm({...editForm, plantSource: e.target.value})}><option value="">Nie określono</option><option value="OWN">Własne plugi</option><option value="NURSERY">Zewnętrzna szkółka</option></select></div>
+                  <div><Label className="text-xs">Rok nasadzenia</Label><input type="number" className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.plantingYear} onChange={e => setEditForm({...editForm, plantingYear: e.target.value ? parseInt(e.target.value) : ''})} placeholder="np. 2023" /></div>
+                  <div><Label className="text-xs">Pędy jesienne</Label><input type="date" className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.autumnShootDate} onChange={e => setEditForm({...editForm, autumnShootDate: e.target.value})} /></div>
                 </div>
                 <div className="flex gap-2 mt-3">
                   <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={saveEdit}>Zapisz</Button>

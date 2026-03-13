@@ -18,6 +18,11 @@ export async function PATCH(
         ...(body.startWeek !== undefined && { startWeek: body.startWeek }),
         ...(body.sectionId !== undefined && { sectionId: body.sectionId || null }),
         ...(body.varietyId !== undefined && { varietyId: body.varietyId || null }),
+        ...(body.winteredInTunnel !== undefined && { winteredInTunnel: body.winteredInTunnel }),
+        ...(body.plantingDate !== undefined && { plantingDate: body.plantingDate ? new Date(body.plantingDate) : null }),
+        ...(body.plantSource !== undefined && { plantSource: body.plantSource || null }),
+        ...(body.plantingYear !== undefined && { plantingYear: body.plantingYear }),
+        ...(body.autumnShootDate !== undefined && { autumnShootDate: body.autumnShootDate ? new Date(body.autumnShootDate) : null }),
       },
       include: {
         section: { select: { id: true, name: true } },

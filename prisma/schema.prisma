@@ -204,6 +204,13 @@ model HarvestCurve {
   variety       Variety? @relation(fields: [varietyId], references: [id], onDelete: SetNull)
   
   sourceFile    String?                      // nazwa pliku MaxCrop
+
+  winteredInTunnel  Boolean?
+  plantingDate      DateTime?
+  plantSource       PlantSource?
+  plantingYear      Int?
+  autumnShootDate   DateTime?
+
   importedAt    DateTime @default(now())
   
   templateAssignments SectionTemplateAssignment[]

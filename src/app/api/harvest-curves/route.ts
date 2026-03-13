@@ -44,6 +44,11 @@ export async function POST(request: NextRequest) {
             sourceFile: c.sourceFile || null,
             dailyCurve: c.dailyCurve || [],
             startDate: c.startDate || null,
+            winteredInTunnel: c.winteredInTunnel ?? null,
+            plantingDate: c.plantingDate ? new Date(c.plantingDate as string) : null,
+            plantSource: c.plantSource || null,
+            plantingYear: c.plantingYear ?? null,
+            autumnShootDate: c.autumnShootDate ? new Date(c.autumnShootDate as string) : null,
           }
           if (c.sectionId) data.section = { connect: { id: c.sectionId } }
           if (c.varietyId) data.variety = { connect: { id: c.varietyId } }
@@ -61,6 +66,11 @@ export async function POST(request: NextRequest) {
       sourceFile: body.sourceFile || null,
       dailyCurve: body.dailyCurve || [],
       startDate: body.startDate || null,
+      winteredInTunnel: body.winteredInTunnel ?? null,
+      plantingDate: body.plantingDate ? new Date(body.plantingDate as string) : null,
+      plantSource: body.plantSource || null,
+      plantingYear: body.plantingYear ?? null,
+      autumnShootDate: body.autumnShootDate ? new Date(body.autumnShootDate as string) : null,
     }
     if (body.sectionId) data.section = { connect: { id: body.sectionId } }
     if (body.varietyId) data.variety = { connect: { id: body.varietyId } }

@@ -21,6 +21,7 @@ export async function PATCH(
         plantingYear: body.plantingYear || null,
         productionYear: body.productionYear || null,
         plantMaterialType: body.plantMaterialType || null,
+        plantSource: body.plantSource || null,
         yieldSummerPerShoot: body.yieldSummerPerShoot ?? null,
         yieldAutumnPerShoot: body.yieldAutumnPerShoot ?? null,
         gdhSummer: body.gdhSummer ?? null,

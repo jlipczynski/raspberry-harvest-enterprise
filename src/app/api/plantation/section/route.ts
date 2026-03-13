@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
         plantingYear: section.plantingYear || null,
         productionYear: section.productionYear || null,
         plantMaterialType: section.plantMaterialType || null,
+        plantSource: section.plantSource || null,
         yieldSummerPerShoot: section.yieldSummerPerShoot ?? null,
         yieldAutumnPerShoot: section.yieldAutumnPerShoot ?? null,
         gdhSummer: section.gdhSummer ?? null,

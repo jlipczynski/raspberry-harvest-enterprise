@@ -589,15 +589,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
               }).filter(Boolean).join(' ')
               return (
                 <g key={c.id}>
-                  <polyline points={pts} fill="none" stroke={getYearColor(c.year)} strokeWidth="2.5" strokeLinejoin="round" />
-                  {c.curve.map((pct, i) => {
-                    const wi = sortedWeeks.indexOf(c.startWeek + i)
-                    if (wi < 0) return null
-                    const cx = sortedWeeks.length > 1 ? (wi / (sortedWeeks.length - 1)) * sortedWeeks.length * 10 : 5
-                    const val = yAxis === 'kg' ? (pct / 100) * c.totalKg : pct
-                    const cy = 100 - (val / maxVal) * 90
-                    return <circle key={i} cx={cx} cy={cy} r="2" fill={getYearColor(c.year)} />
-                  })}
+                  <polyline points={pts} fill="none" stroke={getYearColor(c.year)} strokeWidth="1.5" strokeLinejoin="round" />
                 </g>
               )
             })}
@@ -1290,13 +1282,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                               )
                             })}
 
-                            {/* Punkty na liniach */}
-                            {forecastData.originalForecast.map(w => (
-                              <circle key={`of-${w.week}`} cx={getX(w.week)} cy={getY(w.kg)} r="1.5" fill="#93c5fd" />
-                            ))}
-                            {forecastData.scaledForecast.map(w => (
-                              <circle key={`sf-${w.week}`} cx={getX(w.week)} cy={getY(w.kg)} r="1.5" fill="#c084fc" />
-                            ))}
                           </svg>
                         </div>
 

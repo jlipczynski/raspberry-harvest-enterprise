@@ -16,9 +16,6 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Planer Zbiorów | Maliny",
   description: "System planowania zbiorów malin",
-  icons: {
-    icon: "/favicon.svg",
-  },
 };
 
 export default function RootLayout({

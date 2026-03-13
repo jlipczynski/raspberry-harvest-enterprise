@@ -9,13 +9,14 @@ import GDHModule from './gdh-module'
 import GDHMatrix from './gdh-matrix'
 
 interface Variety { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number }
-interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; potsOverride?: number | null; plantingYear?: number; productionYear?: number; plantMaterialType?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string; _tempCount?: number }
+interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; potsOverride?: number | null; plantingYear?: number; productionYear?: number; plantMaterialType?: string; plantSource?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string; _tempCount?: number }
 interface Block { id: string; name: string; sections: Section[] }
 interface Farm { id: string; name: string }
 interface TempReading { id: string; timestamp: string; temperature: number; sourceFile?: string }
 interface UploadResult { success?: boolean; error?: string; blockName?: string; totalReadings?: number; sections?: Array<{ sectionId: string; sectionName: string | null; inserted: number }>; debug?: { format?: string; contentPreview?: string; lineCount?: number; tokenCount?: number; testoReadingsFound?: number; parsedBlockName?: string | null } }
 
 const PLANT_TYPES = [{ value: 'SMALL_POT', label: 'Doniczka' }, { value: 'ROOT', label: 'Korzeń' }, { value: 'LONGCANE', label: 'Longcane' }, { value: 'PLUG', label: 'Plug' }]
+const PLANT_SOURCES = [{ value: '', label: 'Nie określono' }, { value: 'OWN', label: 'Własne plugi' }, { value: 'NURSERY', label: 'Szkółka zewnętrzna' }]
 
 export default function PlantationPage() {
   const [blocks, setBlocks] = useState<Block[]>([])
@@ -28,7 +29,7 @@ export default function PlantationPage() {
   const [showSectionForm, setShowSectionForm] = useState<string | null>(null)
   const [editingSection, setEditingSection] = useState<Section | null>(null)
   const [expandedBlock, setExpandedBlock] = useState<string | null>(null)
-  const [sectionForm, setSectionForm] = useState({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '' as string | number, plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' })
+  const [sectionForm, setSectionForm] = useState({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '' as string | number, plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', plantSource: '', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' })
 
   // PDF upload state
   const [isDragging, setIsDragging] = useState(false)
@@ -154,12 +155,12 @@ export default function PlantationPage() {
   }
   const delBlock = async (id: string) => { if (confirm('Usunąć blok?')) { await fetch(`/api/plantation/block/${id}`, { method: 'DELETE' }); fetchData() } }
 
-  const resetSection = () => { setSectionForm({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '', plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' }); setEditingSection(null); setShowSectionForm(null) }
+  const resetSection = () => { setSectionForm({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '', plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', plantSource: '', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' }); setEditingSection(null); setShowSectionForm(null) }
   const startAddSection = (bid: string) => { resetSection(); setShowSectionForm(bid) }
   const startEditSection = (bid: string, s: Section) => {
     setEditingSection(s)
     const v = varieties.find(x => x.id === s.varietyId)
-    setSectionForm({ name: s.name || '', metersLength: s.metersLength, potsPerMeter: s.potsPerMeter, shootsPerPot: s.shootsPerPot, potsOverride: s.potsOverride ?? '', plantingYear: s.plantingYear || new Date().getFullYear(), productionYear: s.productionYear || 1, plantMaterialType: s.plantMaterialType || 'SMALL_POT', varietyId: s.varietyId, yieldSummerPerShoot: s.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0, yieldAutumnPerShoot: s.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0, gdhSummer: s.gdhSummer || v?.gdhSummer || 20000, gdhAutumn: s.gdhAutumn || v?.gdhAutumn || 25000, winteredInTunnel: s.winteredInTunnel || false, plantingDate: s.plantingDate ? s.plantingDate.slice(0, 10) : '', winterShootsDate: s.winterShootsDate ? s.winterShootsDate.slice(0, 10) : '' })
+    setSectionForm({ name: s.name || '', metersLength: s.metersLength, potsPerMeter: s.potsPerMeter, shootsPerPot: s.shootsPerPot, potsOverride: s.potsOverride ?? '', plantingYear: s.plantingYear || new Date().getFullYear(), productionYear: s.productionYear || 1, plantMaterialType: s.plantMaterialType || 'SMALL_POT', plantSource: s.plantSource || '', varietyId: s.varietyId, yieldSummerPerShoot: s.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0, yieldAutumnPerShoot: s.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0, gdhSummer: s.gdhSummer || v?.gdhSummer || 20000, gdhAutumn: s.gdhAutumn || v?.gdhAutumn || 25000, winteredInTunnel: s.winteredInTunnel || false, plantingDate: s.plantingDate ? s.plantingDate.slice(0, 10) : '', winterShootsDate: s.winterShootsDate ? s.winterShootsDate.slice(0, 10) : '' })
     setShowSectionForm(bid)
   }
   const onVarChange = (vid: string) => {
@@ -313,11 +314,12 @@ ${r.debug.contentPreview || '(brak)'}`}
                   {showSectionForm === block.id && (
                     <div className="p-5 bg-blue-50 border-b">
                       <h4 className="font-semibold mb-4">{editingSection ? 'Edytuj sekcję' : 'Nowa sekcja'}</h4>
-                      <div className="grid grid-cols-4 gap-3 mb-3">
+                      <div className="grid grid-cols-5 gap-3 mb-3">
                         <div><Label className="text-xs">Nazwa</Label><Input value={sectionForm.name} onChange={e => setSectionForm({...sectionForm, name: e.target.value})} /></div>
                         <div><Label className="text-xs">Odmiana</Label><select className="w-full h-10 border rounded-md px-3" value={sectionForm.varietyId} onChange={e => onVarChange(e.target.value)}><option value="">Wybierz...</option>{varieties.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
                         <div><Label className="text-xs">Metry bieżące</Label><Input type="number" value={sectionForm.metersLength} onChange={e => setSectionForm({...sectionForm, metersLength: +e.target.value})} /></div>
                         <div><Label className="text-xs">Typ materiału</Label><select className="w-full h-10 border rounded-md px-3" value={sectionForm.plantMaterialType} onChange={e => setSectionForm({...sectionForm, plantMaterialType: e.target.value})}>{PLANT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
+                        <div><Label className="text-xs">Źródło sadzonek</Label><select className="w-full h-10 border rounded-md px-3" value={sectionForm.plantSource} onChange={e => setSectionForm({...sectionForm, plantSource: e.target.value})}>{PLANT_SOURCES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
                       </div>
                       <div className="grid grid-cols-4 gap-3 mb-3">
                         <div><Label className="text-xs">Doniczek/m</Label><Input type="number" step="0.1" value={sectionForm.potsPerMeter} onChange={e => setSectionForm({...sectionForm, potsPerMeter: +e.target.value})} /></div>

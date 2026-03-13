@@ -121,6 +121,12 @@ model Variety {
   @@map("varieties")
 }
 
+// ==================== ENUMS ====================
+enum PlantSource {
+  OWN
+  NURSERY
+}
+
 // ==================== SECTIONS ====================
 model Section {
   id                    String    @id @default(cuid())
@@ -135,7 +141,8 @@ model Section {
   productionYear        Int?
   
   plantMaterialType     String?
-  
+  plantSource           PlantSource?
+
   yieldSummerPerShoot   Float?
   yieldAutumnPerShoot   Float?
   

@@ -16,7 +16,7 @@ interface TempReading { id: string; timestamp: string; temperature: number; sour
 interface UploadResult { success?: boolean; error?: string; blockName?: string; totalReadings?: number; sections?: Array<{ sectionId: string; sectionName: string | null; inserted: number }>; debug?: { format?: string; contentPreview?: string; lineCount?: number; tokenCount?: number; testoReadingsFound?: number; parsedBlockName?: string | null } }
 
 const PLANT_TYPES = [{ value: 'SMALL_POT', label: 'Doniczka' }, { value: 'ROOT', label: 'Korzeń' }, { value: 'LONGCANE', label: 'Longcane' }, { value: 'PLUG', label: 'Plug' }]
-const PLANT_SOURCES = [{ value: '', label: 'Nie określono' }, { value: 'OWN', label: 'Własne plugi' }, { value: 'NURSERY', label: 'Szkółka zewnętrzna' }]
+const PLANT_SOURCES = [{ value: '', label: 'Nie określono' }, { value: 'OWN', label: 'Własne plugi' }, { value: 'NURSERY', label: 'Zewnętrzna szkółka' }]
 
 export default function PlantationPage() {
   const [blocks, setBlocks] = useState<Block[]>([])

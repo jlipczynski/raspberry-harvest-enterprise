@@ -761,7 +761,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                   <p className="text-xs text-gray-600 mb-3">
                     {currentArea.commercialStartDate
                       ? 'Dni przed startem oznaczone jako "pośpiech" — nie wchodzą do krzywej letniej.'
-                      : 'Kliknij "Start" przy dniu, który uznasz za początek zbiorów komercyjnych. Wcześniejsze dni zostaną oznaczone jako "pośpiech".'}
+                      : 'Kliknij "Start" przy dniu, który uznasz za początek lata. Wcześniejsze dni zostaną oznaczone jako "pośpiech".'}
                   </p>
 
                   {/* Dzienne dane z togglem */}
@@ -784,7 +784,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                             <td className="py-1 px-2 text-center">
                               {currentArea.commercialStartDate ? (
                                 <span className={`px-2 py-0.5 rounded-full text-xs ${d.isPreHarvest ? 'bg-gray-200 text-gray-600' : 'bg-green-100 text-green-700'}`}>
-                                  {d.isPreHarvest ? 'Pośpiech' : 'Komercyjny'}
+                                  {d.isPreHarvest ? 'Pośpiech' : 'Lato'}
                                 </span>
                               ) : (
                                 <button

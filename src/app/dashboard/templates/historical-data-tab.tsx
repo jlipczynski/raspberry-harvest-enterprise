@@ -383,6 +383,89 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     }))
   }
 
+  const [savingTemplate, setSavingTemplate] = useState(false)
+
+  const handleSaveAreaAsTemplate = async (areaIdx: number) => {
+    const area = areas[areaIdx]
+    if (!area) return
+
+    const templateName = prompt('Nazwa szablonu:')
+    if (!templateName?.trim()) return
+
+    setSavingTemplate(true)
+    try {
+      // Build summer and autumn curves from area weeks
+      const seasons: ('summer' | 'autumn')[] = ['summer', 'autumn']
+      const curveIds: string[] = []
+
+      for (const season of seasons) {
+        const seasonWeeks = area.weeks.filter(w => w.season === season)
+        if (seasonWeeks.length === 0) continue
+
+        const seasonDays = area.days.filter(d => {
+          const wk = getWeekNumber(new Date(d.date))
+          return seasonWeeks.some(sw => sw.week === wk) && (season === 'summer' ? !d.isPreHarvest : true)
+        })
+
+        const totalKg = seasonWeeks.reduce((s, w) => s + w.kg, 0)
+        if (totalKg === 0) continue
+
+        const weeklyCurve = seasonWeeks.map(w => totalKg > 0 ? (w.kg / totalKg) * 100 : 0)
+        const dailyCurve = seasonDays.map(d => d.kg)
+        const startWeek = seasonWeeks[0].week
+        const startDate = seasonDays.length > 0 ? seasonDays[0].date : null
+
+        const res = await fetch('/api/harvest-curves', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            year: importYear,
+            season,
+            curve: weeklyCurve,
+            totalKg,
+            startWeek,
+            sourceFile: fileName || 'Import XLSX',
+            dailyCurve,
+            startDate,
+          }),
+        })
+        if (!res.ok) throw new Error(`Błąd zapisu krzywej ${season}`)
+        const data = await res.json()
+        curveIds.push(data.id || data.curve?.id)
+      }
+
+      if (curveIds.length === 0) {
+        alert('Brak danych do zapisania')
+        return
+      }
+
+      // Create template from saved curves
+      const res = await fetch('/api/harvest-curves/to-template', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          curveIds,
+          name: templateName.trim(),
+          season: area.weeks[0]?.season || 'summer',
+          productionYear: importYear,
+          productionCycle: 1,
+        }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Nieznany błąd' }))
+        throw new Error(errData.error || `Błąd HTTP ${res.status}`)
+      }
+
+      alert('Szablon utworzony!')
+      onTemplateCreated()
+    } catch (e) {
+      console.error(e)
+      alert('Błąd: ' + e)
+    } finally {
+      setSavingTemplate(false)
+    }
+  }
+
   const toggleWeek = (weekNum: number) => {
     setExpandedWeeks(prev => {
       const next = new Set(prev)
@@ -530,6 +613,25 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
             </CardContent>
           </Card>
 
+          {/* Area selector buttons */}
+          {areas.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {areas.map((a, i) => (
+                <button
+                  key={i}
+                  onClick={() => { setSelectedAreaIdx(i); setExpandedWeeks(new Set()) }}
+                  className={`px-3 py-2 rounded-lg text-sm border transition-colors ${
+                    i === selectedAreaIdx
+                      ? 'bg-green-600 text-white border-green-600 font-medium'
+                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  {a.area} <span className="text-xs opacity-75">({(a.totalKg / 1000).toFixed(1)}t)</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Week table for selected area */}
           {currentArea && (
             <Card>
@@ -578,6 +680,16 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                   )}
                 </div>
 
+                {currentArea.commercialStartDate && (
+                  <Button
+                    onClick={() => handleSaveAreaAsTemplate(selectedAreaIdx)}
+                    disabled={savingTemplate}
+                    className="mt-3 w-full bg-green-600 hover:bg-green-700"
+                  >
+                    <Save className="w-4 h-4 mr-2" />{savingTemplate ? 'Zapisuję...' : 'Zapisz do bazy i utwórz szablon'}
+                  </Button>
+                )}
+
                 {/* Bar chart */}
                 <div style={{ height: '200px' }} className="flex items-end gap-1 mb-4">
                   {currentArea.weeks.map((w, i) => {
@@ -625,6 +737,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                         const idxInSeason = sameSeasonWeeks.indexOf(w)
                         const cumPct = sameSeasonWeeks.slice(0, idxInSeason + 1).reduce((s, x) => s + (seasonTotal > 0 ? (x.kg / seasonTotal) * 100 : 0), 0)
                         const weekDays = currentArea.days.filter(d => getWeekNumber(new Date(d.date)) === w.week)
+                        const allPreHarvest = currentArea.commercialStartDate && weekDays.length > 0 && weekDays.every(d => d.isPreHarvest)
                         const isExpanded = expandedWeeks.has(w.week)
                         return (
                           <React.Fragment key={`week-${i}`}>
@@ -642,6 +755,11 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                                 <span className={cumPct >= 99.5 ? 'text-green-700 font-bold' : 'text-gray-500'}>{cumPct.toFixed(1)}%</span>
                               </td>
                               <td className="py-2 px-3 text-center">
+                                {allPreHarvest ? (
+                                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-600">
+                                    Pośpiech
+                                  </span>
+                                ) : (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); toggleWeekSeason(selectedAreaIdx, i) }}
                                   className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
@@ -652,6 +770,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                                 >
                                   {w.season === 'summer' ? <><Sun className="w-3 h-3" />Lato</> : <><Leaf className="w-3 h-3" />Jesień</>}
                                 </button>
+                                )}
                               </td>
                               <td className="py-2 px-3 text-center text-gray-400">
                                 {isExpanded ? '▼' : '▶'}
@@ -670,8 +789,8 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                                   <td colSpan={2} />
                                   <td className="py-1.5 px-3 text-center" colSpan={2}>
                                     {currentArea.commercialStartDate ? (
-                                      <span className={`px-2 py-0.5 rounded-full text-xs ${d.isPreHarvest ? 'bg-gray-200 text-gray-600' : 'bg-green-100 text-green-700'}`}>
-                                        {d.isPreHarvest ? 'Pośpiech' : 'Lato'}
+                                      <span className={`px-2 py-0.5 rounded-full text-xs ${d.isPreHarvest ? 'bg-gray-200 text-gray-600' : w.season === 'summer' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {d.isPreHarvest ? 'Pośpiech' : (w.season === 'summer' ? 'Lato' : 'Jesień')}
                                       </span>
                                     ) : (
                                       <button

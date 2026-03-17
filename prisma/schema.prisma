@@ -204,6 +204,9 @@ model HarvestCurve {
   variety       Variety? @relation(fields: [varietyId], references: [id], onDelete: SetNull)
   
   sourceFile    String?                      // nazwa pliku MaxCrop
+  name          String?                      // opcjonalna nazwa (wymagana dla merged)
+  isArchived    Boolean  @default(false)
+  mergedFromIds String[]                     // ID krzywych źródłowych
 
   winteredInTunnel  Boolean?
   plantingDate      DateTime?

@@ -9,7 +9,9 @@ export async function GET(request: NextRequest) {
     const varietyId = searchParams.get('varietyId')
     const season = searchParams.get('season')
     const sectionId = searchParams.get('sectionId')
+    const includeArchived = searchParams.get('includeArchived') === 'true'
     const where: Record<string, unknown> = {}
+    if (!includeArchived) where.isArchived = false
     if (year) where.year = parseInt(year)
     if (varietyId) where.varietyId = varietyId
     if (season) where.season = season

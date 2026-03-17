@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Upload, FileSpreadsheet, Save, Sun, Leaf, Trash2, BarChart3, Pencil, X, TrendingUp, Anchor, AlertCircle, Plus } from 'lucide-react'
+import { Upload, FileSpreadsheet, Save, Sun, Leaf, Trash2, BarChart3, Pencil, X, TrendingUp, Anchor, AlertCircle, Plus, Merge, Archive } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 // ==================== TYPES ====================
@@ -17,6 +17,7 @@ interface HarvestCurveRecord {
   dailyCurve?: number[]; startDate?: string
   winteredInTunnel?: boolean | null; plantingDate?: string | null; plantSource?: string | null
   plantingYear?: number | null; autumnShootDate?: string | null
+  name?: string | null; isArchived?: boolean; mergedFromIds?: string[]
 }
 
 interface CreateTemplateForm {
@@ -200,6 +201,44 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     }
   }
 
+  // Merge
+  const [mergeMode, setMergeMode] = useState(false)
+  const [mergeCurveIds, setMergeCurveIds] = useState<string[]>([])
+  const [showMergeModal, setShowMergeModal] = useState(false)
+  const [mergeName, setMergeName] = useState('')
+  const [merging, setMerging] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
+
+  const toggleMergeSelection = (id: string) => {
+    setMergeCurveIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const handleMerge = async () => {
+    if (mergeCurveIds.length < 2 || !mergeName.trim()) return
+    setMerging(true)
+    try {
+      const res = await fetch('/api/harvest-curves/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ curveIds: mergeCurveIds, name: mergeName.trim() }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Nieznany błąd' }))
+        throw new Error(errData.error || `Błąd HTTP ${res.status}`)
+      }
+      setMergeCurveIds([])
+      setMergeMode(false)
+      setShowMergeModal(false)
+      setMergeName('')
+      fetchCurves()
+    } catch (e) {
+      console.error(e)
+      alert('Błąd mergowania: ' + e)
+    } finally {
+      setMerging(false)
+    }
+  }
+
   // Import
   const [fileName, setFileName] = useState('')
   const [importYear, setImportYear] = useState(new Date().getFullYear())
@@ -240,14 +279,15 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     try {
       const params = new URLSearchParams()
       if (filterVariety) params.set('varietyId', filterVariety)
+      if (showArchived) params.set('includeArchived', 'true')
       const res = await fetch(`/api/harvest-curves?${params}`)
       const data = await res.json()
       setSavedCurves(data.curves || [])
     } catch (e) { console.error(e) }
-  }, [filterVariety])
+  }, [filterVariety, showArchived])
 
   useEffect(() => { fetchAll() }, [])
-  useEffect(() => { if (activeTab === 'history') fetchCurves() }, [activeTab, filterVariety, fetchCurves])
+  useEffect(() => { if (activeTab === 'history') fetchCurves() }, [activeTab, filterVariety, showArchived, fetchCurves])
 
   // ==================== FILE UPLOAD ====================
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -904,6 +944,18 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                   </select>
                 </div>
                 <div className="ml-auto flex items-center gap-2">
+                  <button
+                    onClick={() => { setShowArchived(v => !v) }}
+                    className={`flex items-center gap-1 px-3 py-1 text-sm rounded-md border transition-colors ${showArchived ? 'bg-gray-200 border-gray-400 font-medium' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                  >
+                    <Archive className="w-3.5 h-3.5" />Archiwum
+                  </button>
+                  <button
+                    onClick={() => { setMergeMode(v => !v); setMergeCurveIds([]) }}
+                    className={`flex items-center gap-1 px-3 py-1 text-sm rounded-md border transition-colors ${mergeMode ? 'bg-blue-100 border-blue-400 text-blue-700 font-medium' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                  >
+                    <Merge className="w-3.5 h-3.5" />Połącz krzywe
+                  </button>
                   <Label className="text-xs text-gray-500">Oś Y:</Label>
                   <div className="flex bg-gray-100 rounded-lg p-0.5">
                     <button onClick={() => setYAxis('kg')} className={`px-3 py-1 text-sm rounded-md ${yAxis === 'kg' ? 'bg-white shadow font-medium' : 'text-gray-500'}`}>kg</button>
@@ -957,15 +1009,16 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                   <CardContent className="pt-4 space-y-3">
                     {renderChart(summer)}
                     <table className="w-full text-sm">
-                      <thead><tr className="border-b bg-gray-50"><th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
+                      <thead><tr className="border-b bg-gray-50">{mergeMode && <th className="w-10 py-2 px-3"></th>}<th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
                       <tbody>{summer.map(c => (
-                        <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''}`}>
+                        <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''} ${mergeCurveIds.includes(c.id) ? 'bg-blue-50' : ''} ${c.isArchived ? 'opacity-50 bg-gray-50' : ''}`}>
+                          {mergeMode && <td className="py-2 px-3">{!c.isArchived && <input type="checkbox" checked={mergeCurveIds.includes(c.id)} onChange={() => toggleMergeSelection(c.id)} className="w-4 h-4 accent-blue-600" />}</td>}
                           <td className="py-2 px-3"><input type="checkbox" checked={selectedCurveIds.includes(c.id)} onChange={() => toggleCurveSelection(c.id)} className="w-4 h-4 accent-green-600" /></td>
-                          <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span></div></td>
-                          <td className="py-2 px-3 text-gray-600">{c.section?.name || '—'}</td>
+                          <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span>{c.isArchived && <Archive className="w-3 h-3 text-gray-400" />}{c.mergedFromIds && c.mergedFromIds.length > 0 && <Merge className="w-3 h-3 text-blue-400" />}</div></td>
+                          <td className="py-2 px-3 text-gray-600">{c.name || c.section?.name || '—'}</td>
                           <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
                           <td className="py-2 px-3 text-gray-500">T{c.startWeek}</td>
-                          <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button><Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button></div></td>
+                          <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1">{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button>}{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>}</div></td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -981,15 +1034,16 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                   <CardContent className="pt-4 space-y-3">
                     {renderChart(autumn)}
                     <table className="w-full text-sm">
-                      <thead><tr className="border-b bg-gray-50"><th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
+                      <thead><tr className="border-b bg-gray-50">{mergeMode && <th className="w-10 py-2 px-3"></th>}<th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
                       <tbody>{autumn.map(c => (
-                        <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''}`}>
+                        <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''} ${mergeCurveIds.includes(c.id) ? 'bg-blue-50' : ''} ${c.isArchived ? 'opacity-50 bg-gray-50' : ''}`}>
+                          {mergeMode && <td className="py-2 px-3">{!c.isArchived && <input type="checkbox" checked={mergeCurveIds.includes(c.id)} onChange={() => toggleMergeSelection(c.id)} className="w-4 h-4 accent-blue-600" />}</td>}
                           <td className="py-2 px-3"><input type="checkbox" checked={selectedCurveIds.includes(c.id)} onChange={() => toggleCurveSelection(c.id)} className="w-4 h-4 accent-green-600" /></td>
-                          <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span></div></td>
-                          <td className="py-2 px-3 text-gray-600">{c.section?.name || '—'}</td>
+                          <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span>{c.isArchived && <Archive className="w-3 h-3 text-gray-400" />}{c.mergedFromIds && c.mergedFromIds.length > 0 && <Merge className="w-3 h-3 text-blue-400" />}</div></td>
+                          <td className="py-2 px-3 text-gray-600">{c.name || c.section?.name || '—'}</td>
                           <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
                           <td className="py-2 px-3 text-gray-500">T{c.startWeek}</td>
-                          <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button><Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button></div></td>
+                          <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1">{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button>}{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>}</div></td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -998,6 +1052,70 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
               )}
             </div>
           ))}
+
+          {/* Merge bar */}
+          {mergeMode && mergeCurveIds.length >= 2 && (
+            <div className="sticky bottom-4 z-10 bg-blue-50 border border-blue-300 rounded-xl p-4 flex items-center justify-between shadow-lg">
+              <span className="text-blue-800 font-medium">Zaznaczono {mergeCurveIds.length} krzywych do połączenia</span>
+              <div className="flex gap-2">
+                {(() => {
+                  const selectedSeasons = new Set(savedCurves.filter(c => mergeCurveIds.includes(c.id)).map(c => c.season))
+                  if (selectedSeasons.size > 1) {
+                    return <span className="text-red-600 text-sm flex items-center gap-1"><AlertCircle className="w-4 h-4" />Zaznaczone krzywe mają różne sezony!</span>
+                  }
+                  return (
+                    <Button onClick={() => setShowMergeModal(true)} className="bg-blue-600 hover:bg-blue-700">
+                      <Merge className="w-4 h-4 mr-2" />Połącz
+                    </Button>
+                  )
+                })()}
+                <Button variant="outline" onClick={() => setMergeCurveIds([])}>Odznacz</Button>
+              </div>
+            </div>
+          )}
+
+          {/* Merge modal */}
+          {showMergeModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <Card className="w-full max-w-md mx-4">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><Merge className="w-5 h-5 text-blue-600" />Połącz krzywe</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-medium">Nazwa nowej krzywej</Label>
+                    <input
+                      value={mergeName}
+                      onChange={e => setMergeName(e.target.value)}
+                      placeholder="np. Blok B połączony - Lato 2025"
+                      className="w-full border rounded-lg px-3 py-2 mt-1 text-sm"
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium mb-2 block">Łączysz:</Label>
+                    <ul className="space-y-1">
+                      {savedCurves.filter(c => mergeCurveIds.includes(c.id)).map(c => (
+                        <li key={c.id} className="text-sm text-gray-600 flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} />
+                          {c.section?.name || c.name || c.id} — {c.season === 'summer' ? 'Lato' : 'Jesień'} {c.year} ({(c.totalKg / 1000).toFixed(1)}t)
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <p className="text-sm text-amber-800">Oryginalne krzywe zostaną zarchiwizowane.</p>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="outline" onClick={() => { setShowMergeModal(false); setMergeName('') }}>Anuluj</Button>
+                    <Button onClick={handleMerge} disabled={!mergeName.trim() || merging} className="bg-blue-600 hover:bg-blue-700">
+                      <Merge className="w-4 h-4 mr-2" />{merging ? 'Łączę...' : 'Połącz i archiwizuj'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* Create template from selected */}
           {selectedCurveIds.length >= 2 && !showCreateForm && (

@@ -116,73 +116,26 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   }
 
   const handleCreateTemplate = async () => {
-    if (selectedCurveIds.length < 2) return
+    if (selectedCurveIds.length < 1) return
     const selected = savedCurves.filter(c => selectedCurveIds.includes(c.id))
     if (selected.length === 0) return
 
     setCreatingTemplate(true)
     try {
-      // Merge daily curves from selected sections
-      const allDailyMap: Record<string, number> = {}
-      for (const curve of selected) {
-        if (curve.dailyCurve && curve.startDate) {
-          curve.dailyCurve.forEach((kg, i) => {
-            const d = new Date(curve.startDate!)
-            d.setDate(d.getDate() + i)
-            const ds = d.toISOString().split('T')[0]
-            allDailyMap[ds] = (allDailyMap[ds] || 0) + kg
-          })
-        } else {
-          // Fallback: use weekly curve percentages to build daily estimates
-          const startDate = new Date(selected[0].startDate || `${curve.year}-01-01`)
-          curve.curve.forEach((pct, i) => {
-            const weekStart = new Date(startDate)
-            weekStart.setDate(weekStart.getDate() + i * 7)
-            for (let d = 0; d < 7; d++) {
-              const day = new Date(weekStart)
-              day.setDate(day.getDate() + d)
-              const ds = day.toISOString().split('T')[0]
-              allDailyMap[ds] = (allDailyMap[ds] || 0) + (pct / 100 * curve.totalKg / 7)
-            }
-          })
-        }
-      }
-      const sortedDates = Object.keys(allDailyMap).sort()
-      const dailyCurve = sortedDates.map(d => Math.round(allDailyMap[d] * 10) / 10)
-      const totalKg = dailyCurve.reduce((s, v) => s + v, 0)
-
-      // Build weekly curve
-      const weekMap: Record<number, number> = {}
-      sortedDates.forEach((date, i) => {
-        const wk = getWeekNumber(new Date(date))
-        weekMap[wk] = (weekMap[wk] || 0) + dailyCurve[i]
-      })
-      const weekEntries = Object.entries(weekMap).sort(([a], [b]) => Number(a) - Number(b))
-      const weeklyCurve = weekEntries.map(([, kg]) => totalKg > 0 ? Math.round((kg / totalKg) * 1000) / 10 : 0)
-
-      const body = {
-        name: createForm.name,
-        productionYear: createForm.productionYear,
-        productionCycle: 1,
-        season: selected[0].season,
-        plantingDate: createForm.plantingDate || null,
-        winteredInTunnel: createForm.winteredInTunnel,
-        plantSource: createForm.plantSource || null,
-        varietyId: createForm.varietyId || null,
-        dailyCurve,
-        weeklyCurve,
-        startDate: sortedDates[0] || null,
-        endDate: sortedDates[sortedDates.length - 1] || null,
-        startWeek: weekEntries.length > 0 ? Number(weekEntries[0][0]) : null,
-        totalKg,
-        tempSources: [],
-        sourceFile: `Utworzono z ${selected.length} krzywych: ${selected.map(c => c.section?.name || c.id).join(', ')}`,
-      }
-
-      const res = await fetch('/api/templates', {
+      const res = await fetch('/api/harvest-curves/to-template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          curveIds: selectedCurveIds,
+          name: createForm.name,
+          varietyId: createForm.varietyId || null,
+          season: selected[0].season,
+          winteredInTunnel: createForm.winteredInTunnel,
+          plantSource: createForm.plantSource || null,
+          productionCycle: 1,
+          productionYear: createForm.productionYear,
+          plantingDate: createForm.plantingDate || null,
+        }),
       })
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: 'Nieznany błąd' }))
@@ -192,6 +145,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       setSelectedCurveIds([])
       setShowCreateForm(false)
       setCreateForm({ name: '', varietyId: '', plantingDate: '', plantSource: '', productionYear: new Date().getFullYear(), winteredInTunnel: false })
+      fetchCurves()
       onTemplateCreated()
     } catch (e) {
       console.error(e)
@@ -1130,12 +1084,12 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
           )}
 
           {/* Create template from selected */}
-          {selectedCurveIds.length >= 2 && !showCreateForm && (
-            <div className="bg-green-50 border border-green-300 rounded-xl p-4 flex items-center justify-between">
-              <span className="text-green-800 font-medium">Zaznaczono {selectedCurveIds.length} krzywych</span>
+          {selectedCurveIds.length >= 1 && !showCreateForm && (
+            <div className="sticky bottom-4 z-10 bg-green-50 border border-green-300 rounded-xl p-4 flex items-center justify-between shadow-lg">
+              <span className="text-green-800 font-medium">Zaznaczono {selectedCurveIds.length} {selectedCurveIds.length === 1 ? 'krzywą' : 'krzywych'}</span>
               <div className="flex gap-2">
                 <Button onClick={() => setShowCreateForm(true)} className="bg-green-600 hover:bg-green-700">
-                  <Plus className="w-4 h-4 mr-2" />Utwórz szablon z zaznaczonych
+                  <Plus className="w-4 h-4 mr-2" />{selectedCurveIds.length === 1 ? 'Utwórz szablon' : 'Merguj i utwórz szablon'}
                 </Button>
                 <Button variant="outline" onClick={() => setSelectedCurveIds([])}>Odznacz wszystkie</Button>
               </div>
@@ -1146,7 +1100,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
             <Card className="border-green-300 bg-green-50">
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  <span className="flex items-center gap-2"><Plus className="w-5 h-5 text-green-600" />Utwórz szablon z {selectedCurveIds.length} zaznaczonych krzywych</span>
+                  <span className="flex items-center gap-2"><Plus className="w-5 h-5 text-green-600" />{selectedCurveIds.length === 1 ? 'Utwórz szablon z zaznaczonej krzywej' : `Merguj i utwórz szablon z ${selectedCurveIds.length} krzywych`}</span>
                   <Button variant="ghost" size="icon" onClick={() => setShowCreateForm(false)}><X className="w-4 h-4" /></Button>
                 </CardTitle>
               </CardHeader>
@@ -1196,9 +1150,23 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                     <Label className="text-sm">Zimowane w tunelu</Label>
                   </div>
                 </div>
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">Krzywe źródłowe:</Label>
+                  <ul className="space-y-1 mb-3">
+                    {savedCurves.filter(c => selectedCurveIds.includes(c.id)).map(c => (
+                      <li key={c.id} className="text-sm text-gray-600 flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} />
+                        {c.name || c.section?.name || c.id} — {c.season === 'summer' ? 'Lato' : 'Jesień'} {c.year} ({(c.totalKg / 1000).toFixed(1)}t)
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+                  <p className="text-sm text-amber-800">Oryginalne krzywe zostaną zarchiwizowane po utworzeniu szablonu.</p>
+                </div>
                 <div className="flex gap-2">
                   <Button onClick={handleCreateTemplate} disabled={!createForm.name || creatingTemplate} className="bg-green-600 hover:bg-green-700">
-                    <Save className="w-4 h-4 mr-2" />{creatingTemplate ? 'Tworzę...' : 'Zapisz szablon'}
+                    <Save className="w-4 h-4 mr-2" />{creatingTemplate ? 'Tworzę...' : selectedCurveIds.length === 1 ? 'Utwórz szablon' : 'Merguj i utwórz szablon'}
                   </Button>
                   <Button variant="outline" onClick={() => setShowCreateForm(false)}>Anuluj</Button>
                 </div>

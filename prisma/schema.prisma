@@ -398,6 +398,7 @@ model ProductionCurveTemplate {
 
   sourceFile          String?
   notes               String?
+  sourceHarvestCurveIds String[]                    // IDs of HarvestCurve records used to create this template
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

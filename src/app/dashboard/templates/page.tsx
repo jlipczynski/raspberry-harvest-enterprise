@@ -75,6 +75,17 @@ const parseExcelDate = (value: unknown): string => {
 const daysBetween = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000)
 const fmtDate = (d: string) => { const p = d.split('-'); return p[2]+'.'+p[1]+'.'+p[0] }
 
+// ===== AUTO-DETECT SUMMER/AUTUMN BOUNDARY =====
+function detectSummerEnd(weeks: { week: number; kg: number }[]): number {
+  if (weeks.length < 3) return weeks[weeks.length - 1]?.week || 30
+  const peak = Math.max(...weeks.map(w => w.kg))
+  const peakIdx = weeks.findIndex(w => w.kg === peak)
+  for (let i = peakIdx + 1; i < weeks.length; i++) {
+    if (weeks[i].kg < peak * 0.2) return weeks[i - 1]?.week || 30
+  }
+  return weeks[weeks.length - 1]?.week || 30
+}
+
 // ===== UNIFIED CHART COMPONENT =====
 function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summerEndWeek }: {
   template: Template; outsideTemps: TempPoint[]; insideTemps: TempPoint[]; gdhPoints: GdhPoint[]
@@ -607,14 +618,7 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
   // Determine summer end week - auto-detect or use saved value
   const defaultSummerEnd = useMemo(() => {
     if (t.summerEndWeek) return t.summerEndWeek
-    // Auto: find the week after which there's a dip > 60%
-    if (weeklyData.length < 3) return weeklyData[weeklyData.length - 1]?.week || 30
-    const peak = Math.max(...weeklyData.map(w => w.kg))
-    const peakIdx = weeklyData.findIndex(w => w.kg === peak)
-    for (let i = peakIdx + 1; i < weeklyData.length; i++) {
-      if (weeklyData[i].kg < peak * 0.2) return weeklyData[i - 1]?.week || 30
-    }
-    return weeklyData[weeklyData.length - 1]?.week || 30
+    return detectSummerEnd(weeklyData)
   }, [weeklyData, t.summerEndWeek])
 
   const [summerEndWeek, setSummerEndWeek] = useState(defaultSummerEnd)
@@ -1221,8 +1225,14 @@ export default function TemplatesPage() {
     })
     const yr = rows.length > 0 ? new Date(rows[0].date).getFullYear() : new Date().getFullYear()
     const parsed: AreaImport[] = Object.entries(areaMap).map(([area, weekMap]) => {
-      const weeks: WeekRow[] = Object.entries(weekMap).sort(([a],[b])=>Number(a)-Number(b))
+      const rawWeeks: WeekRow[] = Object.entries(weekMap).sort(([a],[b])=>Number(a)-Number(b))
         .map(([wk, kg]) => ({ week: Number(wk), kg, dates: getWeekDates(Number(wk), yr), season: 'summer' as const }))
+      // Auto-detect summer/autumn boundary
+      const summerEndWeek = detectSummerEnd(rawWeeks)
+      const weeks = rawWeeks.map(w => ({
+        ...w,
+        season: (w.week <= summerEndWeek ? 'summer' : 'autumn') as 'summer' | 'autumn'
+      }))
       const days: DayData[] = Object.entries(areaDailyMap[area]||{}).sort(([a],[b])=>a.localeCompare(b))
         .map(([date, kg]) => ({ date, kg, dayOfWeek: new Date(date).getDay() }))
       return { area, totalKg: weeks.reduce((s,w)=>s+w.kg,0), weeks, days }
@@ -1332,6 +1342,11 @@ export default function TemplatesPage() {
               </div>
               {selectedArea && (
                 <div className="space-y-3">
+                  {selectedArea.weeks.some(w => w.season === 'autumn') && (
+                    <p className="text-xs text-purple-600">
+                      🤖 Auto-wykryto granicę: Lato do tygodnia {selectedArea.weeks.filter(w => w.season === 'summer').slice(-1)[0]?.week || '?'} · Kliknij słupek żeby zmienić
+                    </p>
+                  )}
                   <div className="flex items-end gap-1" style={{height:'120px'}}>
                     {selectedArea.weeks.map((w,i)=>{
                       const mx=Math.max(...selectedArea.weeks.map(x=>x.kg))

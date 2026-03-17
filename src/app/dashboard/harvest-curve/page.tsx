@@ -860,7 +860,7 @@ export default function HarvestCurvePage() {
                       <tbody>{summer.map(c => (
                         <tr key={c.id} className="border-b hover:bg-gray-50">
                           <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span></div></td>
-                          <td className="py-2 px-3 text-gray-600">{c.section?.name || '—'}</td>
+                          <td className="py-2 px-3 text-gray-600 cursor-pointer">{c.section?.name || '—'}</td>
                           <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
                           <td className="py-2 px-3 text-gray-500">T{c.startWeek}</td>
                           <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button><Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button></div></td>
@@ -883,7 +883,7 @@ export default function HarvestCurvePage() {
                       <tbody>{autumn.map(c => (
                         <tr key={c.id} className="border-b hover:bg-gray-50">
                           <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span></div></td>
-                          <td className="py-2 px-3 text-gray-600">{c.section?.name || '—'}</td>
+                          <td className="py-2 px-3 text-gray-600 cursor-pointer">{c.section?.name || '—'}</td>
                           <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
                           <td className="py-2 px-3 text-gray-500">T{c.startWeek}</td>
                           <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button><Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button></div></td>

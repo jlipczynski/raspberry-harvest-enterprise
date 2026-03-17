@@ -244,6 +244,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   const [importYear, setImportYear] = useState(new Date().getFullYear())
   const [areas, setAreas] = useState<AreaImport[]>([])
   const [selectedAreaIdx, setSelectedAreaIdx] = useState(0)
+  const [showAllDays, setShowAllDays] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // History
@@ -793,8 +794,8 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                       <Anchor className="w-4 h-4" />
                       <span className="font-semibold text-sm">
                         {currentArea.commercialStartDate
-                          ? `Start zbiorów komercyjnych: ${new Date(currentArea.commercialStartDate).toLocaleDateString('pl-PL')}`
-                          : 'Oznacz start zbiorów komercyjnych'}
+                          ? `Start lata: ${new Date(currentArea.commercialStartDate).toLocaleDateString('pl-PL')}`
+                          : 'Oznacz start lata'}
                       </span>
                     </div>
                     {currentArea.commercialStartDate && (
@@ -805,7 +806,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                   </div>
                   <p className="text-xs text-gray-600 mb-3">
                     {currentArea.commercialStartDate
-                      ? 'Dni przed startem oznaczone jako "pośpiech" — nie wchodzą do krzywej komercyjnej.'
+                      ? 'Dni przed startem oznaczone jako "pośpiech" — nie wchodzą do krzywej letniej.'
                       : 'Kliknij "Start" przy dniu, który uznasz za początek zbiorów komercyjnych. Wcześniejsze dni zostaną oznaczone jako "pośpiech".'}
                   </p>
 
@@ -820,7 +821,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                         </tr>
                       </thead>
                       <tbody>
-                        {currentArea.days.slice(0, 30).map((d, di) => (
+                        {(showAllDays ? currentArea.days : currentArea.days.slice(0, 30)).map((d, di) => (
                           <tr key={d.date} className={`border-b ${d.isPreHarvest ? 'bg-gray-50 text-gray-400' : ''}`}>
                             <td className="py-1 px-2 font-medium">
                               {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
@@ -842,8 +843,19 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                             </td>
                           </tr>
                         ))}
-                        {currentArea.days.length > 30 && (
-                          <tr><td colSpan={3} className="py-2 text-center text-gray-400">... i {currentArea.days.length - 30} więcej dni</td></tr>
+                        {currentArea.days.length > 30 && !showAllDays && (
+                          <tr><td colSpan={3} className="py-2 text-center">
+                            <button onClick={() => setShowAllDays(true)} className="text-blue-500 hover:text-blue-700 text-sm underline cursor-pointer">
+                              ... i {currentArea.days.length - 30} więcej dni — kliknij aby rozwinąć
+                            </button>
+                          </td></tr>
+                        )}
+                        {currentArea.days.length > 30 && showAllDays && (
+                          <tr><td colSpan={3} className="py-2 text-center">
+                            <button onClick={() => setShowAllDays(false)} className="text-gray-500 hover:text-gray-700 text-sm underline cursor-pointer">
+                              Zwiń
+                            </button>
+                          </td></tr>
                         )}
                       </tbody>
                     </table>
@@ -1480,7 +1492,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                   <CardHeader className="py-3 bg-gray-50">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 text-gray-500" />
-                      Dane pośpiechowe (nie wchodzą do krzywej komercyjnej)
+                      Dane pośpiechowe (nie wchodzą do krzywej letniej)
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-3">

@@ -37,7 +37,6 @@ interface AreaImport {
   totalKg: number
   weeks: WeekRow[]
   days: DayData[]
-  assignedSectionIds: string[]
   commercialStartDate: string | null  // data zakotwiczenia — raz ustawione, nie zmieniamy
 }
 
@@ -199,7 +198,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   const [areas, setAreas] = useState<AreaImport[]>([])
   const [selectedAreaIdx, setSelectedAreaIdx] = useState(0)
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set())
-  const [saving, setSaving] = useState(false)
 
   // History
   const [savedCurves, setSavedCurves] = useState<HarvestCurveRecord[]>([])
@@ -303,7 +301,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
           const days: DayData[] = Object.entries(areaDailyMap[area] || {})
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([date, kg]) => ({ date, kg, dayOfWeek: new Date(date).getDay(), isPreHarvest: false }))
-          return { area, totalKg: weeks.reduce((s, w) => s + w.kg, 0), weeks, days, assignedSectionIds: [], commercialStartDate: null }
+          return { area, totalKg: weeks.reduce((s, w) => s + w.kg, 0), weeks, days, commercialStartDate: null }
         }).sort((a, b) => b.totalKg - a.totalKg)
 
         setAreas(parsed)
@@ -334,134 +332,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       }
       return { ...a, weeks: newWeeks }
     }))
-  }
-
-  // ==================== SAVE ====================
-  const saveArea = async (areaIdx: number) => {
-    const area = areas[areaIdx]
-    if (area.assignedSectionIds.length === 0) { alert('Przypisz co najmniej jedną sekcję!'); return }
-
-    const summerWeeks = area.weeks.filter(w => w.season === 'summer')
-    const autumnWeeks = area.weeks.filter(w => w.season === 'autumn')
-    const curvesToCreate: { year: number; season: string; curve: number[]; totalKg: number; startWeek: number; sectionId: string; varietyId: string | null; sourceFile: string; dailyCurve: number[]; startDate: string | null }[] = []
-    const sectionNames: string[] = []
-
-    for (const sectionId of area.assignedSectionIds) {
-      const section = sections.find(s => s.id === sectionId)
-      if (!section) continue
-      sectionNames.push(section.name)
-
-      // Build daily curves from area daily data
-      const allDays = area.days.sort((a, b) => a.date.localeCompare(b.date))
-      const summerWeekNums = new Set(summerWeeks.map(w => w.week))
-      const autumnWeekNums = new Set(autumnWeeks.map(w => w.week))
-      const summerDays = allDays.filter(d => summerWeekNums.has(getWeekNumber(new Date(d.date))))
-      const autumnDays = allDays.filter(d => autumnWeekNums.has(getWeekNumber(new Date(d.date))))
-
-      if (summerWeeks.length > 0) {
-        const summerTotal = summerWeeks.reduce((s, w) => s + w.kg, 0)
-        const summerCurve = summerWeeks.map(w => summerTotal > 0 ? Math.round((w.kg / summerTotal) * 1000) / 10 : 0)
-        const summerDailyCurve = summerDays.map(d => Math.round(d.kg * 10) / 10)
-        curvesToCreate.push({
-          year: importYear, season: 'summer', curve: summerCurve, totalKg: summerTotal,
-          startWeek: summerWeeks[0].week, sectionId,
-          varietyId: section.variety?.id || null, sourceFile: fileName,
-          dailyCurve: summerDailyCurve,
-          startDate: summerDays[0]?.date || null,
-        })
-      }
-      if (autumnWeeks.length > 0) {
-        const autumnTotal = autumnWeeks.reduce((s, w) => s + w.kg, 0)
-        const autumnCurve = autumnWeeks.map(w => autumnTotal > 0 ? Math.round((w.kg / autumnTotal) * 1000) / 10 : 0)
-        const autumnDailyCurve = autumnDays.map(d => Math.round(d.kg * 10) / 10)
-        curvesToCreate.push({
-          year: importYear, season: 'autumn', curve: autumnCurve, totalKg: autumnTotal,
-          startWeek: autumnWeeks[0].week, sectionId,
-          varietyId: section.variety?.id || null, sourceFile: fileName,
-          dailyCurve: autumnDailyCurve,
-          startDate: autumnDays[0]?.date || null,
-        })
-      }
-    }
-
-    try {
-      setSaving(true)
-      await fetch('/api/harvest-curves', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ curves: curvesToCreate }),
-      })
-
-      // Also save to section fields + create Harvest records with pośpiech flag
-      for (const sectionId of area.assignedSectionIds) {
-        if (summerWeeks.length > 0) {
-          const summerTotal = summerWeeks.reduce((s, w) => s + w.kg, 0)
-          const curve = summerWeeks.map(w => summerTotal > 0 ? Math.round((w.kg / summerTotal) * 1000) / 10 : 0)
-          await fetch(`/api/plantation/section/${sectionId}`, {
-            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ harvestCurveSummer: curve }),
-          })
-        }
-        if (autumnWeeks.length > 0) {
-          const autumnTotal = autumnWeeks.reduce((s, w) => s + w.kg, 0)
-          const curve = autumnWeeks.map(w => autumnTotal > 0 ? Math.round((w.kg / autumnTotal) * 1000) / 10 : 0)
-          await fetch(`/api/plantation/section/${sectionId}`, {
-            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ harvestCurveAutumn: curve }),
-          })
-        }
-
-        // Zapisz dzienne dane jako Harvest records z flagą pośpiech
-        const harvestRecords = area.days.map(d => {
-          const wk = getWeekNumber(new Date(d.date))
-          const daySeason = summerWeeks.some(w => w.week === wk) ? 'summer' : 'autumn'
-          return {
-            date: d.date,
-            yieldKg: d.kg,
-            season: daySeason,
-            isPreHarvest: d.isPreHarvest,
-            sectionId,
-          }
-        })
-
-        if (harvestRecords.length > 0) {
-          await fetch('/api/harvests', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ harvests: harvestRecords }),
-          })
-        }
-
-        // Ustaw HarvestSeason jeśli commercialStartDate jest zakotwiczone
-        if (area.commercialStartDate) {
-          for (const seasonType of ['summer', 'autumn'] as const) {
-            const seasonWeeks = seasonType === 'summer' ? summerWeeks : autumnWeeks
-            if (seasonWeeks.length > 0) {
-              await fetch('/api/harvest-seasons', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  sectionId,
-                  year: importYear,
-                  season: seasonType,
-                  commercialStartDate: area.commercialStartDate,
-                }),
-              })
-            }
-          }
-        }
-      }
-
-      alert(`✓ Zapisano krzywe dla ${sectionNames.join(', ')} (${importYear})`)
-    } catch (e) { console.error(e); alert('Błąd zapisu') }
-    finally { setSaving(false) }
-  }
-
-  const saveAll = async () => {
-    const assigned = areas.filter(a => a.assignedSectionIds.length > 0)
-    if (assigned.length === 0) { alert('Przypisz sekcje do co najmniej jednego obszaru!'); return }
-    setSaving(true)
-    for (let i = 0; i < areas.length; i++) {
-      if (areas[i].assignedSectionIds.length > 0) await saveArea(i)
-    }
-    setSaving(false)
   }
 
   // ==================== HISTORY ====================
@@ -613,14 +483,13 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   const autumnWeeks = currentArea?.weeks.filter(w => w.season === 'autumn') || []
   const summerTotal = summerWeeks.reduce((s, w) => s + w.kg, 0)
   const autumnTotal = autumnWeeks.reduce((s, w) => s + w.kg, 0)
-  const assignedCount = areas.filter(a => a.assignedSectionIds.length > 0).length
   const curveGroups = groupCurves()
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Krzywe zbioru</h1>
-        <p className="text-gray-500">Import danych MaxCrop → przypisz do sekcji → oznacz sezony</p>
+        <p className="text-gray-500">Import danych MaxCrop → oznacz sezony → utwórz szablon</p>
       </div>
 
       {/* TABS */}
@@ -661,64 +530,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
             </CardContent>
           </Card>
 
-          {/* Area list - assign sections */}
-          {areas.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>Przypisz obszary do sekcji</span>
-                  <Button className="bg-green-600 hover:bg-green-700" onClick={saveAll} disabled={assignedCount === 0 || saving}>
-                    <Save className="w-4 h-4 mr-2" />{saving ? 'Zapisuję...' : `Zapisz wszystkie (${assignedCount})`}
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {areas.map((area, idx) => (
-                    <div
-                      key={area.area}
-                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAreaIdx === idx ? 'bg-green-50 border-green-400' : 'hover:bg-gray-50'}`}
-                      onClick={() => setSelectedAreaIdx(idx)}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{area.area}</span>
-                          <span className="text-sm text-gray-400">{(area.totalKg / 1000).toFixed(1)}t</span>
-                          <span className="text-xs text-gray-400">{area.weeks.length} tyg.</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
-                        <span className="text-xs text-gray-500">→</span>
-                        {area.assignedSectionIds.map(sid => {
-                          const sec = sections.find(s => s.id === sid)
-                          return sec ? (
-                            <span key={sid} className="inline-flex items-center gap-1 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
-                              {sec.blockName}/{sec.name}
-                              <button onClick={() => setAreas(prev => prev.map((a, i) => i === idx ? { ...a, assignedSectionIds: a.assignedSectionIds.filter(id => id !== sid) } : a))} className="hover:text-red-600"><X className="w-3 h-3" /></button>
-                            </span>
-                          ) : null
-                        })}
-                        <select
-                          className="h-8 border rounded-md px-2 text-xs min-w-40"
-                          value=""
-                          onChange={e => {
-                            const val = e.target.value; if (!val) return
-                            setAreas(prev => prev.map((a, i) => i === idx && !a.assignedSectionIds.includes(val) ? { ...a, assignedSectionIds: [...a.assignedSectionIds, val] } : a))
-                          }}
-                        >
-                          <option value="">+ dodaj sekcję</option>
-                          {sections.filter(s => !area.assignedSectionIds.includes(s.id)).map(s => (
-                            <option key={s.id} value={s.id}>{s.blockName} / {s.name} ({s.variety?.name})</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Week table for selected area */}
           {currentArea && (
             <Card>
@@ -738,11 +549,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                       <span className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded">
                         <Leaf className="w-4 h-4" /> Jesień: {(autumnTotal / 1000).toFixed(1)}t ({autumnWeeks.length} tyg.)
                       </span>
-                    )}
-                    {currentArea.assignedSectionIds.length > 0 && (
-                      <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => saveArea(selectedAreaIdx)} disabled={saving}>
-                        <Save className="w-4 h-4 mr-1" />Zapisz
-                      </Button>
                     )}
                   </div>
                 </CardTitle>

@@ -8,13 +8,6 @@
 
 # Raspberry Harvest Enterprise
 
-## ⛔ ABSOLUTNE ZAKAZY
-- NIGDY nie modyfikuj .github/workflows/
-- NIGDY nie twórz nowych branchy — zawsze commit na main
-- NIGDY nie naprawiaj CI/CD bez wyraźnego polecenia
-- NIGDY nie pushuj na branch — zawsze git push origin main bezpośrednio
-- Jeśli masz błąd 403 przy push — poinformuj użytkownika, nie twórz branchy
-
 System do planowania i zarządzania zbiorami malin — multi-tenant SaaS z prognozowaniem na podstawie GDH (Growing Degree Hours).
 
 ## Quick Reference
@@ -58,6 +51,9 @@ src/
 │   │   ├── farm/[id]/               # Farm details (GET, PATCH)
 │   │   ├── gdh/                      # GDH calculations + forecast (complex, 400+ lines)
 │   │   ├── harvest-curves/           # Harvest curve data (GET, POST)
+│   │   │   ├── [id]/                # Single curve (GET, PATCH, DELETE)
+│   │   │   ├── merge/               # Merge multiple curves into one (POST)
+│   │   │   └── to-template/         # Convert curve(s) to ProductionCurveTemplate (POST)
 │   │   ├── harvest-forecast/[sectionId]/ # Per-section forecast (GET)
 │   │   ├── harvest-seasons/          # Commercial start dates (GET, POST)
 │   │   ├── harvests/                 # Daily harvest records (GET, POST)
@@ -66,6 +62,7 @@ src/
 │   │   │   ├── block/[id]/          # Block update/delete
 │   │   │   ├── section/             # Section create
 │   │   │   │   └── [id]/            # Section update/delete
+│   │   │   │       ├── assignment/  # SectionTemplateAssignment (POST, DELETE)
 │   │   │   │       └── temperatures/ # Temperature readings (GET paginated, DELETE)
 │   │   │   └── temperature-upload/  # PDF/CSV/TXT file upload
 │   │   ├── templates/                # Production curve templates (CRUD)
@@ -81,8 +78,7 @@ src/
 │   │   ├── page.tsx                 # Dashboard home (stats, capacity)
 │   │   ├── admin/page.tsx           # User management + feedback viewer
 │   │   ├── planning/
-│   │   │   ├── page.tsx             # Forecast scenarios (P10/P50/P90), PDF export
-│   │   │   └── kacperek/page.tsx    # Weekly/daily harvest report for farm manager
+│   │   │   └── page.tsx             # Forecast scenarios (P10/P50/P90), PDF export, curve assignment
 │   │   ├── plantation/
 │   │   │   ├── page.tsx             # Block/section CRUD, temp upload
 │   │   │   ├── gdh-module.tsx       # Interactive GDH line chart (Recharts)
@@ -90,7 +86,9 @@ src/
 │   │   │   └── gdh-report-pdf.ts    # PDF report generator (jsPDF)
 │   │   ├── reports/page.tsx         # TXT report generation & download
 │   │   ├── settings/page.tsx        # Farm config, historical weather import, data export
-│   │   ├── templates/page.tsx       # Production curve templates (XLSX import, chart)
+│   │   ├── templates/
+│   │   │   ├── page.tsx             # Dwie zakładki: Szablony + Dane historyczne
+│   │   │   └── historical-data-tab.tsx  # Import MaxCrop, tabelka tygodnie/dni, tworzenie szablonów
 │   │   ├── varieties/page.tsx       # Variety catalog with harvest curves
 │   │   ├── weather/
 │   │   │   ├── page.tsx             # Weather dashboard + GDH progress
@@ -103,18 +101,7 @@ src/
 │   └── globals.css                  # Tailwind imports
 ├── components/
 │   ├── ui/                          # shadcn/ui components
-│   │   ├── avatar.tsx
-│   │   ├── button.tsx
-│   │   ├── card.tsx
-│   │   ├── dropdown-menu.tsx
-│   │   ├── input.tsx
-│   │   ├── label.tsx
-│   │   ├── separator.tsx
-│   │   ├── sheet.tsx
-│   │   ├── sidebar.tsx
-│   │   ├── skeleton.tsx
-│   │   └── tooltip.tsx
-│   └── FeedbackButton.tsx           # Floating feedback widget (categories: bug, ux, krzywe, dane, pomysl)
+│   └── FeedbackButton.tsx           # Floating feedback widget
 ├── hooks/
 │   └── use-mobile.ts               # Responsive breakpoint (768px)
 ├── lib/
@@ -149,20 +136,55 @@ prisma/
 | **Farm** | Location (lat/lon), seasonStartDate, owns blocks/workers/weather |
 | **Block** | Group of sections (tunnel), name, optional areaHa |
 | **Variety** | Raspberry variety: yields, GDH thresholds (wintered/LC/autumn), harvest curves, picking efficiency, waste% |
-| **Section** | Growing area: metersLength, potsPerMeter, shootsPerPot, potsOverride (manual), yields, GDH, plantingDate, winteredInTunnel |
-| **HarvestCurve** | Historical production data (year, season, weekly %, daily kg, startDate) |
+| **Section** | Growing area: metersLength, potsPerMeter, shootsPerPot, potsOverride (manual), yields, GDH, plantingDate, winteredInTunnel, plantSource |
+| **HarvestCurve** | Historical production data (year, season, daily kg, startDate). Pola: `isArchived`, `name`, `mergedFromIds` |
 | **WeeklyOverride** | Per-section overrides for picking efficiency by week/year |
 | **WeatherData** | Daily outdoor temps (min/max/avg) + GDH, per farm, unique by date |
 | **HistoricalGdh** | Baseline GDH by day-of-year for forecasting |
 | **Worker** | Staff: passport, availability, efficiency kg/h, status, contact |
 | **Harvest** | Daily harvest records (date, kg, season, isPreHarvest flag) |
 | **HarvestSeason** | Tracks commercial start date + GDH predicted start per section/year/season |
-| **ProductionCurveTemplate** | Historical curves for forecast: daily/weekly data, temps, GDH milestones |
+| **ProductionCurveTemplate** | Szablony krzywych do planowania: dailyCurve (%), weeklyCurve (%), totalKg, sourceHarvestCurveIds |
 | **SectionTemplateAssignment** | Maps sections to templates with adjustment % |
 | **TemperatureReading** | Raw logger data (timestamp, temp °C, sourceFile) |
 | **Feedback** | User feedback (message, category, page) |
 
 Key relations: Farm → Block → Section → (Harvests, TemperatureReadings, HarvestCurves). Cascade deletes on Block→Section, Section→Harvest, etc.
+
+## Architektura krzywych zbiorów
+
+### Dwa osobne byty — NIE mylić:
+
+**HarvestCurve** = surowe dane historyczne z MaxCrop (per sekcja, per rok):
+- Importowane przez XLSX na stronie `/dashboard/templates` → zakładka "Dane historyczne"
+- Przechowuje: `dailyCurve` (kg per dzień), `totalKg`, `season`, `year`, `sectionId`
+- Może być archiwizowana (`isArchived: true`) po stworzeniu szablonu
+- Można mergować wiele krzywych → endpoint `POST /api/harvest-curves/merge`
+
+**ProductionCurveTemplate** = szablon krzywej do planowania:
+- Tworzony z HarvestCurve przez endpoint `POST /api/harvest-curves/to-template`
+- Przechowuje: `dailyCurve` (% dzienne!), `weeklyCurve` (% tygodniowe), `totalKg`, parametry opisowe
+- Używany w planowaniu przez `SectionTemplateAssignment`
+- `sourceHarvestCurveIds` — skąd pochodzi szablon
+
+### Przepływ tworzenia szablonu:
+```
+Import XLSX → HarvestCurve (dane surowe per sekcja)
+     ↓ opcjonalnie merge kilku sekcji
+     ↓ oznacz start lata (commercialStartDate)
+     ↓ auto-detekcja granicy lato/jesień (detectSummerEnd)
+"Utwórz szablon" → ProductionCurveTemplate (% dzienne kształtu krzywej)
+     ↓
+Planowanie: sekcja wybiera szablon → SectionTemplateAssignment
+     ↓
+% dzienne × prognozowana tonaż sekcji = kg dziennie
+```
+
+### Ważne zasady:
+- Szablon przechowuje TYLKO kształt krzywej (% dzienne) — NIE absolutne kg
+- `dailyCurve` w szablonie = procenty (0-100), NIE kilogramy
+- Planowanie mnoży % × własną prognozę sekcji (z doniczek × pędów × plonu per pęd)
+- Granica lato/jesień: funkcja `detectSummerEnd` (peak → spadek <20% → koniec lata)
 
 ## Architecture & Patterns
 
@@ -183,7 +205,6 @@ Every data query MUST be scoped by `tenantId`. Resolved from user session via `r
 
 ### Frontend
 - Most pages are `"use client"` with direct `fetch()` calls to API routes
-- `TanStack React Query` available but pages primarily use `useState` + `useEffect` + manual fetch
 - shadcn/ui components in `src/components/ui/` — add via `npx shadcn@latest add <component>`
 - Path alias: `@/*` maps to `./src/*`
 
@@ -216,11 +237,12 @@ Three-layer approach:
 ## Domain Concepts
 
 - **GDH (Growing Degree Hours)**: Accumulated heat units above base temperature (4.5°C, capped at 26°C). `gdhDaily = max(0, min(tempAvg, 26) - 4.5) × 24`. Used to predict flowering and fruit readiness.
-- **Harvest Curves**: Weekly % distribution of total yield per variety and season (e.g., `[0.5, 1.8, 2.5, 8.3, 18.2, ...]`).
-- **Seasons**: Summer (first crop, ~weeks 18-30) and Autumn (second crop, ~weeks 33-45).
+- **Harvest Curves**: % dzienne rozkładu plonu per odmiana i sezon.
+- **Seasons**: Lato (pierwszy plon, ~tygodnie 18-32) i Jesień (drugi plon, ~tygodnie 33-45).
 - **Plant Material Types**: `SMALL_POT` (Doniczka), `ROOT` (Korzeń), `LONGCANE`, `PLUG`.
 - **Wintered in Tunnel**: GDH accumulation starts from January 1st (instead of planting date).
-- **Production Curve Templates**: Historical MaxCrop data used for forecast calibration.
+- **Pośpiech**: Dni zbiorów przed oficjalnym startem lata — nie wchodzą do krzywej letniej.
+- **Production Curve Templates**: Szablony % krzywych do prognozowania przyszłych sezonów.
 - **Staffing Tiers**: Personnel requirements by daily harvest volume (pickers, QC, weighing, infrastructure).
 
 ## Coding Conventions
@@ -256,7 +278,32 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 ## Git Workflow
 
-- Branch from `main` for all changes
-- CI runs automatically on push and PR
+### ⚠️ WAŻNE: Claude Code Desktop używa git worktrees
+Claude Code Desktop zawsze pracuje w `.claude/worktrees/[nazwa]/` zamiast bezpośrednio na main.
+Po każdej sesji Claude Code należy ręcznie zmergować zmiany:
+
+```bash
+# Sprawdź czy Claude Code pushował sam:
+git log --oneline -3
+# Jeśli origin/main jest przy ostatnim commicie — OK, nic nie rób
+# Jeśli nie ma origin/main — zmerguj ręcznie:
+
+cd /Users/janlipczynski/Desktop/raspberry-harvest-enterprise
+git pull origin main
+git merge claude/[nazwa-worktree] --no-ff -m "merge: opis zmian"
+git push origin main
+```
+
+Nazwę worktree widać na dole okna Claude Code (np. `quirky-cohen`, `thirsty-pare`).
+
+### Standardowe komendy po sesji:
+```bash
+git fetch origin
+git checkout main
+git pull origin main
+git merge origin/[branch-name]   # jeśli branch zamiast worktree
+git push origin main
+```
+
 - Keep commits focused and descriptive
 - Do not commit `.env*` files or secrets

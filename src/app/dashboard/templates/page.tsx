@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Button } from "@/components/ui/button"
-import { Database, Upload, Thermometer, Sprout, ChevronDown, ChevronUp, Trash2, Edit, Search, Snowflake, BarChart3, Calendar, Truck, TrendingUp } from 'lucide-react'
+import { Database, Thermometer, Sprout, ChevronDown, ChevronUp, Trash2, Edit, Search, Snowflake, BarChart3, Calendar, Truck, TrendingUp } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import HistoricalDataTab from './historical-data-tab'
 
@@ -39,10 +39,6 @@ interface Template {
   variety?: { id: string; name: string; baseTemp?: number; gdhWinteredFlower?: number; gdhWinteredFruit?: number; gdhLcFlower?: number; gdhLcFruit?: number; gdhAutumnFlower?: number; gdhAutumnFruit?: number; autumnShootsDay?: number }
   _count?: { sectionAssignments: number }
 }
-interface WeekRow { week: number; kg: number; dates: string; season: 'summer' | 'autumn' }
-interface DayData { date: string; kg: number; dayOfWeek: number }
-interface AreaImport { area: string; totalKg: number; weeks: WeekRow[]; days: DayData[] }
-interface RawRow { date: string; area: string; weightReal: number }
 interface TempPoint { date: string; min: number; max: number; avg: number }
 interface GdhPoint { date: string; gdh: number; cumulativeGdh: number }
 
@@ -1166,11 +1162,6 @@ export default function TemplatesPage() {
   const [filter, setFilter] = useState({ varietyId: '', season: '', cycle: '', tunnel: '', search: '' })
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<'year'|'name'|'totalKg'>('year')
-  const [showImport, setShowImport] = useState(false)
-  const [areas, setAreas] = useState<AreaImport[]>([])
-  const [selectedAreaIdx, setSelectedAreaIdx] = useState<number|null>(null)
-  const [importYear, setImportYear] = useState(new Date().getFullYear())
-  const [fileName, setFileName] = useState('')
 
   useEffect(() => { fetchAll() }, [])
   const fetchAll = async () => {
@@ -1190,88 +1181,6 @@ export default function TemplatesPage() {
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }
 
-  const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return
-    setFileName(file.name)
-    const data = await file.arrayBuffer()
-    const workbook = XLSX.read(new Uint8Array(data), { type: 'array' })
-    const worksheet = workbook.Sheets[workbook.SheetNames[0]]
-    const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][]
-    let headerIdx = 0
-    for (let i = 0; i < Math.min(10, json.length); i++) {
-      if (json[i]?.some((c: unknown) => String(c).toLowerCase().includes('data') || String(c).toLowerCase().includes('date'))) { headerIdx = i; break }
-    }
-    const headers = json[headerIdx].map((h: unknown) => String(h||'').toLowerCase())
-    const dateIdx = headers.findIndex(h => h.includes('data') || h.includes('date'))
-    const areaIdx = headers.findIndex(h => h.includes('obszar') || h.includes('area'))
-    const weightIdx = headers.findIndex(h => h.includes('waga') && h.includes('rzecz'))
-    const rows: RawRow[] = []
-    for (let i = headerIdx + 1; i < json.length; i++) {
-      const row = json[i]; if (!row?.[dateIdx]) continue
-      const date = parseExcelDate(row[dateIdx]); if (!date) continue
-      const area = String(row[areaIdx] || '')
-      if (!area || area === 'Cala plantacja' || area.startsWith('CaBy')) continue
-      rows.push({ date, area, weightReal: parseFloat(String(row[weightIdx])) || 0 })
-    }
-    if (rows.length > 0) setImportYear(new Date(rows[0].date).getFullYear())
-    const areaMap: Record<string, Record<number, number>> = {}
-    const areaDailyMap: Record<string, Record<string, number>> = {}
-    rows.forEach(r => {
-      if (!areaMap[r.area]) areaMap[r.area] = {}
-      if (!areaDailyMap[r.area]) areaDailyMap[r.area] = {}
-      const wk = getWeekNumber(new Date(r.date))
-      areaMap[r.area][wk] = (areaMap[r.area][wk] || 0) + r.weightReal
-      areaDailyMap[r.area][r.date] = (areaDailyMap[r.area][r.date] || 0) + r.weightReal
-    })
-    const yr = rows.length > 0 ? new Date(rows[0].date).getFullYear() : new Date().getFullYear()
-    const parsed: AreaImport[] = Object.entries(areaMap).map(([area, weekMap]) => {
-      const rawWeeks: WeekRow[] = Object.entries(weekMap).sort(([a],[b])=>Number(a)-Number(b))
-        .map(([wk, kg]) => ({ week: Number(wk), kg, dates: getWeekDates(Number(wk), yr), season: 'summer' as const }))
-      // Auto-detect summer/autumn boundary
-      const summerEndWeek = detectSummerEnd(rawWeeks)
-      const weeks = rawWeeks.map(w => ({
-        ...w,
-        season: (w.week <= summerEndWeek ? 'summer' : 'autumn') as 'summer' | 'autumn'
-      }))
-      const days: DayData[] = Object.entries(areaDailyMap[area]||{}).sort(([a],[b])=>a.localeCompare(b))
-        .map(([date, kg]) => ({ date, kg, dayOfWeek: new Date(date).getDay() }))
-      return { area, totalKg: weeks.reduce((s,w)=>s+w.kg,0), weeks, days }
-    }).sort((a,b)=>b.totalKg-a.totalKg)
-    setAreas(parsed); setSelectedAreaIdx(parsed.length > 0 ? 0 : null); setImportYear(yr)
-  }, [])
-
-  const toggleSeason = (areaIdx: number, weekIdx: number) => {
-    setAreas(prev => prev.map((a, ai) => {
-      if (ai !== areaIdx) return a
-      const nw = [...a.weeks]
-      if (nw[weekIdx].season==='summer') { for(let i=weekIdx;i<nw.length;i++) nw[i]={...nw[i],season:'autumn'} }
-      else { for(let i=0;i<=weekIdx;i++) nw[i]={...nw[i],season:'summer'} }
-      return {...a, weeks: nw}
-    }))
-  }
-
-  const saveAreaToTemplateDB = async (area: AreaImport) => {
-    const build = (weeks: WeekRow[], sn: string, ss: string) => {
-      const total = weeks.reduce((s,w)=>s+w.kg,0)
-      const curve = weeks.map(w=>total>0?Math.round((w.kg/total)*1000)/10:0)
-      const wns = new Set(weeks.map(w=>w.week))
-      const days = area.days.filter(d=>wns.has(getWeekNumber(new Date(d.date))))
-      return { name: area.area+' - '+sn+' '+importYear, productionYear: importYear, season: ss,
-        dailyCurve: days.map(d=>Math.round(d.kg*10)/10), weeklyCurve: curve,
-        startDate: days[0]?.date||null, endDate: days[days.length-1]?.date||null,
-        startWeek: weeks[0].week, totalKg: total, sourceFile: fileName }
-    }
-    const ts: Record<string, unknown>[] = []
-    const sw = area.weeks.filter(w=>w.season==='summer'); if(sw.length>0) ts.push(build(sw,'Lato','summer'))
-    const aw = area.weeks.filter(w=>w.season==='autumn'); if(aw.length>0) ts.push(build(aw,'Jesień','autumn'))
-    for (const t of ts) { await fetch('/api/templates', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(t) }) }
-    return ts.length
-  }
-
-  const saveAllToTemplateDB = async () => {
-    let c = 0; for (const a of areas) { c += await saveAreaToTemplateDB(a) }
-    alert('Dodano '+c+' krzywych!'); setShowImport(false); setAreas([]); setSelectedAreaIdx(null); fetchAll()
-  }
 
   const deleteTemplate = async (id: string) => {
     if (!confirm('Usunąć?')) return
@@ -1288,7 +1197,6 @@ export default function TemplatesPage() {
     return true
   }).sort((a,b)=>sortBy==='year'?b.productionYear-a.productionYear:sortBy==='name'?a.name.localeCompare(b.name):b.totalKg-a.totalKg)
 
-  const selectedArea = selectedAreaIdx !== null ? areas[selectedAreaIdx] : null
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">Ładowanie...</div>
 
   return (
@@ -1317,59 +1225,6 @@ export default function TemplatesPage() {
       )}
 
       {mainTab === 'szablony' && (<>
-      <div className="flex items-center justify-end">
-        <Button onClick={()=>setShowImport(!showImport)} className={showImport?'bg-gray-600':'bg-green-600 hover:bg-green-700'}>
-          <Upload className="w-4 h-4 mr-2"/>{showImport ? 'Zamknij' : 'Import MaxCrop'}
-        </Button>
-      </div>
-
-      {showImport && (
-        <div className="bg-white rounded-xl border p-6 space-y-4">
-          <h3 className="font-semibold text-lg">📥 Import MaxCrop</h3>
-          {areas.length===0?(
-            <label className="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center gap-2 cursor-pointer hover:border-green-400 hover:bg-green-50">
-              <Upload className="w-8 h-8 text-gray-400"/><span className="text-gray-500">Kliknij lub przeciągnij XLS/XLSX</span>
-              <input type="file" accept=".xls,.xlsx" onChange={handleFile} className="hidden"/>
-            </label>
-          ):(
-            <div className="space-y-4">
-              <div className="flex gap-2 flex-wrap">
-                {areas.map((a,i)=>(
-                  <button key={i} onClick={()=>setSelectedAreaIdx(i)} className={`px-3 py-2 rounded-lg text-sm font-medium border ${selectedAreaIdx===i?'bg-green-600 text-white border-green-600':'bg-white hover:bg-gray-50'}`}>
-                    {a.area} ({(a.totalKg/1000).toFixed(1)}t)
-                  </button>
-                ))}
-              </div>
-              {selectedArea && (
-                <div className="space-y-3">
-                  {selectedArea.weeks.some(w => w.season === 'autumn') && (
-                    <p className="text-xs text-purple-600">
-                      🤖 Auto-wykryto granicę: Lato do tygodnia {selectedArea.weeks.filter(w => w.season === 'summer').slice(-1)[0]?.week || '?'} · Kliknij słupek żeby zmienić
-                    </p>
-                  )}
-                  <div className="flex items-end gap-1" style={{height:'120px'}}>
-                    {selectedArea.weeks.map((w,i)=>{
-                      const mx=Math.max(...selectedArea.weeks.map(x=>x.kg))
-                      return <div key={i} className="flex-1 flex flex-col items-center justify-end group relative" style={{height:'100%'}}>
-                        <div className={`w-full rounded-t cursor-pointer ${w.season==='summer'?'bg-orange-400 hover:bg-orange-500':'bg-red-400 hover:bg-red-500'}`}
-                          style={{height:Math.round((w.kg/mx)*110)+'px',minHeight:'4px'}} onClick={()=>toggleSeason(selectedAreaIdx!,i)}/>
-                        <div className="text-[9px] text-gray-500 mt-1">T{w.week}</div>
-                        <div className="absolute bottom-full mb-1 hidden group-hover:block bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10">T{w.week}: {w.kg.toLocaleString('pl-PL')} kg</div>
-                      </div>
-                    })}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button onClick={()=>saveAreaToTemplateDB(selectedArea).then(n=>{alert('Dodano '+n);fetchAll()})} className="bg-blue-600 hover:bg-blue-700">📊 Dodaj do bazy</Button>
-                    <Button onClick={saveAllToTemplateDB} variant="outline">📊 Dodaj wszystkie ({areas.length})</Button>
-                    <Button variant="outline" onClick={()=>{setAreas([]);setSelectedAreaIdx(null)}} className="ml-auto text-gray-500">Wyczyść</Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Filters */}
       <div className="bg-white rounded-xl border p-4">
         <div className="flex flex-wrap gap-3 items-center">
@@ -1398,7 +1253,7 @@ export default function TemplatesPage() {
       {filtered.length===0?(
         <div className="bg-white rounded-xl border p-12 text-center">
           <Database className="w-12 h-12 text-gray-300 mx-auto mb-4"/>
-          <p className="text-gray-500">{templates.length===0?'Baza pusta — Import MaxCrop':'Brak wyników'}</p>
+          <p className="text-gray-500">{templates.length===0?'Baza pusta — importuj dane w zakładce "Dane historyczne"':'Brak wyników'}</p>
         </div>
       ):(
         <div className="space-y-2">

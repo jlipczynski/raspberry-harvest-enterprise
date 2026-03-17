@@ -39,13 +39,13 @@ interface TemplateAssignment {
 }
 interface AvailableTemplate {
   id: string; name: string; season: string; varietyId?: string; productionYear: number
-  weeklyCurve: number[]; winteredInTunnel: boolean; plantSource?: string; productionCycle: number
+  weeklyCurve: number[]; winteredInTunnel: boolean; plantSource?: string; productionCycle: number; totalKg: number
 }
 interface PlantationSection {
   id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number
   potsOverride?: number | null
   yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; varietyId: string
-  winteredInTunnel?: boolean; plantMaterialType?: string
+  winteredInTunnel?: boolean; plantMaterialType?: string; plantSource?: string; productionYear?: number
   harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]
   templateAssignments?: TemplateAssignment[]
   variety?: { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]; pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number; autumnStartWeek?: number }
@@ -60,6 +60,32 @@ const SCENARIO_SHORT: Record<Scenario, string> = { p90: 'P90', p50: 'P50', p10: 
 // Flat distribution fallback — used ONLY when variety has no curves in DB
 // This produces a uniform spread; real curves should always come from DB (Variety or Section)
 const FLAT_CURVE_10W = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10] // 10 weeks, 10% each
+
+// ==================== TEMPLATE SCORING ====================
+const scoreTemplate = (t: AvailableTemplate, section: PlantationSection): number => {
+  let score = 0
+  if (t.varietyId && t.varietyId === section.varietyId) score += 40
+  if (t.winteredInTunnel === (section.winteredInTunnel ?? false)) score += 30
+  if (t.plantSource && t.plantSource === section.plantSource) score += 20
+  if (section.productionYear && Math.abs(t.productionCycle - (new Date().getFullYear() - section.productionYear + 1)) <= 1) score += 10
+  return score
+}
+
+// ==================== SPARKLINE ====================
+const CurveSparkline = ({ curve, color }: { curve: number[]; color: string }) => {
+  if (!curve?.length) return null
+  const max = Math.max(...curve)
+  if (max === 0) return null
+  const w = 120, h = 32
+  const points = curve.map((v, i) =>
+    `${(i / Math.max(curve.length - 1, 1)) * w},${h - (v / max) * (h - 4)}`
+  ).join(' ')
+  return (
+    <svg width={w} height={h} className="mt-1">
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 // ==================== STAFFING TIERS ====================
 interface StaffingTier {
@@ -137,7 +163,7 @@ export default function PlanningPage() {
       setAvailableTemplates((templatesData.templates || []).map((t: Record<string, unknown>) => ({
         id: t.id, name: t.name, season: t.season, varietyId: t.varietyId,
         productionYear: t.productionYear, weeklyCurve: t.weeklyCurve,
-        winteredInTunnel: t.winteredInTunnel, plantSource: t.plantSource, productionCycle: t.productionCycle,
+        winteredInTunnel: t.winteredInTunnel, plantSource: t.plantSource, productionCycle: t.productionCycle, totalKg: (t.totalKg as number) ?? 0,
       })))
     }).catch(console.error).finally(() => setLoading(false))
   }, [])
@@ -154,6 +180,16 @@ export default function PlanningPage() {
       const pData = await pRes.json()
       setBlocks(pData.blocks || [])
     } catch (e) { console.error('Error assigning curve:', e) }
+    setCurveDropdownOpen(null)
+  }, [])
+
+  const unassignCurve = useCallback(async (sectionId: string) => {
+    try {
+      await fetch(`/api/plantation/section/${sectionId}/assignment`, { method: 'DELETE' })
+      const pRes = await fetch('/api/plantation')
+      const pData = await pRes.json()
+      setBlocks(pData.blocks || [])
+    } catch (e) { console.error('Error unassigning curve:', e) }
     setCurveDropdownOpen(null)
   }, [])
 
@@ -686,14 +722,7 @@ export default function PlanningPage() {
                 const matchingTemplates = availableTemplates.filter(t =>
                   t.varietyId === d.section.varietyId ||
                   !t.varietyId
-                ).sort((a, b) => {
-                  let scoreA = 0, scoreB = 0
-                  if (a.varietyId === d.section.varietyId) scoreA += 10
-                  if (b.varietyId === d.section.varietyId) scoreB += 10
-                  if (a.winteredInTunnel === d.section.winteredInTunnel) scoreA += 5
-                  if (b.winteredInTunnel === d.section.winteredInTunnel) scoreB += 5
-                  return scoreB - scoreA
-                })
+                ).sort((a, b) => scoreTemplate(b, d.section) - scoreTemplate(a, d.section))
                 const summerTemplates = matchingTemplates.filter(t => t.season === 'summer')
                 const autumnTemplates = matchingTemplates.filter(t => t.season === 'autumn')
                 const isOpen = curveDropdownOpen === d.section.id
@@ -725,46 +754,72 @@ export default function PlanningPage() {
                       </button>
                     </div>
                     {isOpen && (
-                      <div className="mt-3 border-t pt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {/* Summer templates */}
-                        <div>
-                          <p className="text-xs font-medium text-orange-700 mb-2">☀️ Lato ({summerTemplates.length} szablonów)</p>
-                          {summerTemplates.length === 0 ? (
-                            <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
-                          ) : (
-                            <div className="space-y-1 max-h-40 overflow-y-auto">
-                              {summerTemplates.map(t => (
-                                <button
-                                  key={t.id}
-                                  onClick={() => assignCurve(d.section.id, t.id, 'summer')}
-                                  className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-orange-50 border transition-colors ${d.summerAssignment?.templateId === t.id ? 'border-orange-400 bg-orange-50' : 'border-transparent'}`}
-                                >
-                                  <div className="font-medium">{t.name}</div>
-                                  <div className="text-gray-400">{t.productionYear} | {t.weeklyCurve?.length || 0} tyg.</div>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        {/* Autumn templates */}
-                        <div>
-                          <p className="text-xs font-medium text-red-700 mb-2">🍂 Jesień ({autumnTemplates.length} szablonów)</p>
-                          {autumnTemplates.length === 0 ? (
-                            <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
-                          ) : (
-                            <div className="space-y-1 max-h-40 overflow-y-auto">
-                              {autumnTemplates.map(t => (
-                                <button
-                                  key={t.id}
-                                  onClick={() => assignCurve(d.section.id, t.id, 'autumn')}
-                                  className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-red-50 border transition-colors ${d.autumnAssignment?.templateId === t.id ? 'border-red-400 bg-red-50' : 'border-transparent'}`}
-                                >
-                                  <div className="font-medium">{t.name}</div>
-                                  <div className="text-gray-400">{t.productionYear} | {t.weeklyCurve?.length || 0} tyg.</div>
-                                </button>
-                              ))}
-                            </div>
-                          )}
+                      <div className="mt-3 border-t pt-3 space-y-3">
+                        {/* Użyj danych producenckich */}
+                        <button
+                          onClick={() => unassignCurve(d.section.id)}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-sm border transition-colors ${
+                            d.curveSource === 'variety' || d.curveSource === 'flat'
+                              ? 'border-purple-400 bg-purple-50 text-purple-700'
+                              : 'border-gray-200 hover:bg-purple-50 text-gray-700'
+                          }`}
+                        >
+                          <div className="font-medium">Użyj danych producenckich (odmiana)</div>
+                          <div className="text-xs text-gray-400">Odepnij szablon — użyje krzywej z odmiany</div>
+                        </button>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {/* Summer templates */}
+                          <div>
+                            <p className="text-xs font-medium text-orange-700 mb-2">☀️ Lato ({summerTemplates.length} szablonów)</p>
+                            {summerTemplates.length === 0 ? (
+                              <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
+                            ) : (
+                              <div className="space-y-1 max-h-48 overflow-y-auto">
+                                {summerTemplates.map((t, i) => (
+                                  <button
+                                    key={t.id}
+                                    onClick={() => assignCurve(d.section.id, t.id, 'summer')}
+                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-orange-50 border transition-colors ${d.summerAssignment?.templateId === t.id ? 'border-orange-400 bg-orange-50' : 'border-transparent'}`}
+                                  >
+                                    <div className="flex items-center gap-1">
+                                      <span className="font-medium">{t.name}</span>
+                                      {i === 0 && scoreTemplate(t, d.section) >= 70 && (
+                                        <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">Sugerowany</span>
+                                      )}
+                                    </div>
+                                    <div className="text-gray-400">{t.productionYear} | {t.weeklyCurve?.length || 0} tyg. | {(t.totalKg / 1000).toFixed(1)}t</div>
+                                    <CurveSparkline curve={t.weeklyCurve} color="#f97316" />
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {/* Autumn templates */}
+                          <div>
+                            <p className="text-xs font-medium text-red-700 mb-2">🍂 Jesień ({autumnTemplates.length} szablonów)</p>
+                            {autumnTemplates.length === 0 ? (
+                              <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
+                            ) : (
+                              <div className="space-y-1 max-h-48 overflow-y-auto">
+                                {autumnTemplates.map((t, i) => (
+                                  <button
+                                    key={t.id}
+                                    onClick={() => assignCurve(d.section.id, t.id, 'autumn')}
+                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-red-50 border transition-colors ${d.autumnAssignment?.templateId === t.id ? 'border-red-400 bg-red-50' : 'border-transparent'}`}
+                                  >
+                                    <div className="flex items-center gap-1">
+                                      <span className="font-medium">{t.name}</span>
+                                      {i === 0 && scoreTemplate(t, d.section) >= 70 && (
+                                        <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">Sugerowany</span>
+                                      )}
+                                    </div>
+                                    <div className="text-gray-400">{t.productionYear} | {t.weeklyCurve?.length || 0} tyg. | {(t.totalKg / 1000).toFixed(1)}t</div>
+                                    <CurveSparkline curve={t.weeklyCurve} color="#ef4444" />
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}

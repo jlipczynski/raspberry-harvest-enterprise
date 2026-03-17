@@ -175,12 +175,8 @@ export default function PlanningPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ templateId, season, targetYear: new Date().getFullYear() }),
       })
-      // Reload plantation data
-      const pRes = await fetch('/api/plantation')
-      const pData = await pRes.json()
-      setBlocks(pData.blocks || [])
+      window.location.reload()
     } catch (e) { console.error('Error assigning curve:', e) }
-    setCurveDropdownOpen(null)
   }, [])
 
   const unassignCurve = useCallback(async (sectionId: string) => {
@@ -779,7 +775,7 @@ export default function PlanningPage() {
                                   <button
                                     key={t.id}
                                     onClick={() => assignCurve(d.section.id, t.id, 'summer')}
-                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-orange-50 border transition-colors ${d.summerAssignment?.templateId === t.id ? 'border-orange-400 bg-orange-50' : 'border-transparent'}`}
+                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-orange-50 border transition-colors cursor-pointer ${d.summerAssignment?.templateId === t.id ? 'border-orange-400 bg-orange-50' : 'border-transparent'}`}
                                   >
                                     <div className="flex items-center gap-1">
                                       <span className="font-medium">{t.name}</span>
@@ -805,7 +801,7 @@ export default function PlanningPage() {
                                   <button
                                     key={t.id}
                                     onClick={() => assignCurve(d.section.id, t.id, 'autumn')}
-                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-red-50 border transition-colors ${d.autumnAssignment?.templateId === t.id ? 'border-red-400 bg-red-50' : 'border-transparent'}`}
+                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-red-50 border transition-colors cursor-pointer ${d.autumnAssignment?.templateId === t.id ? 'border-red-400 bg-red-50' : 'border-transparent'}`}
                                   >
                                     <div className="flex items-center gap-1">
                                       <span className="font-medium">{t.name}</span>

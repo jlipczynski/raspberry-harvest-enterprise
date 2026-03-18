@@ -94,6 +94,16 @@ const YEAR_COLORS: Record<number, string> = {
 }
 const getYearColor = (y: number) => YEAR_COLORS[y] || '#8b5cf6'
 
+function detectSummerEnd(weeks: { week: number; kg: number }[]): number {
+  if (weeks.length < 3) return weeks[weeks.length - 1]?.week || 30
+  const peak = Math.max(...weeks.map(w => w.kg))
+  const peakIdx = weeks.findIndex(w => w.kg === peak)
+  for (let i = peakIdx + 1; i < weeks.length; i++) {
+    if (weeks[i].kg < peak * 0.2) return weeks[i - 1]?.week || 30
+  }
+  return weeks[weeks.length - 1]?.week || 30
+}
+
 // ==================== COMPONENT ====================
 export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCreated: () => void }) {
   const [sections, setSections] = useState<Section[]>([])
@@ -337,9 +347,14 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
         })
 
         const parsed: AreaImport[] = Object.entries(areaMap).map(([area, weekMap]) => {
-          const weeks: WeekRow[] = Object.entries(weekMap)
+          const rawWeeks = Object.entries(weekMap)
             .sort(([a], [b]) => Number(a) - Number(b))
-            .map(([wk, kg]) => ({ week: Number(wk), kg, dates: getWeekDates(Number(wk), yr), season: 'summer' as const }))
+            .map(([wk, kg]) => ({ week: Number(wk), kg, dates: getWeekDates(Number(wk), yr), season: 'summer' as 'summer' | 'autumn' }))
+          const summerEndWeek = detectSummerEnd(rawWeeks)
+          const weeks: WeekRow[] = rawWeeks.map(w => ({
+            ...w,
+            season: w.week <= summerEndWeek ? 'summer' : 'autumn'
+          }))
           const days: DayData[] = Object.entries(areaDailyMap[area] || {})
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([date, kg]) => ({ date, kg, dayOfWeek: new Date(date).getDay(), isPreHarvest: false }))
@@ -654,13 +669,20 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                 </Button>
               </div>
               {areas.length > 0 && (
-                <div className="flex items-center gap-4 p-3 bg-amber-50 border border-amber-300 rounded-lg">
-                  <span className="text-sm font-semibold text-amber-800">⚠️ Rok danych:</span>
-                  <select className="h-10 text-lg font-bold border-2 border-amber-400 rounded-lg px-3 bg-white" value={importYear} onChange={e => setImportYear(parseInt(e.target.value))}>
-                    {[2022, 2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                  <span className="text-sm text-amber-700">Wykryto {areas.length} obszarów</span>
-                </div>
+                <>
+                  <div className="flex items-center gap-4 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+                    <span className="text-sm font-semibold text-amber-800">⚠️ Rok danych:</span>
+                    <select className="h-10 text-lg font-bold border-2 border-amber-400 rounded-lg px-3 bg-white" value={importYear} onChange={e => setImportYear(parseInt(e.target.value))}>
+                      {[2022, 2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                    <span className="text-sm text-amber-700">Wykryto {areas.length} obszarów</span>
+                  </div>
+                  {areas.some(a => a.weeks.some(w => w.season === 'autumn')) && (
+                    <p className="text-xs text-purple-600 mt-1">
+                      🤖 Auto-wykryto granicę lato/jesień · Kliknij sezon w tabeli żeby zmienić
+                    </p>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

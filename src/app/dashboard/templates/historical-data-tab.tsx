@@ -200,6 +200,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   const [selectedAreaIdxs, setSelectedAreaIdxs] = useState<Set<number>>(new Set())
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set())
   const [mergedExpandedWeeks, setMergedExpandedWeeks] = useState<Set<number>>(new Set())
+  const [mergedCommercialStartDate, setMergedCommercialStartDate] = useState<string | null>(null)
   const [templateName, setTemplateName] = useState('')
 
   const toggleMergedWeek = (weekNum: number) => {
@@ -218,6 +219,26 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       else next.add(i)
       return next
     })
+    setMergedCommercialStartDate(null)
+    setMergedExpandedWeeks(new Set())
+  }
+
+  const markMergedCommercialStart = (date: string) => {
+    setMergedCommercialStartDate(date)
+    setAreas(prev => prev.map((area, i) => {
+      if (!selectedAreaIdxs.has(i)) return area
+      const newDays = area.days.map(d => ({ ...d, isPreHarvest: d.date < date }))
+      return { ...area, days: newDays, commercialStartDate: date }
+    }))
+  }
+
+  const resetMergedCommercialStart = () => {
+    setMergedCommercialStartDate(null)
+    setAreas(prev => prev.map((area, i) => {
+      if (!selectedAreaIdxs.has(i)) return area
+      const newDays = area.days.map(d => ({ ...d, isPreHarvest: false }))
+      return { ...area, days: newDays, commercialStartDate: null }
+    }))
   }
 
   // History
@@ -685,6 +706,28 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                <div className={`flex items-center justify-between p-3 rounded-lg border mb-4 ${
+                  mergedCommercialStartDate ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'
+                }`}>
+                  <div>
+                    <p className="text-sm font-medium">
+                      {mergedCommercialStartDate
+                        ? `⚓ Start lata: ${new Date(mergedCommercialStartDate).toLocaleDateString('pl-PL')}`
+                        : '⚓ Oznacz start lata'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {mergedCommercialStartDate
+                        ? 'Dni przed startem = pośpiech — dotyczy wszystkich zaznaczonych obszarów'
+                        : 'Rozwiń tydzień i kliknij "Oznacz jako start" przy dniu'}
+                    </p>
+                  </div>
+                  {mergedCommercialStartDate && (
+                    <Button size="sm" variant="outline" onClick={resetMergedCommercialStart}>
+                      <X className="w-3 h-3 mr-1" />Resetuj
+                    </Button>
+                  )}
+                </div>
+
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50">
@@ -729,17 +772,31 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                             </td>
                           </tr>
                           {mergedExpandedWeeks.has(w.week) && (mergedDaysByWeek[w.week] || []).map(d => (
-                            <tr key={`merged-day-${d.date}`} className={`border-b ${d.isPreHarvest ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
+                            <tr key={`merged-day-${d.date}`} className={`border-b ${d.date === mergedCommercialStartDate ? 'bg-green-50' : d.isPreHarvest ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
                               <td className="py-1 px-3 pl-8 text-xs text-gray-500" colSpan={2}>
                                 {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                {d.date === mergedCommercialStartDate && <span className="ml-2 text-green-600 font-medium">← start lata</span>}
                               </td>
                               <td className="py-1 px-3 text-right text-xs font-medium">{d.kg.toFixed(1)}</td>
-                              <td colSpan={2}>
-                                <div className="text-center">
-                                  <span className={`px-2 py-0.5 rounded-full text-xs ${d.isPreHarvest ? 'bg-gray-200 text-gray-600' : w.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                                    {d.isPreHarvest ? 'Pośpiech' : w.season === 'summer' ? 'Lato' : 'Jesień'}
+                              <td className="py-1 px-3 text-center" colSpan={2}>
+                                {mergedCommercialStartDate ? (
+                                  <span className={`px-2 py-0.5 rounded-full text-xs ${
+                                    d.isPreHarvest
+                                      ? 'bg-gray-200 text-gray-600'
+                                      : d.date === mergedCommercialStartDate
+                                        ? 'bg-green-200 text-green-800 font-medium'
+                                        : w.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'
+                                  }`}>
+                                    {d.isPreHarvest ? 'Pośpiech' : d.date === mergedCommercialStartDate ? '← start lata' : w.season === 'summer' ? 'Lato' : 'Jesień'}
                                   </span>
-                                </div>
+                                ) : (
+                                  <button
+                                    onClick={() => markMergedCommercialStart(d.date)}
+                                    className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                  >
+                                    Oznacz jako start
+                                  </button>
+                                )}
                               </td>
                               <td />
                             </tr>

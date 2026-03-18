@@ -199,7 +199,17 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   const [selectedAreaIdx, setSelectedAreaIdx] = useState(0)
   const [selectedAreaIdxs, setSelectedAreaIdxs] = useState<Set<number>>(new Set())
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set())
+  const [mergedExpandedWeeks, setMergedExpandedWeeks] = useState<Set<number>>(new Set())
   const [templateName, setTemplateName] = useState('')
+
+  const toggleMergedWeek = (weekNum: number) => {
+    setMergedExpandedWeeks(prev => {
+      const next = new Set(prev)
+      if (next.has(weekNum)) next.delete(weekNum)
+      else next.add(weekNum)
+      return next
+    })
+  }
 
   const toggleAreaSelection = (i: number) => {
     setSelectedAreaIdxs(prev => {
@@ -416,6 +426,24 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   const mergedTotalKg = mergedWeeks.reduce((s, w) => s + w.kg, 0)
   const mergedSummerKg = mergedWeeks.filter(w => w.season === 'summer').reduce((s, w) => s + w.kg, 0)
   const mergedAutumnKg = mergedWeeks.filter(w => w.season === 'autumn').reduce((s, w) => s + w.kg, 0)
+
+  const mergedDaysByWeek = useMemo(() => {
+    const result: Record<number, Array<{ date: string; kg: number; isPreHarvest: boolean }>> = {}
+    for (const area of selectedAreas) {
+      for (const day of area.days) {
+        const weekNum = getWeekNumber(new Date(day.date))
+        if (!result[weekNum]) result[weekNum] = []
+        const existing = result[weekNum].find(d => d.date === day.date)
+        if (existing) existing.kg += day.kg
+        else result[weekNum].push({ date: day.date, kg: day.kg, isPreHarvest: day.isPreHarvest })
+      }
+    }
+    Object.keys(result).forEach(week => {
+      result[Number(week)].sort((a, b) => a.date.localeCompare(b.date))
+    })
+    return result
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAreaIdxs, areas])
 
   const handleSaveMergedTemplate = async () => {
     if (!templateName.trim()) return
@@ -665,6 +693,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                       <th className="text-right py-2 px-3">%</th>
                       <th className="text-right py-2 px-3">Σ%</th>
                       <th className="text-center py-2 px-3">Sezon</th>
+                      <th className="text-center py-2 px-3 w-8"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -679,21 +708,57 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                       }, 0)
                       const isBoundary = i > 0 && mergedWeeks[i-1].season !== w.season
                       return (
-                        <tr key={w.week} className={`border-b ${isBoundary ? 'border-t-4 border-t-gray-300' : ''}`}>
-                          <td className="py-2 px-3 font-medium">T{w.week}</td>
-                          <td className="py-2 px-3 text-right">{w.kg.toLocaleString('pl-PL', { maximumFractionDigits: 0 })}</td>
-                          <td className="py-2 px-3 text-right">
-                            <span className={pct > 15 ? 'text-green-600 font-medium' : ''}>{pct.toFixed(1)}%</span>
-                          </td>
-                          <td className="py-2 px-3 text-right text-gray-400">{cumPct.toFixed(1)}%</td>
-                          <td className="py-2 px-3 text-center">
-                            <span className={`px-2 py-0.5 rounded-full text-xs ${w.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                              {w.season === 'summer' ? '☀️ Lato' : '🍂 Jesień'}
-                            </span>
-                          </td>
-                        </tr>
+                        <React.Fragment key={`merged-week-${w.week}`}>
+                          <tr
+                            className={`border-b hover:bg-gray-50 cursor-pointer ${isBoundary ? 'border-t-4 border-t-gray-300' : ''}`}
+                            onClick={() => toggleMergedWeek(w.week)}
+                          >
+                            <td className="py-2 px-3 font-medium">T{w.week}</td>
+                            <td className="py-2 px-3 text-right">{w.kg.toLocaleString('pl-PL', { maximumFractionDigits: 0 })}</td>
+                            <td className="py-2 px-3 text-right">
+                              <span className={pct > 15 ? 'text-green-600 font-medium' : ''}>{pct.toFixed(1)}%</span>
+                            </td>
+                            <td className="py-2 px-3 text-right text-gray-400">{cumPct.toFixed(1)}%</td>
+                            <td className="py-2 px-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-xs ${w.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                {w.season === 'summer' ? '☀️ Lato' : '🍂 Jesień'}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-center text-gray-400 w-8">
+                              {mergedExpandedWeeks.has(w.week) ? '▼' : '▶'}
+                            </td>
+                          </tr>
+                          {mergedExpandedWeeks.has(w.week) && (mergedDaysByWeek[w.week] || []).map(d => (
+                            <tr key={`merged-day-${d.date}`} className={`border-b ${d.isPreHarvest ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
+                              <td className="py-1 px-3 pl-8 text-xs text-gray-500" colSpan={2}>
+                                {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
+                              </td>
+                              <td className="py-1 px-3 text-right text-xs font-medium">{d.kg.toFixed(1)}</td>
+                              <td colSpan={2}>
+                                <div className="text-center">
+                                  <span className={`px-2 py-0.5 rounded-full text-xs ${d.isPreHarvest ? 'bg-gray-200 text-gray-600' : w.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                    {d.isPreHarvest ? 'Pośpiech' : w.season === 'summer' ? 'Lato' : 'Jesień'}
+                                  </span>
+                                </div>
+                              </td>
+                              <td />
+                            </tr>
+                          ))}
+                        </React.Fragment>
                       )
                     })}
+                    <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
+                      <td className="py-2 px-3">Razem</td>
+                      <td className="py-2 px-3 text-right">{mergedTotalKg.toLocaleString('pl-PL', { maximumFractionDigits: 0 })} kg</td>
+                      <td className="py-2 px-3 text-right">100%</td>
+                      <td className="py-2 px-3 text-right text-gray-400"></td>
+                      <td className="py-2 px-3 text-center text-xs text-gray-500">
+                        {mergedSummerKg > 0 && <span className="text-orange-600">☀️ {(mergedSummerKg/1000).toFixed(1)}t</span>}
+                        {mergedSummerKg > 0 && mergedAutumnKg > 0 && ' · '}
+                        {mergedAutumnKg > 0 && <span className="text-red-600">🍂 {(mergedAutumnKg/1000).toFixed(1)}t</span>}
+                      </td>
+                      <td />
+                    </tr>
                   </tbody>
                 </table>
               </CardContent>

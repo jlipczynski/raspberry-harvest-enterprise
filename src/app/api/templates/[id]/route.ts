@@ -20,9 +20,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { id } = await params
     const body = await request.json()
     const data: Record<string, unknown> = {}
-    const fields = ['name','description','productionYear','productionCycle','season','plantingDate',
-      'winteredInTunnel','plantSource','dailyCurve','weeklyCurve','startDate','endDate','startWeek',
-      'totalKg','outsideTemps','insideTunnelTemps','tempAdjustmentFactor','gdhData','gdhToFlowering',
+    const fields = ['name','description','productionYear','productionCycle','plantingDate',
+      'winteredInTunnel','plantSource',
+      'dailyCurveSummer','weeklyCurveSummer','startDateSummer','endDateSummer','startWeekSummer','totalKgSummer',
+      'dailyCurveAutumn','weeklyCurveAutumn','startDateAutumn','endDateAutumn','startWeekAutumn','totalKgAutumn',
+      'outsideTemps','insideTunnelTemps','tempAdjustmentFactor','gdhData','gdhToFlowering',
       'gdhToFirstFruit','tempSources','sourceFile','notes']
     fields.forEach(f => { if (body[f] !== undefined) data[f] = body[f] })
     if (body.varietyId !== undefined) {

@@ -366,19 +366,25 @@ model ProductionCurveTemplate {
   
   productionYear      Int                          // year of data (2024, 2025)
   productionCycle     Int      @default(1)          // 1st/2nd/3rd year of production
-  season              String                        // 'summer' | 'autumn'
-  
   plantingDate        String?                       // when planted
   winteredInTunnel    Boolean  @default(false)
   plantSource         String?                       // 'long_canes' | 'tray_plants' | 'nursery'
-  
-  // Production curve data
-  dailyCurve          Float[]                       // kg per day from MaxCrop
-  weeklyCurve         Float[]                       // % per week (aggregated)
-  startDate           String?                       // first harvest day
-  endDate             String?                       // last harvest day
-  startWeek           Int?
-  totalKg             Float    @default(0)
+
+  // Krzywa letnia
+  dailyCurveSummer    Float[]                       // % per day - summer
+  weeklyCurveSummer   Float[]                       // % per week - summer
+  startDateSummer     String?
+  endDateSummer       String?
+  startWeekSummer     Int?
+  totalKgSummer       Float    @default(0)
+
+  // Krzywa jesienna
+  dailyCurveAutumn    Float[]                       // % per day - autumn
+  weeklyCurveAutumn   Float[]                       // % per week - autumn
+  startDateAutumn     String?
+  endDateAutumn       String?
+  startWeekAutumn     Int?
+  totalKgAutumn       Float    @default(0)
   
   // Historical temperature data
   outsideTemps        Json?                         // [{date, min, max, avg}]

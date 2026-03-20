@@ -9,56 +9,47 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const tenantId = await requireTenantId()
-
     const body = await request.json()
     const {
       name,
-      season,
-      dailyCurve,
-      weeklyCurve,
-      totalKg,
+      summer,   // { dailyCurve, weeklyCurve, totalKg, startWeek }
+      autumn,   // { dailyCurve, weeklyCurve, totalKg, startWeek }
       productionYear,
-      startWeek,
-      sourceAreaNames,
       varietyId,
       winteredInTunnel,
       plantSource,
       productionCycle,
     } = body
 
-    if (!name?.trim()) {
-      return NextResponse.json({ error: 'Nazwa jest wymagana' }, { status: 400 })
-    }
-    if (!season) {
-      return NextResponse.json({ error: 'Sezon jest wymagany' }, { status: 400 })
-    }
-    if (!dailyCurve || !Array.isArray(dailyCurve)) {
-      return NextResponse.json({ error: 'dailyCurve jest wymagane' }, { status: 400 })
+    if (!name?.trim()) return NextResponse.json({ error: 'Nazwa jest wymagana' }, { status: 400 })
+    if (!summer?.dailyCurve && !autumn?.dailyCurve) {
+      return NextResponse.json({ error: 'Przynajmniej jedna krzywa jest wymagana' }, { status: 400 })
     }
 
     const template = await prisma.productionCurveTemplate.create({
       data: {
         name: name.trim(),
         tenantId,
-        season,
-        dailyCurve: dailyCurve || [],
-        weeklyCurve: weeklyCurve || [],
-        totalKg: totalKg || 0,
         productionYear: productionYear || new Date().getFullYear(),
-        startWeek: startWeek || 23,
         productionCycle: productionCycle || 1,
         winteredInTunnel: winteredInTunnel ?? false,
         plantSource: plantSource || null,
         varietyId: varietyId || null,
-        sourceAreaNames: sourceAreaNames || [],
         tempSources: [],
+        // Lato
+        dailyCurveSummer: summer?.dailyCurve || [],
+        weeklyCurveSummer: summer?.weeklyCurve || [],
+        totalKgSummer: summer?.totalKg || 0,
+        startWeekSummer: summer?.startWeek || null,
+        // Jesień
+        dailyCurveAutumn: autumn?.dailyCurve || [],
+        weeklyCurveAutumn: autumn?.weeklyCurve || [],
+        totalKgAutumn: autumn?.totalKg || 0,
+        startWeekAutumn: autumn?.startWeek || null,
       },
     })
-
     return NextResponse.json({ template })
   } catch (error) {
     console.error('Error creating template:', error)

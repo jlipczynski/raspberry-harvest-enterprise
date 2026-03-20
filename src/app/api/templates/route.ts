@@ -8,14 +8,24 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const where: Record<string, unknown> = {}
     if (searchParams.get('varietyId')) where.varietyId = searchParams.get('varietyId')
-    if (searchParams.get('season')) where.season = searchParams.get('season')
     if (searchParams.get('cycle')) where.productionCycle = parseInt(searchParams.get('cycle')!)
     if (searchParams.get('tunnel')) where.winteredInTunnel = searchParams.get('tunnel') === 'true'
     const templates = await prisma.productionCurveTemplate.findMany({
       where, include: { tenant: { select: { name: true } }, variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } }, sourceSection: { select: { id: true, name: true } }, _count: { select: { sectionAssignments: true } } },
       orderBy: [{ productionYear: 'desc' }, { name: 'asc' }],
     })
-    return NextResponse.json({ templates })
+    // Add backward-compatible fields for planning/page.tsx
+    const templatesWithCompat = templates.map(t => ({
+      ...t,
+      season: t.dailyCurveSummer.length > 0 ? 'summer' : 'autumn',
+      dailyCurve: [...(t.dailyCurveSummer || []), ...(t.dailyCurveAutumn || [])],
+      weeklyCurve: [...(t.weeklyCurveSummer || []), ...(t.weeklyCurveAutumn || [])],
+      totalKg: (t.totalKgSummer || 0) + (t.totalKgAutumn || 0),
+      startWeek: t.startWeekSummer || t.startWeekAutumn || null,
+      startDate: t.startDateSummer || t.startDateAutumn || null,
+      endDate: t.endDateAutumn || t.endDateSummer || null,
+    }))
+    return NextResponse.json({ templates: templatesWithCompat })
   } catch (error) {
     console.error('Error fetching templates:', error)
     return NextResponse.json({ error: 'Failed to fetch' }, { status: 500 })
@@ -33,18 +43,18 @@ export async function POST(request: NextRequest) {
     if (!body.productionYear || typeof body.productionYear !== 'number') {
       return NextResponse.json({ error: 'Rok produkcji jest wymagany' }, { status: 400 })
     }
-    if (!body.season) {
-      return NextResponse.json({ error: 'Sezon jest wymagany' }, { status: 400 })
-    }
 
     const data: Record<string, unknown> = {
       name: body.name, description: body.description || null, tenantId,
       productionYear: body.productionYear, productionCycle: body.productionCycle || 1,
-      season: body.season, plantingDate: body.plantingDate || null,
+      plantingDate: body.plantingDate || null,
       winteredInTunnel: body.winteredInTunnel || false, plantSource: body.plantSource || null,
-      dailyCurve: body.dailyCurve || [], weeklyCurve: body.weeklyCurve || [],
-      startDate: body.startDate || null, endDate: body.endDate || null,
-      startWeek: body.startWeek ?? null, totalKg: body.totalKg ?? 0,
+      dailyCurveSummer: body.dailyCurveSummer || [], weeklyCurveSummer: body.weeklyCurveSummer || [],
+      startDateSummer: body.startDateSummer || null, endDateSummer: body.endDateSummer || null,
+      startWeekSummer: body.startWeekSummer ?? null, totalKgSummer: body.totalKgSummer ?? 0,
+      dailyCurveAutumn: body.dailyCurveAutumn || [], weeklyCurveAutumn: body.weeklyCurveAutumn || [],
+      startDateAutumn: body.startDateAutumn || null, endDateAutumn: body.endDateAutumn || null,
+      startWeekAutumn: body.startWeekAutumn ?? null, totalKgAutumn: body.totalKgAutumn ?? 0,
       outsideTemps: body.outsideTemps || null, insideTunnelTemps: body.insideTunnelTemps || null,
       tempAdjustmentFactor: body.tempAdjustmentFactor || null,
       gdhData: body.gdhData || null, gdhToFlowering: body.gdhToFlowering || null,

@@ -30,9 +30,15 @@ interface PlantationSection { id: string; name: string; blockName: string; varie
 interface Template {
   tenantName?: string
   id: string; name: string; description?: string; productionYear: number; productionCycle: number
-  season: string; plantingDate?: string; winteredInTunnel: boolean; plantSource?: string
-  dailyCurve: number[]; weeklyCurve: number[]; startDate?: string; endDate?: string; startWeek?: number
-  totalKg: number; outsideTemps?: TempPoint[]; insideTunnelTemps?: TempPoint[]; tempAdjustmentFactor?: number
+  plantingDate?: string; winteredInTunnel: boolean; plantSource?: string
+  // New summer/autumn fields
+  dailyCurveSummer: number[]; weeklyCurveSummer: number[]
+  startDateSummer?: string; endDateSummer?: string; startWeekSummer?: number; totalKgSummer: number
+  dailyCurveAutumn: number[]; weeklyCurveAutumn: number[]
+  startDateAutumn?: string; endDateAutumn?: string; startWeekAutumn?: number; totalKgAutumn: number
+  // Computed compat fields from API
+  season: string; dailyCurve: number[]; weeklyCurve: number[]; startDate?: string; endDate?: string; startWeek?: number; totalKg: number
+  outsideTemps?: TempPoint[]; insideTunnelTemps?: TempPoint[]; tempAdjustmentFactor?: number
   gdhData?: GdhPoint[]; gdhToFlowering?: number; gdhToFirstFruit?: number; tempSources: string[]
   sourceFile?: string; notes?: string; summerEndWeek?: number
   sourceSectionId?: string; sourceSection?: { id: string; name: string }
@@ -829,7 +835,7 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
         )}
         <div className="bg-white rounded-lg px-4 py-3 border flex items-center gap-3">
           <BarChart3 className="w-5 h-5 text-gray-400"/>
-          <div><div className="text-xs text-gray-400">Suma zbiorów</div><div className="font-bold text-green-700">{(t.totalKg/1000).toFixed(1)}t</div></div>
+          <div><div className="text-xs text-gray-400">Suma zbiorów</div><div className="font-bold text-green-700">{((t.totalKgSummer + t.totalKgAutumn)/1000).toFixed(1)}t</div></div>
         </div>
         <div className="bg-white rounded-lg px-4 py-3 border">
           <div className="text-xs text-gray-400">Odmiana</div><div className="font-bold">{t.variety?.name || '—'}</div>
@@ -1190,7 +1196,8 @@ export default function TemplatesPage() {
 
   const filtered = templates.filter(t => {
     if (filter.varietyId && t.variety?.id !== filter.varietyId) return false
-    if (filter.season && t.season !== filter.season) return false
+    if (filter.season === 'summer' && t.dailyCurveSummer.length === 0) return false
+    if (filter.season === 'autumn' && t.dailyCurveAutumn.length === 0) return false
     if (filter.cycle && t.productionCycle !== parseInt(filter.cycle)) return false
     if (filter.tunnel && String(t.winteredInTunnel) !== filter.tunnel) return false
     if (filter.search && !t.name.toLowerCase().includes(filter.search.toLowerCase())) return false
@@ -1264,8 +1271,8 @@ export default function TemplatesPage() {
             return (
               <div key={t.id} className="bg-white rounded-xl border overflow-hidden">
                 <div className="flex items-center gap-4 p-4 cursor-pointer hover:bg-gray-50" onClick={()=>setExpandedId(isExp?null:t.id)}>
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-lg ${t.season==='summer'?'bg-orange-500':'bg-red-500'}`}>
-                    {t.season==='summer'?'☀️':'🍂'}
+                  <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-lg ${t.dailyCurveSummer.length > 0 && t.dailyCurveAutumn.length > 0 ? 'bg-gradient-to-br from-orange-500 to-red-500' : t.dailyCurveSummer.length > 0 ? 'bg-orange-500' : 'bg-red-500'}`}>
+                    {t.dailyCurveSummer.length > 0 && t.dailyCurveAutumn.length > 0 ? '☀🍂' : t.dailyCurveSummer.length > 0 ? '☀️' : '🍂'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold truncate flex items-center gap-2">{t.name}{t.tenantName && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-normal">{t.tenantName}</span>}</div>
@@ -1279,13 +1286,17 @@ export default function TemplatesPage() {
                     </div>
                   </div>
                   <div className="flex items-end gap-px h-8 w-28">
-                    {(t.weeklyCurve||[]).map((v,i)=>(
-                      <div key={i} className="flex-1 rounded-t" style={{height:(v/Math.max(...(t.weeklyCurve||[1])))*28+'px',minHeight:'1px',background:t.season==='summer'?'#fb923c':'#f87171'}}/>
-                    ))}
+                    {(() => {
+                      const curve = t.weeklyCurveSummer.length > 0 ? t.weeklyCurveSummer : t.weeklyCurveAutumn
+                      const maxVal = Math.max(...(curve.length > 0 ? curve : [1]))
+                      return curve.map((v,i)=>(
+                        <div key={i} className="flex-1 rounded-t" style={{height:(v/maxVal)*28+'px',minHeight:'1px',background: t.dailyCurveSummer.length > 0 ? '#fb923c' : '#f87171'}}/>
+                      ))
+                    })()}
                   </div>
                   <div className="text-right w-20">
-                    <div className="font-bold text-green-700">{(t.totalKg/1000).toFixed(1)}t</div>
-                    <div className="text-xs text-gray-400">{t.dailyCurve?.length||0}d</div>
+                    <div className="font-bold text-green-700">{((t.totalKgSummer + t.totalKgAutumn)/1000).toFixed(1)}t</div>
+                    <div className="text-xs text-gray-400">{(t.dailyCurveSummer?.length || 0) + (t.dailyCurveAutumn?.length || 0)}d</div>
                   </div>
                   <div className="flex items-center gap-1">
                     {hasTemps && <Thermometer className="w-4 h-4 text-blue-400"/>}

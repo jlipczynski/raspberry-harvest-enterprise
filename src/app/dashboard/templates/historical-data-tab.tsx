@@ -485,45 +485,67 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     if (!templateName.trim()) return
     setSavingTemplate(true)
     try {
-      const allDays: { date: string; kg: number }[] = []
+      // Zbierz dni letnie (nie pośpiech, sezon lato)
+      const summerDays: { date: string; kg: number }[] = []
+      const autumnDays: { date: string; kg: number }[] = []
+
       for (const area of selectedAreas) {
-        for (const day of area.days) {
-          if (!day.isPreHarvest) {
-            const existing = allDays.find(d => d.date === day.date)
-            if (existing) existing.kg += day.kg
-            else allDays.push({ date: day.date, kg: day.kg })
+        for (const week of area.weeks) {
+          const weekDays = area.days.filter(d => {
+            const date = new Date(d.date)
+            const wk = getWeekNumber(date)
+            return wk === week.week && !d.isPreHarvest
+          })
+          for (const day of weekDays) {
+            if (week.season === 'summer') {
+              const existing = summerDays.find(d => d.date === day.date)
+              if (existing) existing.kg += day.kg
+              else summerDays.push({ date: day.date, kg: day.kg })
+            } else {
+              const existing = autumnDays.find(d => d.date === day.date)
+              if (existing) existing.kg += day.kg
+              else autumnDays.push({ date: day.date, kg: day.kg })
+            }
           }
         }
       }
-      allDays.sort((a, b) => a.date.localeCompare(b.date))
 
-      const totalKg = allDays.reduce((s, d) => s + d.kg, 0)
-      const dailyCurvePercent = allDays.map(d => totalKg > 0 ? (d.kg / totalKg) * 100 : 0)
+      summerDays.sort((a, b) => a.date.localeCompare(b.date))
+      autumnDays.sort((a, b) => a.date.localeCompare(b.date))
+
+      const buildCurve = (days: { date: string; kg: number }[], season: 'summer' | 'autumn') => {
+        const total = days.reduce((s, d) => s + d.kg, 0)
+        const dailyCurve = days.map(d => total > 0 ? (d.kg / total) * 100 : 0)
+        const seasonTotal = season === 'summer' ? mergedSummerKg : mergedAutumnKg
+        const weeklyCurve = mergedWeeks
+          .filter(w => w.season === season)
+          .map(w => seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0)
+        const startWeek = mergedWeeks.filter(w => w.season === season)[0]?.week || null
+        return { dailyCurve, weeklyCurve, totalKg: total, startWeek }
+      }
+
+      const summer = summerDays.length > 0 ? buildCurve(summerDays, 'summer') : null
+      const autumn = autumnDays.length > 0 ? buildCurve(autumnDays, 'autumn') : null
 
       const res = await fetch('/api/harvest-curves/to-template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: templateName,
-          season: mergedSummerKg >= mergedAutumnKg ? 'summer' : 'autumn',
-          dailyCurve: dailyCurvePercent,
-          weeklyCurve: mergedWeeks.map(w => {
-            const seasonTotal = w.season === 'summer' ? mergedSummerKg : mergedAutumnKg
-            return seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0
-          }),
-          totalKg,
+          summer,
+          autumn,
           productionYear: importYear,
-          startWeek: mergedWeeks[0]?.week || 23,
-          sourceAreaNames: selectedAreas.map(a => a.area),
         })
       })
+
       if (res.ok) {
         alert(`Szablon "${templateName}" zapisany!`)
         setTemplateName('')
         setSelectedAreaIdxs(new Set())
         onTemplateCreated()
       } else {
-        alert('Błąd zapisu szablonu')
+        const err = await res.json()
+        alert('Błąd zapisu: ' + (err.error || 'nieznany błąd'))
       }
     } catch (e) {
       console.error(e)

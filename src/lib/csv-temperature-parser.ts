@@ -198,8 +198,13 @@ function detectTenths(values: number[]): boolean {
 // ============================================================
 
 function parseStandardCsv(content: string, fileName: string): ParsedTemperatureCsv {
-  const blockName = extractBlockNameFromFilename(fileName)
   const lines = content.split('\n').map(l => l.trim()).filter(Boolean)
+
+  // Try filename first, then first line of content for tunnel detection
+  let blockName = extractBlockNameFromFilename(fileName)
+  if (!blockName && lines.length > 0) {
+    blockName = extractBlockFromText(lines[0])
+  }
 
   if (lines.length < 2) {
     return {
@@ -249,15 +254,34 @@ function parseStandardCsv(content: string, fileName: string): ParsedTemperatureC
   }
 }
 
+/**
+ * Extract tunnel code from arbitrary text (e.g. filename, first line header).
+ * "Tunel 3 C  |  odczyt: 23 d..." → "3C"
+ * "T3C_20-03-2026" → "3C"
+ * "temperatury_tunele_v2_-_T3C_20-03-2026" → "3C"
+ * "T12D_dane" → "12D"
+ */
+function extractBlockFromText(text: string): string | null {
+  // "Tunel 3C" or "Tunel 3 C"
+  const tunnelMatch = text.match(/tunel\s*(\d+)\s*([A-Za-z])/i)
+  if (tunnelMatch) return `${tunnelMatch[1]}${tunnelMatch[2].toUpperCase()}`
+
+  // T{digits}{letter}: "T3C", "T12D_data"
+  const tMatch = text.match(/T(\d+)\s*([A-Za-z])/i)
+  if (tMatch) return `${tMatch[1]}${tMatch[2].toUpperCase()}`
+
+  return null
+}
+
 function extractBlockNameFromFilename(fileName: string): string | null {
   const base = fileName.replace(/\.[^.]+$/, '').trim()
 
   // Skip timestamp-only filenames like "2026-02-26-10-35-14"
   if (/^\d{4}-\d{2}-\d{2}[-_T]\d{2}[-_]\d{2}[-_]\d{2}$/.test(base)) return null
 
-  // "Tunel 4B" -> "Tunel 4B" (keep full for matching)
-  const tunnelMatch = base.match(/[Tt]unel\s*(\d+[A-Za-z])/i)
-  if (tunnelMatch) return `Tunel ${tunnelMatch[1].toUpperCase()}`
+  // Try T{digits}{letter} or "Tunel" pattern first
+  const fromText = extractBlockFromText(base)
+  if (fromText) return fromText
 
   // "9C" -> "9C", "blok_12A_temp" -> "12A"
   const match = base.match(/(\d+[A-Za-z])/i)

@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const tenantId = await requireTenantId()
     const body = await request.json()
-    const { name, summer, autumn, productionYear, varietyId, winteredInTunnel, plantSource, productionCycle } = body
+    const { name, summer, autumn, productionYear, varietyId, winteredInTunnel, plantSource, productionCycle, sourceSectionId } = body
     if (!name?.trim()) return NextResponse.json({ error: 'Nazwa jest wymagana' }, { status: 400 })
     if (!summer?.dailyCurve && !autumn?.dailyCurve) {
       return NextResponse.json({ error: 'Przynajmniej jedna krzywa jest wymagana' }, { status: 400 })
@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
         winteredInTunnel: winteredInTunnel ?? false,
         plantSource: plantSource || null,
         varietyId: varietyId || null,
+        sourceSectionId: sourceSectionId || null,
         tempSources: [],
         dailyCurveSummer: summer?.dailyCurve || [],
         weeklyCurveSummer: summer?.weeklyCurve || [],

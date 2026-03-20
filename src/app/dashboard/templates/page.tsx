@@ -128,7 +128,7 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
   // Build unified timeline from planting/first harvest
   const plantDate = t.plantingDate || ''
   const firstHarvest = t.startDate || ''
-  const lastHarvestSummer = t.endDate || (t.dailyCurve && t.startDate ? (() => { const d = new Date(t.startDate!); d.setDate(d.getDate() + t.dailyCurve.length); return d.toISOString().split('T')[0] })() : '')
+  const lastHarvestSummer = t.endDate || (t.dailyCurveSummer?.length && t.startDateSummer ? (() => { const d = new Date(t.startDateSummer!); d.setDate(d.getDate() + t.dailyCurveSummer.length); return d.toISOString().split('T')[0] })() : '')
   const lastHarvestAutumn = t.dailyCurveAutumn?.length && t.startDateAutumn ? (() => { const d = new Date(t.startDateAutumn!); d.setDate(d.getDate() + t.dailyCurveAutumn.length); return d.toISOString().split('T')[0] })() : ''
   const lastHarvest = lastHarvestSummer && lastHarvestAutumn ? (lastHarvestSummer > lastHarvestAutumn ? lastHarvestSummer : lastHarvestAutumn) : lastHarvestSummer || lastHarvestAutumn
 
@@ -193,9 +193,9 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
 
   // Build daily harvest map
   const dailyHarvest: Record<string, number> = {}
-  if (t.dailyCurve && t.startDate) {
-    t.dailyCurve.forEach((kg, i) => {
-      const d = new Date(t.startDate!); d.setDate(d.getDate() + i)
+  if (t.dailyCurveSummer?.length && t.startDateSummer) {
+    t.dailyCurveSummer.forEach((kg, i) => {
+      const d = new Date(t.startDateSummer!); d.setDate(d.getDate() + i)
       dailyHarvest[d.toISOString().split('T')[0]] = kg
     })
   }
@@ -210,9 +210,9 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
   const weeklyHarvest: { weekStart: string; weekEnd: string; kg: number; week: number }[] = []
   {
     const weekMap: Record<number, { kg: number; dates: string[] }> = {}
-    if (t.dailyCurve && t.startDate) {
-      t.dailyCurve.forEach((kg, i) => {
-        const d = new Date(t.startDate!); d.setDate(d.getDate() + i)
+    if (t.dailyCurveSummer?.length && t.startDateSummer) {
+      t.dailyCurveSummer.forEach((kg, i) => {
+        const d = new Date(t.startDateSummer!); d.setDate(d.getDate() + i)
         const wk = getWeekNumber(d)
         if (!weekMap[wk]) weekMap[wk] = { kg: 0, dates: [] }
         weekMap[wk].kg += kg
@@ -782,11 +782,25 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
     setEditForm({ name: t.name, description: t.description, productionCycle: t.productionCycle,
       plantingDate: t.plantingDate, winteredInTunnel: t.winteredInTunnel, plantSource: t.plantSource,
       notes: t.notes, gdhToFlowering: t.gdhToFlowering, gdhToFirstFruit: t.gdhToFirstFruit, varietyId: t.variety?.id || '',
-      sourceSectionId: t.sourceSectionId || '' })
+      })
   }
   const saveEdit = async () => {
-    await fetch('/api/templates/' + t.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editForm) })
-    setEditing(false); onSave()
+    try {
+      const res = await fetch('/api/templates/' + t.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        ...editForm,
+        plantingDate: editForm.plantingDate || null,
+        plantSource: editForm.plantSource || null,
+        notes: editForm.notes || null,
+      }) })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Nieznany błąd' }))
+        alert('Błąd zapisu: ' + (err.error || 'Nieznany błąd'))
+        return
+      }
+      setEditing(false); onSave()
+    } catch (e) {
+      alert('Błąd zapisu: ' + e)
+    }
   }
 
   if (editing) return (
@@ -798,9 +812,7 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
             <option value="">—</option>{varieties.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
           </select></div>
         <div><label className="text-xs font-medium text-gray-500">Sekcja źródłowa</label>
-          <select value={String(editForm.sourceSectionId||'')} onChange={e=>setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p,sourceSectionId:e.target.value||null}))} className="w-full border rounded-lg px-3 py-2 mt-1">
-            <option value="">— brak —</option>{sections.map(s=><option key={s.id} value={s.id}>{s.blockName}/{s.name} ({s.varietyName})</option>)}
-          </select></div>
+          <div className="w-full border rounded-lg px-3 py-2 mt-1 bg-gray-100 text-gray-600">{t.sourceSection ? t.sourceSection.name : '— brak —'}</div></div>
         <div><label className="text-xs font-medium text-gray-500">Cykl produkcji</label><select value={String(editForm.productionCycle||1)} onChange={e=>setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p,productionCycle:parseInt(e.target.value)}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value={1}>1. rok</option><option value={2}>2. rok</option><option value={3}>3. rok</option></select></div>
         <div><label className="text-xs font-medium text-gray-500">Data sadzenia</label><input type="date" value={String(editForm.plantingDate||'')} onChange={e=>{
               const val = e.target.value

@@ -160,6 +160,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
           plantSource: createForm.plantSource || null,
           productionCycle: 1,
           productionYear: createForm.productionYear,
+          sourceSectionId: selected[0]?.sectionId || null,
           summer,
           autumn,
         }),

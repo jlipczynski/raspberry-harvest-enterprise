@@ -885,20 +885,27 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                             <tr key={`merged-day-${d.date}`} className={`border-b ${isStartDate ? 'bg-green-50' : isPreHarvestForSeason ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
                               <td className="py-1 px-3 pl-8 text-xs text-gray-500" colSpan={2}>
                                 {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
-                                {isStartDate && <span className="ml-2 text-green-600 font-medium">← start {w.season === 'summer' ? 'lata' : 'jesieni'}</span>}
+                                {isStartDate && <button onClick={() => resetMergedCommercialStart(w.season as 'summer' | 'autumn')} className="ml-2 text-green-600 font-medium hover:text-red-600 cursor-pointer">← start {w.season === 'summer' ? 'lata' : 'jesieni'}</button>}
                               </td>
                               <td className="py-1 px-3 text-right text-xs font-medium">{d.kg.toFixed(1)}</td>
                               <td className="py-1 px-3 text-center" colSpan={2}>
                                 {seasonStart ? (
-                                  <span className={`px-2 py-0.5 rounded-full text-xs ${
-                                    isPreHarvestForSeason
-                                      ? 'bg-gray-200 text-gray-600'
-                                      : isStartDate
-                                        ? 'bg-green-200 text-green-800 font-medium'
+                                  isStartDate ? (
+                                    <button
+                                      onClick={() => resetMergedCommercialStart(w.season as 'summer' | 'autumn')}
+                                      className="px-2 py-0.5 rounded-full text-xs bg-green-200 text-green-800 font-medium hover:bg-red-200 hover:text-red-800 cursor-pointer"
+                                    >
+                                      ← start {w.season === 'summer' ? 'lata' : 'jesieni'}
+                                    </button>
+                                  ) : (
+                                    <span className={`px-2 py-0.5 rounded-full text-xs ${
+                                      isPreHarvestForSeason
+                                        ? 'bg-gray-200 text-gray-600'
                                         : w.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'
-                                  }`}>
-                                    {isPreHarvestForSeason ? 'Pośpiech' : isStartDate ? `← start ${w.season === 'summer' ? 'lata' : 'jesieni'}` : w.season === 'summer' ? 'Lato' : 'Jesień'}
-                                  </span>
+                                    }`}>
+                                      {isPreHarvestForSeason ? 'Pośpiech' : w.season === 'summer' ? 'Lato' : 'Jesień'}
+                                    </span>
+                                  )
                                 ) : (
                                   <button
                                     onClick={() => markMergedCommercialStart(d.date, w.season as 'summer' | 'autumn')}

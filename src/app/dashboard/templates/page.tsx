@@ -31,7 +31,7 @@ interface Template {
   tenantName?: string
   id: string; name: string; description?: string; productionYear: number; productionCycle: number
   season: string; plantingDate?: string; winteredInTunnel: boolean; plantSource?: string
-  dailyCurve: number[]; weeklyCurve: number[]; startDate?: string; endDate?: string; startWeek?: number; totalKgSummer: number; totalKgAutumn: number; dailyCurveSummer: number[]; dailyCurveAutumn: number[]; weeklyCurveSummer: number[]; weeklyCurveAutumn: number[]; startWeekSummer?: number; startWeekAutumn?: number; totalKgSummer: number; totalKgAutumn: number; dailyCurveSummer: number[]; dailyCurveAutumn: number[]; weeklyCurveSummer: number[]; weeklyCurveAutumn: number[]; startWeekSummer?: number; startWeekAutumn?: number
+  dailyCurve: number[]; weeklyCurve: number[]; startDate?: string; endDate?: string; startWeek?: number; totalKgSummer: number; totalKgAutumn: number; dailyCurveSummer: number[]; dailyCurveAutumn: number[]; weeklyCurveSummer: number[]; weeklyCurveAutumn: number[]; startWeekSummer?: number; startWeekAutumn?: number
   totalKg: number; outsideTemps?: TempPoint[]; insideTunnelTemps?: TempPoint[]; tempAdjustmentFactor?: number
   gdhData?: GdhPoint[]; gdhToFlowering?: number; gdhToFirstFruit?: number; tempSources: string[]
   sourceFile?: string; notes?: string; summerEndWeek?: number

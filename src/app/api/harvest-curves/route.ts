@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    console.log('[harvest-curves POST] Received', Array.isArray(body.curves) ? `${body.curves.length} curves` : 'single curve')
     if (Array.isArray(body.curves)) {
       const created = await prisma.$transaction(
         body.curves.map((c: Record<string, unknown>) => {
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest) {
           return prisma.harvestCurve.create({ data: data as Parameters<typeof prisma.harvestCurve.create>[0]['data'] })
         })
       )
+      console.log('[harvest-curves POST] Created', created.length, 'curves successfully')
       return NextResponse.json({ curves: created })
     }
     const data: Record<string, unknown> = {
@@ -87,7 +89,8 @@ export async function POST(request: NextRequest) {
     })
     return NextResponse.json({ curve })
   } catch (error) {
-    console.error('Error creating harvest curve:', error)
-    return NextResponse.json({ error: 'Failed to create harvest curve' }, { status: 500 })
+    const errMsg = error instanceof Error ? error.message : String(error)
+    console.error('Error creating harvest curve:', errMsg, error)
+    return NextResponse.json({ error: `Failed to create harvest curve: ${errMsg}` }, { status: 500 })
   }
 }

@@ -695,8 +695,8 @@ export default function PlanningPage() {
       {/* Curve assignment warnings */}
       {weeklyPlan.sectionDetails.some(d => d.curveSource === 'flat') && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-amber-600" /><h3 className="font-semibold text-amber-800">Wybierz krzywą zbiorów</h3></div>
-          <p className="text-sm text-amber-600 mb-3">Poniższe sekcje używają płaskiego rozkładu (10% × 10 tyg.) — wyniki będą niedokładne. Przypisz krzywą z szablonu.</p>
+          <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-amber-600" /><h3 className="font-semibold text-amber-800">Wybierz szablon zbiorów</h3></div>
+          <p className="text-sm text-amber-600 mb-3">Poniższe sekcje używają płaskiego rozkładu (10% × 10 tyg.) — wyniki będą niedokładne. Przypisz szablon.</p>
           <div className="flex flex-wrap gap-2">
             {weeklyPlan.sectionDetails.filter(d => d.curveSource === 'flat').map(d => (
               <span key={d.section.id} className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm">
@@ -719,8 +719,6 @@ export default function PlanningPage() {
                   t.varietyId === d.section.varietyId ||
                   !t.varietyId
                 ).sort((a, b) => scoreTemplate(b, d.section) - scoreTemplate(a, d.section))
-                const summerTemplates = matchingTemplates.filter(t => t.season === 'summer')
-                const autumnTemplates = matchingTemplates.filter(t => t.season === 'autumn')
                 const isOpen = curveDropdownOpen === d.section.id
                 return (
                   <div key={d.section.id} className={`border rounded-lg p-3 ${d.curveSource === 'flat' ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200'}`}>
@@ -746,7 +744,7 @@ export default function PlanningPage() {
                         className="flex items-center gap-1 text-xs px-3 py-1.5 border rounded-lg hover:bg-gray-50 transition-colors"
                       >
                         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                        Wybierz krzywą
+                        Wybierz szablon
                       </button>
                     </div>
                     {isOpen && (
@@ -763,19 +761,19 @@ export default function PlanningPage() {
                           <div className="font-medium">Użyj danych producenckich (odmiana)</div>
                           <div className="text-xs text-gray-400">Odepnij szablon — użyje krzywej z odmiany</div>
                         </button>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {/* Summer templates */}
-                          <div>
-                            <p className="text-xs font-medium text-orange-700 mb-2">☀️ Lato ({summerTemplates.length} szablonów)</p>
-                            {summerTemplates.length === 0 ? (
-                              <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
-                            ) : (
-                              <div className="space-y-1 max-h-48 overflow-y-auto">
-                                {summerTemplates.map((t, i) => (
+                        <div>
+                          <p className="text-xs font-medium text-gray-700 mb-2">Wybierz szablon ({matchingTemplates.length})</p>
+                          {matchingTemplates.length === 0 ? (
+                            <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
+                          ) : (
+                            <div className="space-y-1 max-h-60 overflow-y-auto">
+                              {matchingTemplates.map((t, i) => {
+                                const isAssigned = d.summerAssignment?.templateId === t.id || d.autumnAssignment?.templateId === t.id
+                                return (
                                   <button
                                     key={t.id}
                                     onClick={() => assignCurve(d.section.id, t.id, 'summer')}
-                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-orange-50 border transition-colors cursor-pointer ${d.summerAssignment?.templateId === t.id ? 'border-orange-400 bg-orange-50' : 'border-transparent'}`}
+                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-purple-50 border transition-colors cursor-pointer ${isAssigned ? 'border-purple-400 bg-purple-50' : 'border-transparent'}`}
                                   >
                                     <div className="flex items-center gap-1">
                                       <span className="font-medium">{t.name}</span>
@@ -784,38 +782,12 @@ export default function PlanningPage() {
                                       )}
                                     </div>
                                     <div className="text-gray-400">{t.productionYear} | {t.weeklyCurve?.length || 0} tyg. | {(t.totalKg / 1000).toFixed(1)}t</div>
-                                    <CurveSparkline curve={t.weeklyCurve} color="#f97316" />
+                                    <CurveSparkline curve={t.weeklyCurve} color="#8b5cf6" />
                                   </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          {/* Autumn templates */}
-                          <div>
-                            <p className="text-xs font-medium text-red-700 mb-2">🍂 Jesień ({autumnTemplates.length} szablonów)</p>
-                            {autumnTemplates.length === 0 ? (
-                              <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
-                            ) : (
-                              <div className="space-y-1 max-h-48 overflow-y-auto">
-                                {autumnTemplates.map((t, i) => (
-                                  <button
-                                    key={t.id}
-                                    onClick={() => assignCurve(d.section.id, t.id, 'autumn')}
-                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-red-50 border transition-colors cursor-pointer ${d.autumnAssignment?.templateId === t.id ? 'border-red-400 bg-red-50' : 'border-transparent'}`}
-                                  >
-                                    <div className="flex items-center gap-1">
-                                      <span className="font-medium">{t.name}</span>
-                                      {i === 0 && scoreTemplate(t, d.section) >= 70 && (
-                                        <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">Sugerowany</span>
-                                      )}
-                                    </div>
-                                    <div className="text-gray-400">{t.productionYear} | {t.weeklyCurve?.length || 0} tyg. | {(t.totalKg / 1000).toFixed(1)}t</div>
-                                    <CurveSparkline curve={t.weeklyCurve} color="#ef4444" />
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}

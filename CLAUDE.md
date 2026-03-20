@@ -170,3 +170,10 @@ git pull origin main
 git merge claude/[nazwa-worktree] --no-ff -m "opis zmian"
 git push origin main
 Nazwę worktree widać na dole okna Claude Code.
+
+## ⚠️ GIT — ABSOLUTNE ZASADY
+- ZAWSZE pracuj bezpośrednio na branchu `main`
+- NIGDY nie twórz worktrees ani nowych branchy
+- Przed rozpoczęciem: `git checkout main && git pull origin main`
+- Commituj bezpośrednio na main: `git add -A && git commit && git push origin main`
+- NIGDY nie używaj `git worktree`

@@ -17,13 +17,11 @@ export async function GET(request: NextRequest) {
     // Add backward-compatible fields for planning/page.tsx
     const templatesWithCompat = templates.map(t => ({
       ...t,
-      season: t.dailyCurveSummer.length > 0 ? 'summer' : 'autumn',
-      dailyCurve: [...(t.dailyCurveSummer || []), ...(t.dailyCurveAutumn || [])],
-      weeklyCurve: [...(t.weeklyCurveSummer || []), ...(t.weeklyCurveAutumn || [])],
-      totalKg: (t.totalKgSummer || 0) + (t.totalKgAutumn || 0),
-      startWeek: t.startWeekSummer || t.startWeekAutumn || null,
-      startDate: t.startDateSummer || t.startDateAutumn || null,
-      endDate: t.endDateAutumn || t.endDateSummer || null,
+      season: t.totalKgSummer >= t.totalKgAutumn ? 'summer' : 'autumn',
+      dailyCurve: t.dailyCurveSummer.length > 0 ? t.dailyCurveSummer : t.dailyCurveAutumn,
+      weeklyCurve: t.weeklyCurveSummer.length > 0 ? t.weeklyCurveSummer : t.weeklyCurveAutumn,
+      totalKg: t.totalKgSummer + t.totalKgAutumn,
+      startWeek: t.startWeekSummer || t.startWeekAutumn,
     }))
     return NextResponse.json({ templates: templatesWithCompat })
   } catch (error) {

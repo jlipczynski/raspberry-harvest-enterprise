@@ -513,19 +513,19 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       summerDays.sort((a, b) => a.date.localeCompare(b.date))
       autumnDays.sort((a, b) => a.date.localeCompare(b.date))
 
-      const buildCurve = (days: { date: string; kg: number }[], season: 'summer' | 'autumn') => {
+      const buildCurve = (days: { date: string; kg: number }[], weeks: typeof mergedWeeks, season: 'summer' | 'autumn') => {
         const total = days.reduce((s, d) => s + d.kg, 0)
         const dailyCurve = days.map(d => total > 0 ? (d.kg / total) * 100 : 0)
         const seasonTotal = season === 'summer' ? mergedSummerKg : mergedAutumnKg
-        const weeklyCurve = mergedWeeks
+        const weeklyCurve = weeks
           .filter(w => w.season === season)
           .map(w => seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0)
-        const startWeek = mergedWeeks.filter(w => w.season === season)[0]?.week || null
+        const startWeek = weeks.filter(w => w.season === season)[0]?.week || null
         return { dailyCurve, weeklyCurve, totalKg: total, startWeek }
       }
 
-      const summer = summerDays.length > 0 ? buildCurve(summerDays, 'summer') : null
-      const autumn = autumnDays.length > 0 ? buildCurve(autumnDays, 'autumn') : null
+      const summer = summerDays.length > 0 ? buildCurve(summerDays, mergedWeeks, 'summer') : null
+      const autumn = autumnDays.length > 0 ? buildCurve(autumnDays, mergedWeeks, 'autumn') : null
 
       const res = await fetch('/api/harvest-curves/to-template', {
         method: 'POST',

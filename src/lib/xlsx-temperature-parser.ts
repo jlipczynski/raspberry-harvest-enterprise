@@ -25,7 +25,16 @@ export function parseTemperatureXlsx(buffer: Buffer): XlsxSheetResult[] {
     if (!sheet) continue
 
     // Extract block name from sheet name: "T3C" → "3C", "T15A" → "15A"
-    const blockName = extractBlockFromSheetName(sheetName)
+    let blockName = extractBlockFromSheetName(sheetName)
+
+    // Fallback: try first row (descriptive header) of the sheet
+    if (!blockName) {
+      const firstCell = sheet[XLSX.utils.encode_cell({ r: 0, c: 0 })]
+      if (firstCell) {
+        blockName = extractBlockFromText(String(firstCell.w || firstCell.v || ''))
+      }
+    }
+
     if (!blockName) continue
 
     const readings = parseSheet(sheet)
@@ -37,22 +46,37 @@ export function parseTemperatureXlsx(buffer: Buffer): XlsxSheetResult[] {
 
 /**
  * "T3C" → "3C", "T15A" → "15A", "T10B" → "10B"
- * Also handles "Tunel 3C", plain "3C" etc.
+ * Also handles "Tunel 3C", "Tunel 3 C", plain "3C" etc.
  */
 function extractBlockFromSheetName(name: string): string | null {
   const trimmed = name.trim()
 
-  // "Tunel 3C" etc. — check first (more specific)
-  const tunnelMatch = trimmed.match(/tunel\s*(\d+[A-Za-z])/i)
-  if (tunnelMatch) return tunnelMatch[1].toUpperCase()
+  // "Tunel 3C" or "Tunel 3 C" — check first (more specific)
+  const tunnelMatch = trimmed.match(/tunel\s*(\d+)\s*([A-Za-z])/i)
+  if (tunnelMatch) return `${tunnelMatch[1]}${tunnelMatch[2].toUpperCase()}`
 
   // T{digits}{letter} anywhere in name: "T3C", "T3C_20-03-2026", "T3C dane"
-  const tMatch = trimmed.match(/\bT(\d+[A-Za-z])\b/i) || trimmed.match(/T(\d+[A-Za-z])/i)
-  if (tMatch) return tMatch[1].toUpperCase()
+  const tMatch = trimmed.match(/T(\d+)\s*([A-Za-z])/i)
+  if (tMatch) return `${tMatch[1]}${tMatch[2].toUpperCase()}`
 
   // Plain {digits}{letter} anywhere: "3C", "15A_data"
   const plainMatch = trimmed.match(/\b(\d+[A-Za-z])\b/)
   if (plainMatch) return plainMatch[1].toUpperCase()
+
+  return null
+}
+
+/**
+ * Extract tunnel code from arbitrary text (e.g. first row header).
+ * "Tunel 3 C  |  odczyt: 23 d..." → "3C"
+ * "T12D_dane" → "12D"
+ */
+function extractBlockFromText(text: string): string | null {
+  const tunnelMatch = text.match(/tunel\s*(\d+)\s*([A-Za-z])/i)
+  if (tunnelMatch) return `${tunnelMatch[1]}${tunnelMatch[2].toUpperCase()}`
+
+  const tMatch = text.match(/T(\d+)\s*([A-Za-z])/i)
+  if (tMatch) return `${tMatch[1]}${tMatch[2].toUpperCase()}`
 
   return null
 }

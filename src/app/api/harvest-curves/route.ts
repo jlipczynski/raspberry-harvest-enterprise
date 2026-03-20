@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
       const created = await prisma.$transaction(
         body.curves.map((c: Record<string, unknown>) => {
           const data: Record<string, unknown> = {
+            name: c.name || null,
             year: c.year,
             season: c.season,
             curve: c.curve,
@@ -60,6 +61,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ curves: created })
     }
     const data: Record<string, unknown> = {
+      name: body.name || null,
       year: body.year,
       season: body.season,
       curve: body.curve,

@@ -449,7 +449,17 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ curves: curvesToSave }),
-          }).then(() => fetchCurves()).catch(e => console.error('Błąd zapisu krzywych:', e))
+          }).then(async (res) => {
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}))
+              throw new Error(err.error || `HTTP ${res.status}`)
+            }
+            await fetchCurves()
+            alert(`Zapisano ${curvesToSave.length} krzywych do bazy danych`)
+          }).catch(e => {
+            console.error('Błąd zapisu krzywych:', e)
+            alert(`Błąd zapisu krzywych do bazy: ${e.message}`)
+          })
         }
       } catch (err) { console.error(err); alert('Błąd parsowania pliku') }
     }

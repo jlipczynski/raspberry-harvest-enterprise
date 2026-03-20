@@ -25,7 +25,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       'dailyCurveSummer','weeklyCurveSummer','startDateSummer','endDateSummer','startWeekSummer','totalKgSummer',
       'dailyCurveAutumn','weeklyCurveAutumn','startDateAutumn','endDateAutumn','startWeekAutumn','totalKgAutumn',
       'outsideTemps','insideTunnelTemps','tempAdjustmentFactor','gdhData','gdhToFlowering',
-      'gdhToFirstFruit','tempSources','sourceFile','notes']
+      'gdhToFirstFruit','tempSources','sourceFile','notes','summerEndWeek']
     fields.forEach(f => { if (body[f] !== undefined) data[f] = body[f] })
     if (body.varietyId !== undefined) {
       data.variety = body.varietyId ? { connect: { id: body.varietyId } } : { disconnect: true }

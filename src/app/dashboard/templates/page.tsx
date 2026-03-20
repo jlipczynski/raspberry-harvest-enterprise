@@ -128,7 +128,9 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
   // Build unified timeline from planting/first harvest
   const plantDate = t.plantingDate || ''
   const firstHarvest = t.startDate || ''
-  const lastHarvest = t.endDate || (t.dailyCurve && t.startDate ? (() => { const d = new Date(t.startDate!); d.setDate(d.getDate() + t.dailyCurve.length); return d.toISOString().split('T')[0] })() : '')
+  const lastHarvestSummer = t.endDate || (t.dailyCurve && t.startDate ? (() => { const d = new Date(t.startDate!); d.setDate(d.getDate() + t.dailyCurve.length); return d.toISOString().split('T')[0] })() : '')
+  const lastHarvestAutumn = t.dailyCurveAutumn?.length && t.startDateAutumn ? (() => { const d = new Date(t.startDateAutumn!); d.setDate(d.getDate() + t.dailyCurveAutumn.length); return d.toISOString().split('T')[0] })() : ''
+  const lastHarvest = lastHarvestSummer && lastHarvestAutumn ? (lastHarvestSummer > lastHarvestAutumn ? lastHarvestSummer : lastHarvestAutumn) : lastHarvestSummer || lastHarvestAutumn
 
   // Timeline start = planting or 60 days before harvest
   const timeStart = plantDate || (firstHarvest ? (() => { const d = new Date(firstHarvest); d.setDate(d.getDate() - 60); return d.toISOString().split('T')[0] })() : '')
@@ -197,18 +199,35 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
       dailyHarvest[d.toISOString().split('T')[0]] = kg
     })
   }
+  if (t.dailyCurveAutumn?.length && t.startDateAutumn) {
+    t.dailyCurveAutumn.forEach((kg, i) => {
+      const d = new Date(t.startDateAutumn!); d.setDate(d.getDate() + i)
+      dailyHarvest[d.toISOString().split('T')[0]] = (dailyHarvest[d.toISOString().split('T')[0]] || 0) + kg
+    })
+  }
 
   // Build weekly harvest data
   const weeklyHarvest: { weekStart: string; weekEnd: string; kg: number; week: number }[] = []
-  if (t.dailyCurve && t.startDate) {
+  {
     const weekMap: Record<number, { kg: number; dates: string[] }> = {}
-    t.dailyCurve.forEach((kg, i) => {
-      const d = new Date(t.startDate!); d.setDate(d.getDate() + i)
-      const wk = getWeekNumber(d)
-      if (!weekMap[wk]) weekMap[wk] = { kg: 0, dates: [] }
-      weekMap[wk].kg += kg
-      weekMap[wk].dates.push(d.toISOString().split('T')[0])
-    })
+    if (t.dailyCurve && t.startDate) {
+      t.dailyCurve.forEach((kg, i) => {
+        const d = new Date(t.startDate!); d.setDate(d.getDate() + i)
+        const wk = getWeekNumber(d)
+        if (!weekMap[wk]) weekMap[wk] = { kg: 0, dates: [] }
+        weekMap[wk].kg += kg
+        weekMap[wk].dates.push(d.toISOString().split('T')[0])
+      })
+    }
+    if (t.dailyCurveAutumn?.length && t.startDateAutumn) {
+      t.dailyCurveAutumn.forEach((kg, i) => {
+        const d = new Date(t.startDateAutumn!); d.setDate(d.getDate() + i)
+        const wk = getWeekNumber(d)
+        if (!weekMap[wk]) weekMap[wk] = { kg: 0, dates: [] }
+        weekMap[wk].kg += kg
+        weekMap[wk].dates.push(d.toISOString().split('T')[0])
+      })
+    }
     Object.entries(weekMap).sort(([a],[b]) => Number(a)-Number(b)).forEach(([wk, data]) => {
       weeklyHarvest.push({ week: Number(wk), weekStart: data.dates[0], weekEnd: data.dates[data.dates.length-1], kg: data.kg })
     })

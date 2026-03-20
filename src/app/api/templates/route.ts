@@ -22,6 +22,14 @@ export async function GET(request: NextRequest) {
     })
     const result = templates.map(t => ({
       ...t,
+      totalKgSummer: t.totalKgSummer,
+      totalKgAutumn: t.totalKgAutumn,
+      dailyCurveSummer: t.dailyCurveSummer,
+      dailyCurveAutumn: t.dailyCurveAutumn,
+      weeklyCurveSummer: t.weeklyCurveSummer,
+      weeklyCurveAutumn: t.weeklyCurveAutumn,
+      startWeekSummer: t.startWeekSummer,
+      startWeekAutumn: t.startWeekAutumn,
       season: t.totalKgSummer >= t.totalKgAutumn ? 'summer' : 'autumn',
       dailyCurve: t.dailyCurveSummer.length > 0 ? t.dailyCurveSummer : t.dailyCurveAutumn,
       weeklyCurve: t.weeklyCurveSummer.length > 0 ? t.weeklyCurveSummer : t.weeklyCurveAutumn,

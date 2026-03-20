@@ -174,12 +174,18 @@ Nazwę worktree widać na dole okna Claude Code.
 ## Workflow Git — obowiązkowe kroki
 1. Zawsze na początku: git fetch origin && git checkout main && git pull origin main
 2. Po zakończeniu: commituj i pushuj na branch
-3. Utwórz PR przez GitHub CLI:
-   gh pr create --title "<opis zadania>" --body "" --base main --repo jlipczynski/raspberry-harvest-enterprise
-4. Podaj numer PR w podsumowaniu — nigdy nie mów użytkownikowi żeby mergował ręcznie
-5. Nigdy nie pushuj na main bezpośrednio (403)
-6. gh jest dostępne — PR tworzy się przez: gh pr create --title "<opis>" --body "" --base main --repo jlipczynski/raspberry-harvest-enterprise
-7. WAŻNE: git remote wskazuje na lokalny proxy (127.0.0.1), nie na github.com — dlatego ZAWSZE dodawaj --repo jlipczynski/raspberry-harvest-enterprise do każdej komendy gh
+3. Utwórz PR przez GitHub API (curl):
+   curl -sk -X POST "https://api.github.com/repos/jlipczynski/raspberry-harvest-enterprise/pulls" \
+     -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" \
+     -d '{"title":"<opis>","head":"<branch>","base":"main","body":"<opis>"}'
+4. **ZAWSZE od razu merguj PR** — nie czekaj na użytkownika:
+   curl -sk -X PUT "https://api.github.com/repos/jlipczynski/raspberry-harvest-enterprise/pulls/<NR>/merge" \
+     -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" \
+     -d '{"merge_method":"squash"}'
+5. Podaj numer PR w podsumowaniu
+6. Nigdy nie pushuj na main bezpośrednio (403)
+7. WAŻNE: git remote wskazuje na lokalny proxy (127.0.0.1), nie na github.com — dlatego do gh CLI ZAWSZE dodawaj --repo jlipczynski/raspberry-harvest-enterprise
+8. WAŻNE: gh CLI ma problem z TLS w tym środowisku — używaj curl -sk do GitHub API zamiast gh
 
 ## ⚠️ GIT — ABSOLUTNE ZASADY
 - ZAWSZE pracuj bezpośrednio na branchu `main`

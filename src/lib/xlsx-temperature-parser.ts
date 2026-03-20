@@ -42,16 +42,16 @@ export function parseTemperatureXlsx(buffer: Buffer): XlsxSheetResult[] {
 function extractBlockFromSheetName(name: string): string | null {
   const trimmed = name.trim()
 
-  // "T3C" or "T15A" — T prefix + number + letter
-  const tMatch = trimmed.match(/^T(\d+[A-Za-z])$/i)
-  if (tMatch) return tMatch[1].toUpperCase()
-
-  // "Tunel 3C" etc.
+  // "Tunel 3C" etc. — check first (more specific)
   const tunnelMatch = trimmed.match(/tunel\s*(\d+[A-Za-z])/i)
   if (tunnelMatch) return tunnelMatch[1].toUpperCase()
 
-  // Plain "3C", "15A"
-  const plainMatch = trimmed.match(/^(\d+[A-Za-z])$/)
+  // T{digits}{letter} anywhere in name: "T3C", "T3C_20-03-2026", "T3C dane"
+  const tMatch = trimmed.match(/\bT(\d+[A-Za-z])\b/i) || trimmed.match(/T(\d+[A-Za-z])/i)
+  if (tMatch) return tMatch[1].toUpperCase()
+
+  // Plain {digits}{letter} anywhere: "3C", "15A_data"
+  const plainMatch = trimmed.match(/\b(\d+[A-Za-z])\b/)
   if (plainMatch) return plainMatch[1].toUpperCase()
 
   return null

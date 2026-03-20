@@ -18,6 +18,8 @@ export async function PATCH(
         ...(body.startWeek !== undefined && { startWeek: body.startWeek }),
         ...(body.sectionId !== undefined && { sectionId: body.sectionId || null }),
         ...(body.varietyId !== undefined && { varietyId: body.varietyId || null }),
+        ...(body.commercialStartDate !== undefined && { commercialStartDate: body.commercialStartDate ? new Date(body.commercialStartDate) : null }),
+        ...(body.commercialStartDateAutumn !== undefined && { commercialStartDateAutumn: body.commercialStartDateAutumn ? new Date(body.commercialStartDateAutumn) : null }),
         ...(body.winteredInTunnel !== undefined && { winteredInTunnel: body.winteredInTunnel }),
         ...(body.plantingDate !== undefined && { plantingDate: body.plantingDate ? new Date(body.plantingDate) : null }),
         ...(body.plantSource !== undefined && { plantSource: body.plantSource || null }),

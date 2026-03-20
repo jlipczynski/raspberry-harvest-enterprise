@@ -208,6 +208,9 @@ model HarvestCurve {
   isArchived    Boolean  @default(false)
   mergedFromIds String[]                     // ID krzywych źródłowych
 
+  commercialStartDate       DateTime?
+  commercialStartDateAutumn DateTime?
+
   winteredInTunnel  Boolean?
   plantingDate      DateTime?
   plantSource       PlantSource?

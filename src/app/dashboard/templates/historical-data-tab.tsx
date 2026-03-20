@@ -31,13 +31,14 @@ interface CreateTemplateForm {
 
 interface RawRow { date: string; area: string; weightReal: number }
 interface WeekRow { week: number; kg: number; dates: string; season: 'summer' | 'autumn' }
-interface DayData { date: string; kg: number; dayOfWeek: number; isPreHarvest: boolean }
+interface DayData { date: string; kg: number; dayOfWeek: number; isPreHarvest: boolean; isPreHarvestAutumn: boolean }
 interface AreaImport {
   area: string
   totalKg: number
   weeks: WeekRow[]
   days: DayData[]
-  commercialStartDate: string | null  // data zakotwiczenia — raz ustawione, nie zmieniamy
+  commercialStartDate: string | null  // data zakotwiczenia lata
+  commercialStartDateAutumn: string | null  // data zakotwiczenia jesieni
 }
 
 interface ForecastData {
@@ -228,6 +229,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set())
   const [mergedExpandedWeeks, setMergedExpandedWeeks] = useState<Set<number>>(new Set())
   const [mergedCommercialStartDate, setMergedCommercialStartDate] = useState<string | null>(null)
+  const [mergedCommercialStartDateAutumn, setMergedCommercialStartDateAutumn] = useState<string | null>(null)
   const [templateName, setTemplateName] = useState('')
 
   const toggleMergedWeek = (weekNum: number) => {
@@ -247,25 +249,44 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       return next
     })
     setMergedCommercialStartDate(null)
+    setMergedCommercialStartDateAutumn(null)
     setMergedExpandedWeeks(new Set())
   }
 
-  const markMergedCommercialStart = (date: string) => {
-    setMergedCommercialStartDate(date)
-    setAreas(prev => prev.map((area, i) => {
-      if (!selectedAreaIdxs.has(i)) return area
-      const newDays = area.days.map(d => ({ ...d, isPreHarvest: d.date < date }))
-      return { ...area, days: newDays, commercialStartDate: date }
-    }))
+  const markMergedCommercialStart = (date: string, season: 'summer' | 'autumn') => {
+    if (season === 'summer') {
+      setMergedCommercialStartDate(date)
+      setAreas(prev => prev.map((area, i) => {
+        if (!selectedAreaIdxs.has(i)) return area
+        const newDays = area.days.map(d => ({ ...d, isPreHarvest: d.date < date ? true : d.isPreHarvest }))
+        return { ...area, days: newDays, commercialStartDate: date }
+      }))
+    } else {
+      setMergedCommercialStartDateAutumn(date)
+      setAreas(prev => prev.map((area, i) => {
+        if (!selectedAreaIdxs.has(i)) return area
+        const newDays = area.days.map(d => ({ ...d, isPreHarvestAutumn: d.date < date ? true : d.isPreHarvestAutumn }))
+        return { ...area, days: newDays, commercialStartDateAutumn: date }
+      }))
+    }
   }
 
-  const resetMergedCommercialStart = () => {
-    setMergedCommercialStartDate(null)
-    setAreas(prev => prev.map((area, i) => {
-      if (!selectedAreaIdxs.has(i)) return area
-      const newDays = area.days.map(d => ({ ...d, isPreHarvest: false }))
-      return { ...area, days: newDays, commercialStartDate: null }
-    }))
+  const resetMergedCommercialStart = (season: 'summer' | 'autumn') => {
+    if (season === 'summer') {
+      setMergedCommercialStartDate(null)
+      setAreas(prev => prev.map((area, i) => {
+        if (!selectedAreaIdxs.has(i)) return area
+        const newDays = area.days.map(d => ({ ...d, isPreHarvest: false }))
+        return { ...area, days: newDays, commercialStartDate: null }
+      }))
+    } else {
+      setMergedCommercialStartDateAutumn(null)
+      setAreas(prev => prev.map((area, i) => {
+        if (!selectedAreaIdxs.has(i)) return area
+        const newDays = area.days.map(d => ({ ...d, isPreHarvestAutumn: false }))
+        return { ...area, days: newDays, commercialStartDateAutumn: null }
+      }))
+    }
   }
 
   // History
@@ -374,8 +395,8 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
           }))
           const days: DayData[] = Object.entries(areaDailyMap[area] || {})
             .sort(([a], [b]) => a.localeCompare(b))
-            .map(([date, kg]) => ({ date, kg, dayOfWeek: new Date(date).getDay(), isPreHarvest: false }))
-          return { area, totalKg: weeks.reduce((s, w) => s + w.kg, 0), weeks, days, commercialStartDate: null }
+            .map(([date, kg]) => ({ date, kg, dayOfWeek: new Date(date).getDay(), isPreHarvest: false, isPreHarvestAutumn: false }))
+          return { area, totalKg: weeks.reduce((s, w) => s + w.kg, 0), weeks, days, commercialStartDate: null, commercialStartDateAutumn: null }
         }).sort((a, b) => b.totalKg - a.totalKg)
 
         setAreas(parsed)
@@ -431,29 +452,35 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   }
 
   // ==================== POŚPIECH / START TOGGLE ====================
-  const markCommercialStart = (areaIdx: number, dayIdx: number) => {
+  const markCommercialStart = (areaIdx: number, dayIdx: number, season: 'summer' | 'autumn') => {
     setAreas(prev => prev.map((a, ai) => {
       if (ai !== areaIdx) return a
-      if (a.commercialStartDate) return a // Już zakotwiczone
-
-      const newDays = [...a.days]
-      // Wszystkie dni przed dayIdx = pośpiech
-      for (let i = 0; i < dayIdx; i++) {
-        newDays[i] = { ...newDays[i], isPreHarvest: true }
+      if (season === 'summer') {
+        if (a.commercialStartDate) return a
+        const newDays = [...a.days]
+        for (let i = 0; i < dayIdx; i++) newDays[i] = { ...newDays[i], isPreHarvest: true }
+        for (let i = dayIdx; i < newDays.length; i++) newDays[i] = { ...newDays[i], isPreHarvest: false }
+        return { ...a, days: newDays, commercialStartDate: newDays[dayIdx].date }
+      } else {
+        if (a.commercialStartDateAutumn) return a
+        const newDays = [...a.days]
+        for (let i = 0; i < dayIdx; i++) newDays[i] = { ...newDays[i], isPreHarvestAutumn: true }
+        for (let i = dayIdx; i < newDays.length; i++) newDays[i] = { ...newDays[i], isPreHarvestAutumn: false }
+        return { ...a, days: newDays, commercialStartDateAutumn: newDays[dayIdx].date }
       }
-      // Dzień dayIdx i kolejne = komercyjne
-      for (let i = dayIdx; i < newDays.length; i++) {
-        newDays[i] = { ...newDays[i], isPreHarvest: false }
-      }
-      return { ...a, days: newDays, commercialStartDate: newDays[dayIdx].date }
     }))
   }
 
-  const resetCommercialStart = (areaIdx: number) => {
+  const resetCommercialStart = (areaIdx: number, season: 'summer' | 'autumn') => {
     setAreas(prev => prev.map((a, ai) => {
       if (ai !== areaIdx) return a
-      const newDays = a.days.map(d => ({ ...d, isPreHarvest: false }))
-      return { ...a, days: newDays, commercialStartDate: null }
+      if (season === 'summer') {
+        const newDays = a.days.map(d => ({ ...d, isPreHarvest: false }))
+        return { ...a, days: newDays, commercialStartDate: null }
+      } else {
+        const newDays = a.days.map(d => ({ ...d, isPreHarvestAutumn: false }))
+        return { ...a, days: newDays, commercialStartDateAutumn: null }
+      }
     }))
   }
 
@@ -481,14 +508,14 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   const mergedAutumnKg = mergedWeeks.filter(w => w.season === 'autumn').reduce((s, w) => s + w.kg, 0)
 
   const mergedDaysByWeek = useMemo(() => {
-    const result: Record<number, Array<{ date: string; kg: number; isPreHarvest: boolean }>> = {}
+    const result: Record<number, Array<{ date: string; kg: number; isPreHarvest: boolean; isPreHarvestAutumn: boolean }>> = {}
     for (const area of selectedAreas) {
       for (const day of area.days) {
         const weekNum = getWeekNumber(new Date(day.date))
         if (!result[weekNum]) result[weekNum] = []
         const existing = result[weekNum].find(d => d.date === day.date)
         if (existing) existing.kg += day.kg
-        else result[weekNum].push({ date: day.date, kg: day.kg, isPreHarvest: day.isPreHarvest })
+        else result[weekNum].push({ date: day.date, kg: day.kg, isPreHarvest: day.isPreHarvest, isPreHarvestAutumn: day.isPreHarvestAutumn })
       }
     }
     Object.keys(result).forEach(week => {
@@ -509,7 +536,10 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
           const weekDays = area.days.filter(d => {
             const date = new Date(d.date)
             const wk = getWeekNumber(date)
-            return wk === week.week && !d.isPreHarvest
+            if (wk !== week.week) return false
+            if (week.season === 'summer' && d.isPreHarvest) return false
+            if (week.season === 'autumn' && d.isPreHarvestAutumn) return false
+            return true
           })
           for (const day of weekDays) {
             if (week.season === 'summer') {
@@ -755,25 +785,50 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className={`flex items-center justify-between p-3 rounded-lg border mb-4 ${
-                  mergedCommercialStartDate ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'
-                }`}>
-                  <div>
-                    <p className="text-sm font-medium">
-                      {mergedCommercialStartDate
-                        ? `⚓ Start lata: ${new Date(mergedCommercialStartDate).toLocaleDateString('pl-PL')}`
-                        : '⚓ Oznacz start lata'}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {mergedCommercialStartDate
-                        ? 'Dni przed startem = pośpiech — dotyczy wszystkich zaznaczonych obszarów'
-                        : 'Rozwiń tydzień i kliknij "Oznacz jako start" przy dniu'}
-                    </p>
+                <div className="flex flex-col gap-2 mb-4">
+                  <div className={`flex items-center justify-between p-3 rounded-lg border ${
+                    mergedCommercialStartDate ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'
+                  }`}>
+                    <div>
+                      <p className="text-sm font-medium">
+                        {mergedCommercialStartDate
+                          ? `☀️ Start lata: ${new Date(mergedCommercialStartDate).toLocaleDateString('pl-PL')}`
+                          : '☀️ Oznacz start lata'}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {mergedCommercialStartDate
+                          ? 'Dni przed startem = pośpiech lata'
+                          : 'Rozwiń tydzień letni i kliknij "Oznacz jako start"'}
+                      </p>
+                    </div>
+                    {mergedCommercialStartDate && (
+                      <Button size="sm" variant="outline" onClick={() => resetMergedCommercialStart('summer')}>
+                        <X className="w-3 h-3 mr-1" />Resetuj
+                      </Button>
+                    )}
                   </div>
-                  {mergedCommercialStartDate && (
-                    <Button size="sm" variant="outline" onClick={resetMergedCommercialStart}>
-                      <X className="w-3 h-3 mr-1" />Resetuj
-                    </Button>
+                  {mergedAutumnKg > 0 && (
+                    <div className={`flex items-center justify-between p-3 rounded-lg border ${
+                      mergedCommercialStartDateAutumn ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
+                    }`}>
+                      <div>
+                        <p className="text-sm font-medium">
+                          {mergedCommercialStartDateAutumn
+                            ? `🍂 Start jesieni: ${new Date(mergedCommercialStartDateAutumn).toLocaleDateString('pl-PL')}`
+                            : '🍂 Oznacz start jesieni'}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {mergedCommercialStartDateAutumn
+                            ? 'Dni przed startem = pośpiech jesieni'
+                            : 'Rozwiń tydzień jesienny i kliknij "Oznacz jako start"'}
+                        </p>
+                      </div>
+                      {mergedCommercialStartDateAutumn && (
+                        <Button size="sm" variant="outline" onClick={() => resetMergedCommercialStart('autumn')}>
+                          <X className="w-3 h-3 mr-1" />Resetuj
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -820,27 +875,31 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                               {mergedExpandedWeeks.has(w.week) ? '▼' : '▶'}
                             </td>
                           </tr>
-                          {mergedExpandedWeeks.has(w.week) && (mergedDaysByWeek[w.week] || []).map(d => (
-                            <tr key={`merged-day-${d.date}`} className={`border-b ${d.date === mergedCommercialStartDate ? 'bg-green-50' : d.isPreHarvest ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
+                          {mergedExpandedWeeks.has(w.week) && (mergedDaysByWeek[w.week] || []).map(d => {
+                            const seasonStart = w.season === 'summer' ? mergedCommercialStartDate : mergedCommercialStartDateAutumn
+                            const isPreHarvestForSeason = w.season === 'summer' ? d.isPreHarvest : d.isPreHarvestAutumn
+                            const isStartDate = d.date === seasonStart
+                            return (
+                            <tr key={`merged-day-${d.date}`} className={`border-b ${isStartDate ? 'bg-green-50' : isPreHarvestForSeason ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
                               <td className="py-1 px-3 pl-8 text-xs text-gray-500" colSpan={2}>
                                 {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
-                                {d.date === mergedCommercialStartDate && <span className="ml-2 text-green-600 font-medium">← start lata</span>}
+                                {isStartDate && <span className="ml-2 text-green-600 font-medium">← start {w.season === 'summer' ? 'lata' : 'jesieni'}</span>}
                               </td>
                               <td className="py-1 px-3 text-right text-xs font-medium">{d.kg.toFixed(1)}</td>
                               <td className="py-1 px-3 text-center" colSpan={2}>
-                                {mergedCommercialStartDate ? (
+                                {seasonStart ? (
                                   <span className={`px-2 py-0.5 rounded-full text-xs ${
-                                    d.isPreHarvest
+                                    isPreHarvestForSeason
                                       ? 'bg-gray-200 text-gray-600'
-                                      : d.date === mergedCommercialStartDate
+                                      : isStartDate
                                         ? 'bg-green-200 text-green-800 font-medium'
                                         : w.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'
                                   }`}>
-                                    {d.isPreHarvest ? 'Pośpiech' : d.date === mergedCommercialStartDate ? '← start lata' : w.season === 'summer' ? 'Lato' : 'Jesień'}
+                                    {isPreHarvestForSeason ? 'Pośpiech' : isStartDate ? `← start ${w.season === 'summer' ? 'lata' : 'jesieni'}` : w.season === 'summer' ? 'Lato' : 'Jesień'}
                                   </span>
                                 ) : (
                                   <button
-                                    onClick={() => markMergedCommercialStart(d.date)}
+                                    onClick={() => markMergedCommercialStart(d.date, w.season as 'summer' | 'autumn')}
                                     className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 hover:bg-blue-200"
                                   >
                                     Oznacz jako start
@@ -849,7 +908,8 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                               </td>
                               <td />
                             </tr>
-                          ))}
+                            )
+                          })}
                         </React.Fragment>
                       )
                     })}
@@ -918,25 +978,49 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
               <CardContent>
                 <p className="text-sm text-gray-500 mb-3">Kliknij na sezon w wierszu, aby oznaczyć od którego tygodnia zaczyna się jesień.</p>
 
-                {/* Start lata — compact info bar */}
-                <div className={`flex items-center justify-between p-3 rounded-lg border mb-4 ${currentArea.commercialStartDate ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'}`}>
-                  <div className="flex items-center gap-2">
-                    <Anchor className="w-4 h-4" />
-                    <span className="font-semibold text-sm">
-                      {currentArea.commercialStartDate
-                        ? `Start lata: ${new Date(currentArea.commercialStartDate).toLocaleDateString('pl-PL')}`
-                        : 'Rozwiń tydzień i oznacz start lata'}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {currentArea.commercialStartDate
-                        ? '· Dni przed startem = pośpiech'
-                        : '· Kliknij ▶ przy tygodniu, potem "Oznacz jako start"'}
-                    </span>
+                {/* Start lata/jesieni — compact info bars */}
+                <div className="flex flex-col gap-2 mb-4">
+                  <div className={`flex items-center justify-between p-3 rounded-lg border ${currentArea.commercialStartDate ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'}`}>
+                    <div className="flex items-center gap-2">
+                      <Anchor className="w-4 h-4" />
+                      <span className="font-semibold text-sm">
+                        {currentArea.commercialStartDate
+                          ? `☀️ Start lata: ${new Date(currentArea.commercialStartDate).toLocaleDateString('pl-PL')}`
+                          : '☀️ Rozwiń tydzień letni i oznacz start lata'}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {currentArea.commercialStartDate
+                          ? '· Dni przed startem = pośpiech'
+                          : '· Kliknij ▶ przy tygodniu, potem "Oznacz jako start"'}
+                      </span>
+                    </div>
+                    {currentArea.commercialStartDate && (
+                      <Button size="sm" variant="outline" onClick={() => resetCommercialStart(selectedAreaIdx, 'summer')}>
+                        <X className="w-3 h-3 mr-1" />Resetuj
+                      </Button>
+                    )}
                   </div>
-                  {currentArea.commercialStartDate && (
-                    <Button size="sm" variant="outline" onClick={() => resetCommercialStart(selectedAreaIdx)}>
-                      <X className="w-3 h-3 mr-1" />Resetuj
-                    </Button>
+                  {autumnTotal > 0 && (
+                    <div className={`flex items-center justify-between p-3 rounded-lg border ${currentArea.commercialStartDateAutumn ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'}`}>
+                      <div className="flex items-center gap-2">
+                        <Anchor className="w-4 h-4" />
+                        <span className="font-semibold text-sm">
+                          {currentArea.commercialStartDateAutumn
+                            ? `🍂 Start jesieni: ${new Date(currentArea.commercialStartDateAutumn).toLocaleDateString('pl-PL')}`
+                            : '🍂 Rozwiń tydzień jesienny i oznacz start jesieni'}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {currentArea.commercialStartDateAutumn
+                            ? '· Dni przed startem = pośpiech'
+                            : '· Kliknij ▶ przy tygodniu, potem "Oznacz jako start"'}
+                        </span>
+                      </div>
+                      {currentArea.commercialStartDateAutumn && (
+                        <Button size="sm" variant="outline" onClick={() => resetCommercialStart(selectedAreaIdx, 'autumn')}>
+                          <X className="w-3 h-3 mr-1" />Resetuj
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -987,7 +1071,9 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                         const idxInSeason = sameSeasonWeeks.indexOf(w)
                         const cumPct = sameSeasonWeeks.slice(0, idxInSeason + 1).reduce((s, x) => s + (seasonTotal > 0 ? (x.kg / seasonTotal) * 100 : 0), 0)
                         const weekDays = currentArea.days.filter(d => getWeekNumber(new Date(d.date)) === w.week)
-                        const allPreHarvest = currentArea.commercialStartDate && weekDays.length > 0 && weekDays.every(d => d.isPreHarvest)
+                        const allPreHarvest = w.season === 'summer'
+                          ? (currentArea.commercialStartDate && weekDays.length > 0 && weekDays.every(d => d.isPreHarvest))
+                          : (currentArea.commercialStartDateAutumn && weekDays.length > 0 && weekDays.every(d => d.isPreHarvestAutumn))
                         const isExpanded = expandedWeeks.has(w.week)
                         return (
                           <React.Fragment key={`week-${i}`}>
@@ -1028,23 +1114,25 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                             </tr>
                             {isExpanded && weekDays.map((d) => {
                               const globalDi = currentArea.days.indexOf(d)
-                              const isStart = d.date === currentArea.commercialStartDate
+                              const seasonStart = w.season === 'summer' ? currentArea.commercialStartDate : currentArea.commercialStartDateAutumn
+                              const isPreHarvestForSeason = w.season === 'summer' ? d.isPreHarvest : d.isPreHarvestAutumn
+                              const isStart = d.date === seasonStart
                               return (
-                                <tr key={`day-${d.date}`} className={`border-b ${isStart ? 'bg-green-50' : d.isPreHarvest ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
+                                <tr key={`day-${d.date}`} className={`border-b ${isStart ? 'bg-green-50' : isPreHarvestForSeason ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
                                   <td className="py-1.5 px-3 pl-8 text-xs text-gray-500" colSpan={2}>
                                     {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
-                                    {isStart && <span className="ml-2 text-green-600 font-medium">← start lata</span>}
+                                    {isStart && <span className="ml-2 text-green-600 font-medium">← start {w.season === 'summer' ? 'lata' : 'jesieni'}</span>}
                                   </td>
                                   <td className="py-1.5 px-3 text-right text-xs font-medium">{d.kg.toFixed(1)}</td>
                                   <td colSpan={2} />
                                   <td className="py-1.5 px-3 text-center" colSpan={2}>
-                                    {currentArea.commercialStartDate ? (
-                                      <span className={`px-2 py-0.5 rounded-full text-xs ${d.isPreHarvest ? 'bg-gray-200 text-gray-600' : w.season === 'summer' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                        {d.isPreHarvest ? 'Pośpiech' : (w.season === 'summer' ? 'Lato' : 'Jesień')}
+                                    {seasonStart ? (
+                                      <span className={`px-2 py-0.5 rounded-full text-xs ${isPreHarvestForSeason ? 'bg-gray-200 text-gray-600' : w.season === 'summer' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {isPreHarvestForSeason ? 'Pośpiech' : (w.season === 'summer' ? 'Lato' : 'Jesień')}
                                       </span>
                                     ) : (
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); markCommercialStart(selectedAreaIdx, globalDi) }}
+                                        onClick={(e) => { e.stopPropagation(); markCommercialStart(selectedAreaIdx, globalDi, w.season as 'summer' | 'autumn') }}
                                         className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 hover:bg-blue-200"
                                       >
                                         Oznacz jako start

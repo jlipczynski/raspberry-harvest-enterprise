@@ -230,7 +230,7 @@ export default function PlantationPage() {
         onClick={() => fileInputRef.current?.click()}
         className={`relative rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}`}
       >
-        <input ref={fileInputRef} type="file" accept=".pdf,.csv,.txt,.xlsx,.xls" multiple className="hidden" onChange={e => { if (e.target.files) handleFileUpload(e.target.files); e.target.value = '' }} />
+        <input ref={fileInputRef} type="file" accept=".pdf,.csv,.txt,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" multiple className="hidden" onChange={e => { if (e.target.files) handleFileUpload(e.target.files); e.target.value = '' }} />
         {uploadingPdfs ? (
           <div className="flex items-center justify-center gap-3">
             <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />

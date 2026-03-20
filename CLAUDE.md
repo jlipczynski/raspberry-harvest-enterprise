@@ -178,6 +178,7 @@ Nazwę worktree widać na dole okna Claude Code.
    gh pr create --title "<opis zadania>" --body "" --base main
 4. Podaj numer PR w podsumowaniu — nigdy nie mów użytkownikowi żeby mergował ręcznie
 5. Nigdy nie pushuj na main bezpośrednio (403)
+6. gh jest dostępne — PR tworzy się przez: gh pr create --title "<opis>" --body "" --base main
 
 ## ⚠️ GIT — ABSOLUTNE ZASADY
 - ZAWSZE pracuj bezpośrednio na branchu `main`

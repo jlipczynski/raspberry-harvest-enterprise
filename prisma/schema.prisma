@@ -405,6 +405,7 @@ model ProductionCurveTemplate {
   sourceSectionId     String?
   sourceSection       Section?  @relation("TemplateSource", fields: [sourceSectionId], references: [id], onDelete: SetNull)
 
+  summerEndWeek       Int?
   sourceFile          String?
   notes               String?
   sourceHarvestCurveIds String[]                    // IDs of HarvestCurve records used to create this template

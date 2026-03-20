@@ -131,19 +131,36 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
 
     setCreatingTemplate(true)
     try {
+      // Build summer/autumn objects from selected curves
+      const summerCurves = selected.filter(c => c.season === 'summer')
+      const autumnCurves = selected.filter(c => c.season === 'autumn')
+      const buildFromCurves = (curves: HarvestCurveRecord[]) => {
+        if (curves.length === 0) return null
+        // Use first curve's data (for single selection) or merge
+        const c = curves[0]
+        return {
+          dailyCurve: c.dailyCurve || c.curve.map(pct => (pct / 100) * c.totalKg),
+          weeklyCurve: c.curve,
+          totalKg: c.totalKg,
+          startWeek: c.startWeek,
+          startDate: c.startDate || null,
+          endDate: c.dailyCurve && c.startDate ? (() => { const d = new Date(c.startDate!); d.setDate(d.getDate() + c.dailyCurve.length - 1); return d.toISOString().split('T')[0] })() : null,
+        }
+      }
+      const summer = buildFromCurves(summerCurves)
+      const autumn = buildFromCurves(autumnCurves)
       const res = await fetch('/api/harvest-curves/to-template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          curveIds: selectedCurveIds,
           name: createForm.name,
           varietyId: createForm.varietyId || null,
-          season: selected[0].season,
           winteredInTunnel: createForm.winteredInTunnel,
           plantSource: createForm.plantSource || null,
           productionCycle: 1,
           productionYear: createForm.productionYear,
-          plantingDate: createForm.plantingDate || null,
+          summer,
+          autumn,
         }),
       })
       if (!res.ok) {
@@ -515,7 +532,9 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
         const seasonTotal = season === 'summer' ? mergedSummerKg : mergedAutumnKg
         const weeklyCurve = mergedWeeks.filter(w => w.season === season).map(w => seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0)
         const startWeek = mergedWeeks.filter(w => w.season === season)[0]?.week || null
-        return { dailyCurve, weeklyCurve, totalKg: total, startWeek }
+        const startDate = days.length > 0 ? days[0].date : null
+        const endDate = days.length > 0 ? days[days.length - 1].date : null
+        return { dailyCurve, weeklyCurve, totalKg: total, startWeek, startDate, endDate }
       }
       const summer = summerDays.length > 0 ? buildCurve(summerDays, 'summer') : null
       const autumn = autumnDays.length > 0 ? buildCurve(autumnDays, 'autumn') : null

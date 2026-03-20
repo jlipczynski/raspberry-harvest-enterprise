@@ -399,6 +399,7 @@ model ProductionCurveTemplate {
   sourceFile          String?
   notes               String?
   sourceHarvestCurveIds String[]                    // IDs of HarvestCurve records used to create this template
+  sourceAreaNames     String[]                      // Names of source areas used to create this template
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

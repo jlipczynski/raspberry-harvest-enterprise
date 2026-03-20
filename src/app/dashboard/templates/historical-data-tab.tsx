@@ -399,6 +399,58 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
 
         setAreas(parsed)
         setSelectedAreaIdxs(new Set())
+
+        // Zapisz krzywe do DB natychmiast po imporcie
+        const curvesToSave = parsed.flatMap(a => {
+          const summerWeeks = a.weeks.filter(w => w.season === 'summer')
+          const autumnWeeks = a.weeks.filter(w => w.season === 'autumn')
+          const curves: Record<string, unknown>[] = []
+          if (summerWeeks.length > 0) {
+            const total = summerWeeks.reduce((s, w) => s + w.kg, 0)
+            curves.push({
+              name: a.area,
+              year: yr,
+              season: 'summer',
+              curve: summerWeeks.map(w => total > 0 ? (w.kg / total) * 100 : 0),
+              dailyCurve: a.days.filter(d => {
+                const wk = getWeekNumber(new Date(d.date))
+                return summerWeeks.some(sw => sw.week === wk)
+              }).map(d => d.kg),
+              totalKg: total,
+              startWeek: summerWeeks[0].week,
+              startDate: a.days[0]?.date || null,
+              sourceFile: file.name,
+            })
+          }
+          if (autumnWeeks.length > 0) {
+            const total = autumnWeeks.reduce((s, w) => s + w.kg, 0)
+            curves.push({
+              name: a.area,
+              year: yr,
+              season: 'autumn',
+              curve: autumnWeeks.map(w => total > 0 ? (w.kg / total) * 100 : 0),
+              dailyCurve: a.days.filter(d => {
+                const wk = getWeekNumber(new Date(d.date))
+                return autumnWeeks.some(aw => aw.week === wk)
+              }).map(d => d.kg),
+              totalKg: total,
+              startWeek: autumnWeeks[0].week,
+              startDate: a.days.find(d => {
+                const wk = getWeekNumber(new Date(d.date))
+                return autumnWeeks.some(aw => aw.week === wk)
+              })?.date || null,
+              sourceFile: file.name,
+            })
+          }
+          return curves
+        })
+        if (curvesToSave.length > 0) {
+          fetch('/api/harvest-curves', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ curves: curvesToSave }),
+          }).then(() => fetchCurves()).catch(e => console.error('Błąd zapisu krzywych:', e))
+        }
       } catch (err) { console.error(err); alert('Błąd parsowania pliku') }
     }
     reader.readAsArrayBuffer(file)

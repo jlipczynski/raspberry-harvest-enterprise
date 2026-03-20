@@ -171,6 +171,14 @@ git merge claude/[nazwa-worktree] --no-ff -m "opis zmian"
 git push origin main
 Nazwę worktree widać na dole okna Claude Code.
 
+## Workflow Git — obowiązkowe kroki
+1. Zawsze na początku: git fetch origin && git checkout main && git pull origin main
+2. Po zakończeniu: commituj i pushuj na branch
+3. Utwórz PR przez GitHub CLI:
+   gh pr create --title "<opis zadania>" --body "" --base main
+4. Podaj numer PR w podsumowaniu — nigdy nie mów użytkownikowi żeby mergował ręcznie
+5. Nigdy nie pushuj na main bezpośrednio (403)
+
 ## ⚠️ GIT — ABSOLUTNE ZASADY
 - ZAWSZE pracuj bezpośrednio na branchu `main`
 - NIGDY nie twórz worktrees ani nowych branchy

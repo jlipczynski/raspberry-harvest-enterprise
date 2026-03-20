@@ -30,7 +30,7 @@ interface CreateTemplateForm {
 }
 
 interface RawRow { date: string; area: string; weightReal: number }
-interface WeekRow { week: number; kg: number; dates: string; season: 'summer' | 'autumn' }
+interface WeekRow { week: number; kg: number; dates: string; season: 'summer' | 'autumn' | 'preharvest' }
 interface DayData { date: string; kg: number; dayOfWeek: number; isPreHarvest: boolean; isPreHarvestAutumn: boolean }
 interface AreaImport {
   area: string
@@ -224,9 +224,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   const [fileName, setFileName] = useState('')
   const [importYear, setImportYear] = useState(new Date().getFullYear())
   const [areas, setAreas] = useState<AreaImport[]>([])
-  const [selectedAreaIdx, setSelectedAreaIdx] = useState(0)
   const [selectedAreaIdxs, setSelectedAreaIdxs] = useState<Set<number>>(new Set())
-  const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set())
   const [mergedExpandedWeeks, setMergedExpandedWeeks] = useState<Set<number>>(new Set())
   const [mergedCommercialStartDate, setMergedCommercialStartDate] = useState<string | null>(null)
   const [mergedCommercialStartDateAutumn, setMergedCommercialStartDateAutumn] = useState<string | null>(null)
@@ -400,31 +398,32 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
         }).sort((a, b) => b.totalKg - a.totalKg)
 
         setAreas(parsed)
-        setSelectedAreaIdx(0)
+        setSelectedAreaIdxs(new Set())
       } catch (err) { console.error(err); alert('Błąd parsowania pliku') }
     }
     reader.readAsArrayBuffer(file)
   }
 
-  // ==================== SEASON TOGGLE ====================
-  const toggleWeekSeason = (areaIdx: number, weekIdx: number) => {
+  // ==================== SEASON TOGGLE (3-state cycle) ====================
+  const cycleWeekSeason = (weekIdx: number) => {
+    const areaIdxs = [...selectedAreaIdxs]
+    if (areaIdxs.length === 0) return
     setAreas(prev => prev.map((a, ai) => {
-      if (ai !== areaIdx) return a
+      if (!selectedAreaIdxs.has(ai)) return a
       const newWeeks = [...a.weeks]
-      const clickedWeek = newWeeks[weekIdx]
-      const newSeason = clickedWeek.season === 'summer' ? 'autumn' : 'summer'
+      const current = newWeeks[weekIdx]?.season
+      if (!current) return a
+      // Cycle: preharvest → summer → autumn → preharvest
+      const next = current === 'preharvest' ? 'summer' : current === 'summer' ? 'autumn' : 'preharvest'
+      newWeeks[weekIdx] = { ...newWeeks[weekIdx], season: next as 'summer' | 'autumn' | 'preharvest' }
+      return { ...a, weeks: newWeeks }
+    }))
+  }
 
-      // If switching to autumn: set this and all following to autumn
-      // If switching to summer: set this and all preceding to summer
-      if (newSeason === 'autumn') {
-        for (let i = weekIdx; i < newWeeks.length; i++) {
-          newWeeks[i] = { ...newWeeks[i], season: 'autumn' }
-        }
-      } else {
-        for (let i = 0; i <= weekIdx; i++) {
-          newWeeks[i] = { ...newWeeks[i], season: 'summer' }
-        }
-      }
+  const resetAllWeeksToSummer = () => {
+    setAreas(prev => prev.map((a, ai) => {
+      if (!selectedAreaIdxs.has(ai)) return a
+      const newWeeks = a.weeks.map(w => ({ ...w, season: 'summer' as const }))
       return { ...a, weeks: newWeeks }
     }))
   }
@@ -533,6 +532,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       const autumnDays: { date: string; kg: number }[] = []
       for (const area of selectedAreas) {
         for (const week of area.weeks) {
+          if (week.season === 'preharvest') continue
           const weekDays = area.days.filter(d => {
             const date = new Date(d.date)
             const wk = getWeekNumber(date)
@@ -590,14 +590,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     }
   }
 
-  const toggleWeek = (weekNum: number) => {
-    setExpandedWeeks(prev => {
-      const next = new Set(prev)
-      if (next.has(weekNum)) next.delete(weekNum)
-      else next.add(weekNum)
-      return next
-    })
-  }
 
   // ==================== FORECAST ====================
   const fetchForecast = async () => {
@@ -685,11 +677,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
 
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">Ładowanie...</div>
 
-  const currentArea = areas[selectedAreaIdx]
-  const summerWeeks = currentArea?.weeks.filter(w => w.season === 'summer') || []
-  const autumnWeeks = currentArea?.weeks.filter(w => w.season === 'autumn') || []
-  const summerTotal = summerWeeks.reduce((s, w) => s + w.kg, 0)
-  const autumnTotal = autumnWeeks.reduce((s, w) => s + w.kg, 0)
   const curveGroups = groupCurves()
 
   return (
@@ -750,7 +737,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
               {areas.map((a, i) => (
                 <button
                   key={i}
-                  onClick={() => { toggleAreaSelection(i); setSelectedAreaIdx(i); setExpandedWeeks(new Set()) }}
+                  onClick={() => toggleAreaSelection(i)}
                   className={`px-3 py-2 rounded-lg text-sm border transition-colors flex items-center gap-2 ${
                     selectedAreaIdxs.has(i)
                       ? 'bg-green-600 text-white border-green-600 font-medium'
@@ -785,6 +772,12 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm text-gray-500">Kliknij sezon w wierszu → cykl: Pośpiech → Lato → Jesień</p>
+                  <Button size="sm" variant="outline" onClick={resetAllWeeksToSummer}>
+                    Resetuj sezony
+                  </Button>
+                </div>
                 <div className="flex flex-col gap-2 mb-4">
                   <div className={`flex items-center justify-between p-3 rounded-lg border ${
                     mergedCommercialStartDate ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'
@@ -867,9 +860,18 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                             </td>
                             <td className="py-2 px-3 text-right text-gray-400">{cumPct.toFixed(1)}%</td>
                             <td className="py-2 px-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-xs ${w.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                                {w.season === 'summer' ? '☀️ Lato' : '🍂 Jesień'}
-                              </span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); cycleWeekSeason(i) }}
+                                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                                  w.season === 'preharvest'
+                                    ? 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                                    : w.season === 'summer'
+                                      ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                                      : 'bg-red-100 text-red-700 hover:bg-red-200'
+                                }`}
+                              >
+                                {w.season === 'preharvest' ? 'Pośpiech' : w.season === 'summer' ? <><Sun className="w-3 h-3" />Lato</> : <><Leaf className="w-3 h-3" />Jesień</>}
+                              </button>
                             </td>
                             <td className="py-2 px-3 text-center text-gray-400 w-8">
                               {mergedExpandedWeeks.has(w.week) ? '▼' : '▶'}
@@ -952,205 +954,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
             </div>
           )}
 
-          {/* Week table for selected area */}
-          {currentArea && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span>{currentArea.area}</span>
-                    <span className="text-sm font-normal text-gray-500">{(currentArea.totalKg / 1000).toFixed(1)}t łącznie</span>
-                  </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    {summerTotal > 0 && (
-                      <span className="flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-700 rounded">
-                        <Sun className="w-4 h-4" /> Lato: {(summerTotal / 1000).toFixed(1)}t ({summerWeeks.length} tyg.)
-                      </span>
-                    )}
-                    {autumnTotal > 0 && (
-                      <span className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded">
-                        <Leaf className="w-4 h-4" /> Jesień: {(autumnTotal / 1000).toFixed(1)}t ({autumnWeeks.length} tyg.)
-                      </span>
-                    )}
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-500 mb-3">Kliknij na sezon w wierszu, aby oznaczyć od którego tygodnia zaczyna się jesień.</p>
-
-                {/* Start lata/jesieni — compact info bars */}
-                <div className="flex flex-col gap-2 mb-4">
-                  <div className={`flex items-center justify-between p-3 rounded-lg border ${currentArea.commercialStartDate ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'}`}>
-                    <div className="flex items-center gap-2">
-                      <Anchor className="w-4 h-4" />
-                      <span className="font-semibold text-sm">
-                        {currentArea.commercialStartDate
-                          ? `☀️ Start lata: ${new Date(currentArea.commercialStartDate).toLocaleDateString('pl-PL')}`
-                          : '☀️ Rozwiń tydzień letni i oznacz start lata'}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {currentArea.commercialStartDate
-                          ? '· Dni przed startem = pośpiech'
-                          : '· Kliknij ▶ przy tygodniu, potem "Oznacz jako start"'}
-                      </span>
-                    </div>
-                    {currentArea.commercialStartDate && (
-                      <Button size="sm" variant="outline" onClick={() => resetCommercialStart(selectedAreaIdx, 'summer')}>
-                        <X className="w-3 h-3 mr-1" />Resetuj
-                      </Button>
-                    )}
-                  </div>
-                  {autumnTotal > 0 && (
-                    <div className={`flex items-center justify-between p-3 rounded-lg border ${currentArea.commercialStartDateAutumn ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'}`}>
-                      <div className="flex items-center gap-2">
-                        <Anchor className="w-4 h-4" />
-                        <span className="font-semibold text-sm">
-                          {currentArea.commercialStartDateAutumn
-                            ? `🍂 Start jesieni: ${new Date(currentArea.commercialStartDateAutumn).toLocaleDateString('pl-PL')}`
-                            : '🍂 Rozwiń tydzień jesienny i oznacz start jesieni'}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {currentArea.commercialStartDateAutumn
-                            ? '· Dni przed startem = pośpiech'
-                            : '· Kliknij ▶ przy tygodniu, potem "Oznacz jako start"'}
-                        </span>
-                      </div>
-                      {currentArea.commercialStartDateAutumn && (
-                        <Button size="sm" variant="outline" onClick={() => resetCommercialStart(selectedAreaIdx, 'autumn')}>
-                          <X className="w-3 h-3 mr-1" />Resetuj
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Bar chart */}
-                <div style={{ height: '200px' }} className="flex items-end gap-1 mb-4">
-                  {currentArea.weeks.map((w, i) => {
-                    const maxKg = Math.max(...currentArea.weeks.map(x => x.kg))
-                    const heightPx = maxKg > 0 ? Math.round((w.kg / maxKg) * 180) : 0
-                    return (
-                      <div key={i} className="flex-1 flex flex-col items-center justify-end group relative" style={{ height: '100%' }}>
-                        <div
-                          className={`w-full rounded-t transition-colors ${w.season === 'summer' ? 'bg-orange-400' : 'bg-red-400'}`}
-                          style={{ height: heightPx + 'px', minHeight: w.kg > 0 ? '4px' : '0' }}
-                        />
-                        <div className="absolute bottom-full mb-1 hidden group-hover:block bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10">
-                          T{w.week}: {w.kg.toFixed(0)} kg ({w.season === 'summer' ? 'lato' : 'jesień'})
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-                <div className="flex gap-1 mb-4">
-                  {currentArea.weeks.map((w, i) => (
-                    <div key={i} className="flex-1 text-center text-xs text-gray-500">T{w.week}</div>
-                  ))}
-                </div>
-
-                {/* Week table with expandable day rows */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-gray-50">
-                        <th className="text-left py-2 px-3 w-20">Tydzień</th>
-                        <th className="text-left py-2 px-3">Daty</th>
-                        <th className="text-right py-2 px-3">kg</th>
-                        <th className="text-right py-2 px-3 w-16">%</th>
-                        <th className="text-right py-2 px-3 w-16">Σ%</th>
-                        <th className="text-center py-2 px-3 w-32">Sezon</th>
-                        <th className="text-center py-2 px-3 w-8"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {currentArea.weeks.map((w, i) => {
-                        const seasonTotal = w.season === 'summer' ? summerTotal : autumnTotal
-                        const pct = seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0
-                        const isBoundary = i > 0 && currentArea.weeks[i - 1].season !== w.season
-                        const sameSeasonWeeks = currentArea.weeks.filter(x => x.season === w.season)
-                        const idxInSeason = sameSeasonWeeks.indexOf(w)
-                        const cumPct = sameSeasonWeeks.slice(0, idxInSeason + 1).reduce((s, x) => s + (seasonTotal > 0 ? (x.kg / seasonTotal) * 100 : 0), 0)
-                        const weekDays = currentArea.days.filter(d => getWeekNumber(new Date(d.date)) === w.week)
-                        const allPreHarvest = w.season === 'summer'
-                          ? (currentArea.commercialStartDate && weekDays.length > 0 && weekDays.every(d => d.isPreHarvest))
-                          : (currentArea.commercialStartDateAutumn && weekDays.length > 0 && weekDays.every(d => d.isPreHarvestAutumn))
-                        const isExpanded = expandedWeeks.has(w.week)
-                        return (
-                          <React.Fragment key={`week-${i}`}>
-                            <tr
-                              className={`border-b hover:bg-gray-50 cursor-pointer ${isBoundary ? 'border-t-4 border-t-gray-300' : ''}`}
-                              onClick={() => toggleWeek(w.week)}
-                            >
-                              <td className="py-2 px-3 font-medium">T{w.week}</td>
-                              <td className="py-2 px-3 text-gray-500">{w.dates}</td>
-                              <td className="py-2 px-3 text-right font-medium">{w.kg.toLocaleString('pl-PL', { maximumFractionDigits: 0 })}</td>
-                              <td className="py-2 px-3 text-right">
-                                <span className={pct > 15 ? 'text-green-600 font-medium' : ''}>{pct.toFixed(1)}%</span>
-                              </td>
-                              <td className="py-2 px-3 text-right">
-                                <span className={cumPct >= 99.5 ? 'text-green-700 font-bold' : 'text-gray-500'}>{cumPct.toFixed(1)}%</span>
-                              </td>
-                              <td className="py-2 px-3 text-center">
-                                {allPreHarvest ? (
-                                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-600">
-                                    Pośpiech
-                                  </span>
-                                ) : (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); toggleWeekSeason(selectedAreaIdx, i) }}
-                                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-                                    w.season === 'summer'
-                                      ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                                      : 'bg-red-100 text-red-700 hover:bg-red-200'
-                                  }`}
-                                >
-                                  {w.season === 'summer' ? <><Sun className="w-3 h-3" />Lato</> : <><Leaf className="w-3 h-3" />Jesień</>}
-                                </button>
-                                )}
-                              </td>
-                              <td className="py-2 px-3 text-center text-gray-400">
-                                {isExpanded ? '▼' : '▶'}
-                              </td>
-                            </tr>
-                            {isExpanded && weekDays.map((d) => {
-                              const globalDi = currentArea.days.indexOf(d)
-                              const seasonStart = w.season === 'summer' ? currentArea.commercialStartDate : currentArea.commercialStartDateAutumn
-                              const isPreHarvestForSeason = w.season === 'summer' ? d.isPreHarvest : d.isPreHarvestAutumn
-                              const isStart = d.date === seasonStart
-                              return (
-                                <tr key={`day-${d.date}`} className={`border-b ${isStart ? 'bg-green-50' : isPreHarvestForSeason ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
-                                  <td className="py-1.5 px-3 pl-8 text-xs text-gray-500" colSpan={2}>
-                                    {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
-                                    {isStart && <span className="ml-2 text-green-600 font-medium">← start {w.season === 'summer' ? 'lata' : 'jesieni'}</span>}
-                                  </td>
-                                  <td className="py-1.5 px-3 text-right text-xs font-medium">{d.kg.toFixed(1)}</td>
-                                  <td colSpan={2} />
-                                  <td className="py-1.5 px-3 text-center" colSpan={2}>
-                                    {seasonStart ? (
-                                      <span className={`px-2 py-0.5 rounded-full text-xs ${isPreHarvestForSeason ? 'bg-gray-200 text-gray-600' : w.season === 'summer' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                        {isPreHarvestForSeason ? 'Pośpiech' : (w.season === 'summer' ? 'Lato' : 'Jesień')}
-                                      </span>
-                                    ) : (
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); markCommercialStart(selectedAreaIdx, globalDi, w.season as 'summer' | 'autumn') }}
-                                        className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                      >
-                                        Oznacz jako start
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </React.Fragment>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </>
       )}
 

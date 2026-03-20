@@ -30,6 +30,8 @@ export async function GET(request: NextRequest) {
       weeklyCurveAutumn: t.weeklyCurveAutumn,
       startWeekSummer: t.startWeekSummer,
       startWeekAutumn: t.startWeekAutumn,
+      startDateSummer: t.startDateSummer,
+      startDateAutumn: t.startDateAutumn,
       season: t.totalKgSummer >= t.totalKgAutumn ? 'summer' : 'autumn',
       dailyCurve: t.dailyCurveSummer.length > 0 ? t.dailyCurveSummer : t.dailyCurveAutumn,
       weeklyCurve: t.weeklyCurveSummer.length > 0 ? t.weeklyCurveSummer : t.weeklyCurveAutumn,

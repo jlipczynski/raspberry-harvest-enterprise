@@ -31,7 +31,7 @@ interface Template {
   tenantName?: string
   id: string; name: string; description?: string; productionYear: number; productionCycle: number
   season: string; plantingDate?: string; winteredInTunnel: boolean; plantSource?: string
-  dailyCurve: number[]; weeklyCurve: number[]; startDate?: string; endDate?: string; startWeek?: number; totalKgSummer: number; totalKgAutumn: number; dailyCurveSummer: number[]; dailyCurveAutumn: number[]; weeklyCurveSummer: number[]; weeklyCurveAutumn: number[]; startWeekSummer?: number; startWeekAutumn?: number
+  dailyCurve: number[]; weeklyCurve: number[]; startDate?: string; endDate?: string; startWeek?: number; totalKgSummer: number; totalKgAutumn: number; dailyCurveSummer: number[]; dailyCurveAutumn: number[]; weeklyCurveSummer: number[]; weeklyCurveAutumn: number[]; startWeekSummer?: number; startWeekAutumn?: number; startDateSummer?: string; startDateAutumn?: string
   totalKg: number; outsideTemps?: TempPoint[]; insideTunnelTemps?: TempPoint[]; tempAdjustmentFactor?: number
   gdhData?: GdhPoint[]; gdhToFlowering?: number; gdhToFirstFruit?: number; tempSources: string[]
   sourceFile?: string; notes?: string; summerEndWeek?: number
@@ -595,12 +595,11 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
   const gdhFileRef = useRef<HTMLInputElement>(null)
   const [showCurveTable, setShowCurveTable] = useState(false)
 
-  // Summer/autumn boundary
-  const weeklyData = useMemo(() => {
-    if (!t.dailyCurve || !t.startDate) return []
+  // Build weekly data separately for summer and autumn
+  const buildWeeklyFromCurve = (dailyCurve: number[], startDate: string) => {
     const weekMap: Record<number, { kg: number; days: { date: string; kg: number }[] }> = {}
-    t.dailyCurve.forEach((kg, i) => {
-      const d = new Date(t.startDate!); d.setDate(d.getDate() + i)
+    dailyCurve.forEach((kg, i) => {
+      const d = new Date(startDate); d.setDate(d.getDate() + i)
       const ds = d.toISOString().split('T')[0]
       const wk = getWeekNumber(d)
       if (!weekMap[wk]) weekMap[wk] = { kg: 0, days: [] }
@@ -609,7 +608,23 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
     })
     return Object.entries(weekMap).sort(([a],[b]) => Number(a) - Number(b))
       .map(([wk, data]) => ({ week: Number(wk), kg: data.kg, days: data.days }))
-  }, [t.dailyCurve, t.startDate])
+  }
+
+  const weeklyDataSummer = useMemo(() => {
+    if (!t.dailyCurveSummer?.length || !t.startDateSummer) return []
+    return buildWeeklyFromCurve(t.dailyCurveSummer, t.startDateSummer)
+  }, [t.dailyCurveSummer, t.startDateSummer])
+
+  const weeklyDataAutumn = useMemo(() => {
+    if (!t.dailyCurveAutumn?.length || !t.startDateAutumn) return []
+    return buildWeeklyFromCurve(t.dailyCurveAutumn, t.startDateAutumn)
+  }, [t.dailyCurveAutumn, t.startDateAutumn])
+
+  // Combined weeklyData for chart and boundary selector (backward compat)
+  const weeklyData = useMemo(() => {
+    return [...weeklyDataSummer, ...weeklyDataAutumn]
+      .sort((a, b) => a.week - b.week)
+  }, [weeklyDataSummer, weeklyDataAutumn])
 
   // Determine summer end week - auto-detect or use saved value
   const defaultSummerEnd = useMemo(() => {
@@ -619,10 +634,10 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
 
   const [summerEndWeek, setSummerEndWeek] = useState(defaultSummerEnd)
 
-  const summerWeeks = weeklyData.filter(w => w.week <= summerEndWeek)
-  const autumnWeeks = weeklyData.filter(w => w.week > summerEndWeek)
-  const summerTotalKg = summerWeeks.reduce((s, w) => s + w.kg, 0)
-  const autumnTotalKg = autumnWeeks.reduce((s, w) => s + w.kg, 0)
+  const summerWeeks = weeklyDataSummer.length > 0 ? weeklyDataSummer : weeklyData.filter(w => w.week <= summerEndWeek)
+  const autumnWeeks = weeklyDataAutumn.length > 0 ? weeklyDataAutumn : weeklyData.filter(w => w.week > summerEndWeek)
+  const summerTotalKg = summerWeeks.reduce((s, w) => s + w.kg, 0) || t.totalKgSummer || 0
+  const autumnTotalKg = autumnWeeks.reduce((s, w) => s + w.kg, 0) || t.totalKgAutumn || 0
   const summerDays = summerWeeks.flatMap(w => w.days)
 
   const saveSummerEnd = async (week: number) => {
@@ -829,7 +844,12 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
         )}
         <div className="bg-white rounded-lg px-4 py-3 border flex items-center gap-3">
           <BarChart3 className="w-5 h-5 text-gray-400"/>
-          <div><div className="text-xs text-gray-400">Suma zbiorów</div><div className="font-bold text-green-700">{(t.totalKg/1000).toFixed(1)}t</div></div>
+          <div>
+            <div className="text-xs text-gray-400">Lato</div>
+            <div className="font-bold text-purple-700">{summerTotalKg > 0 ? `${(summerTotalKg/1000).toFixed(1)}t` : '—'}</div>
+            <div className="text-xs text-gray-400 mt-1">Jesień</div>
+            <div className="font-bold text-red-600">{autumnTotalKg > 0 ? `${(autumnTotalKg/1000).toFixed(1)}t` : '—'}</div>
+          </div>
         </div>
         <div className="bg-white rounded-lg px-4 py-3 border">
           <div className="text-xs text-gray-400">Odmiana</div><div className="font-bold">{t.variety?.name || '—'}</div>
@@ -1284,7 +1304,8 @@ export default function TemplatesPage() {
                     ))}
                   </div>
                   <div className="text-right w-20">
-                    <div className="font-bold text-green-700">{(t.totalKg/1000).toFixed(1)}t</div>
+                    <div className="font-bold text-purple-700 text-xs">{t.totalKgSummer > 0 ? `L: ${(t.totalKgSummer/1000).toFixed(1)}t` : 'L: —'}</div>
+                    <div className="font-bold text-red-600 text-xs">{t.totalKgAutumn > 0 ? `J: ${(t.totalKgAutumn/1000).toFixed(1)}t` : 'J: —'}</div>
                     <div className="text-xs text-gray-400">{t.dailyCurve?.length||0}d</div>
                   </div>
                   <div className="flex items-center gap-1">

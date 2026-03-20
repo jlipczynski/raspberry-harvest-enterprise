@@ -10,6 +10,14 @@ interface TemperatureRecord {
   temperature: number
 }
 
+interface SheetSectionResult {
+  sheetName: string
+  blockName: string
+  sectionId: string
+  sectionName: string | null
+  inserted: number
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -26,15 +34,97 @@ export async function POST(request: NextRequest) {
     const fileName = file.name.toLowerCase()
     const isPdf = fileName.endsWith('.pdf')
     const isCsv = fileName.endsWith('.csv') || fileName.endsWith('.txt')
+    const isXlsx = fileName.endsWith('.xlsx') || fileName.endsWith('.xls')
 
-    if (!isPdf && !isCsv) {
+    if (!isPdf && !isCsv && !isXlsx) {
       return NextResponse.json(
-        { error: 'Akceptowane formaty: PDF, CSV, TXT' },
+        { error: 'Akceptowane formaty: PDF, CSV, TXT, XLSX' },
         { status: 400 }
       )
     }
 
-    // Parse the file
+    // Fetch blocks once for matching
+    const blocks = await prisma.block.findMany({
+      where: { farmId },
+      include: { sections: { select: { id: true, name: true } } },
+    })
+
+    // ── XLSX multi-sheet handling ──
+    if (isXlsx) {
+      const { parseTemperatureXlsx } = await import('@/lib/xlsx-temperature-parser')
+      const arrayBuffer = await file.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+      const sheetResults = parseTemperatureXlsx(buffer)
+
+      if (sheetResults.length === 0) {
+        return NextResponse.json(
+          { error: 'Nie znaleziono arkuszy z poprawną nazwą tunelu (np. T3C, T4B). Nazwy arkuszy powinny mieć format T{numer}{litera}.' },
+          { status: 422 }
+        )
+      }
+
+      let totalInserted = 0
+      const sections: SheetSectionResult[] = []
+      const errors: string[] = []
+
+      for (const sheet of sheetResults) {
+        if (sheet.readings.length === 0) {
+          errors.push(`${sheet.sheetName}: brak odczytów temperatury`)
+          continue
+        }
+
+        const matches = matchBlockToSections(sheet.blockName, blocks)
+        if (matches.length === 0) {
+          errors.push(`${sheet.sheetName} (${sheet.blockName}): nie znaleziono pasującej sekcji. Dostępne bloki: ${blocks.map(b => b.name).join(', ')}`)
+          continue
+        }
+
+        for (const match of matches) {
+          let inserted = 0
+          for (const reading of sheet.readings) {
+            await prisma.temperatureReading.upsert({
+              where: {
+                sectionId_timestamp: {
+                  sectionId: match.sectionId,
+                  timestamp: reading.timestamp,
+                },
+              },
+              update: {
+                temperature: reading.temperature,
+                sourceFile: file.name,
+              },
+              create: {
+                sectionId: match.sectionId,
+                timestamp: reading.timestamp,
+                temperature: reading.temperature,
+                sourceFile: file.name,
+              },
+            })
+            inserted++
+          }
+          totalInserted += inserted
+          sections.push({
+            sheetName: sheet.sheetName,
+            blockName: sheet.blockName,
+            sectionId: match.sectionId,
+            sectionName: match.sectionName,
+            inserted,
+          })
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        format: 'xlsx',
+        totalSheets: sheetResults.length,
+        totalReadings: sheetResults.reduce((s, r) => s + r.readings.length, 0),
+        totalInserted,
+        sections,
+        errors: errors.length > 0 ? errors : undefined,
+      })
+    }
+
+    // ── Single-file handling (PDF / CSV / TXT) ──
     let blockName: string | null
     let readings: TemperatureRecord[]
     let debug: Record<string, unknown> | undefined
@@ -73,12 +163,6 @@ export async function POST(request: NextRequest) {
         { status: 422 }
       )
     }
-
-    // Find matching sections
-    const blocks = await prisma.block.findMany({
-      where: { farmId },
-      include: { sections: { select: { id: true, name: true } } },
-    })
 
     const matches = matchBlockToSections(blockName, blocks)
 

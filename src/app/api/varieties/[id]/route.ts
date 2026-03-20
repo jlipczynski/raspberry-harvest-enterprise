@@ -11,30 +11,33 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
     
+    // Only update fields that are explicitly present in the request body
+    // This prevents wiping fields the frontend doesn't send (e.g. gdhSummer/gdhAutumn)
+    const data: Record<string, unknown> = {}
+    const nullishFields = [
+      'name', 'yieldSummerPerShoot', 'yieldAutumnPerShoot',
+      'gdhSummer', 'gdhAutumn', 'baseTemp',
+      'gdhWinteredFlower', 'gdhWinteredFruit',
+      'gdhLcFlower', 'gdhLcFruit',
+      'gdhAutumnFlower', 'gdhAutumnFruit',
+      'autumnStartWeek', 'pickingEfficiency',
+      'wastePercent', 'secondCategoryPercent',
+    ]
+    for (const field of nullishFields) {
+      if (field in body) data[field] = body[field] ?? null
+    }
+    const orNullFields = ['origin', 'description']
+    for (const field of orNullFields) {
+      if (field in body) data[field] = body[field] || null
+    }
+    const arrayFields = ['harvestCurveSummer', 'harvestCurveAutumn']
+    for (const field of arrayFields) {
+      if (field in body) data[field] = body[field] || null
+    }
+
     const variety = await prisma.variety.update({
       where: { id },
-      data: {
-        name: body.name,
-        origin: body.origin || null,
-        description: body.description || null,
-        yieldSummerPerShoot: body.yieldSummerPerShoot ?? null,
-        yieldAutumnPerShoot: body.yieldAutumnPerShoot ?? null,
-        gdhSummer: body.gdhSummer ?? null,
-        gdhAutumn: body.gdhAutumn ?? null,
-        baseTemp: body.baseTemp ?? null,
-        gdhWinteredFlower: body.gdhWinteredFlower ?? null,
-        gdhWinteredFruit: body.gdhWinteredFruit ?? null,
-        gdhLcFlower: body.gdhLcFlower ?? null,
-        gdhLcFruit: body.gdhLcFruit ?? null,
-        gdhAutumnFlower: body.gdhAutumnFlower ?? null,
-        gdhAutumnFruit: body.gdhAutumnFruit ?? null,
-        harvestCurveSummer: body.harvestCurveSummer || null,
-        harvestCurveAutumn: body.harvestCurveAutumn || null,
-        autumnStartWeek: body.autumnStartWeek ?? null,
-        pickingEfficiency: body.pickingEfficiency ?? null,
-        wastePercent: body.wastePercent ?? null,
-        secondCategoryPercent: body.secondCategoryPercent ?? null,
-      }
+      data,
     })
 
     return NextResponse.json({ variety })

@@ -175,10 +175,11 @@ Nazwę worktree widać na dole okna Claude Code.
 1. Zawsze na początku: git fetch origin && git checkout main && git pull origin main
 2. Po zakończeniu: commituj i pushuj na branch
 3. Utwórz PR przez GitHub CLI:
-   gh pr create --title "<opis zadania>" --body "" --base main
+   gh pr create --title "<opis zadania>" --body "" --base main --repo jlipczynski/raspberry-harvest-enterprise
 4. Podaj numer PR w podsumowaniu — nigdy nie mów użytkownikowi żeby mergował ręcznie
 5. Nigdy nie pushuj na main bezpośrednio (403)
-6. gh jest dostępne — PR tworzy się przez: gh pr create --title "<opis>" --body "" --base main
+6. gh jest dostępne — PR tworzy się przez: gh pr create --title "<opis>" --body "" --base main --repo jlipczynski/raspberry-harvest-enterprise
+7. WAŻNE: git remote wskazuje na lokalny proxy (127.0.0.1), nie na github.com — dlatego ZAWSZE dodawaj --repo jlipczynski/raspberry-harvest-enterprise do każdej komendy gh
 
 ## ⚠️ GIT — ABSOLUTNE ZASADY
 - ZAWSZE pracuj bezpośrednio na branchu `main`

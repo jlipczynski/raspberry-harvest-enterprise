@@ -18,6 +18,7 @@ interface HarvestCurveRecord {
   winteredInTunnel?: boolean | null; plantingDate?: string | null; plantSource?: string | null
   plantingYear?: number | null; autumnShootDate?: string | null
   name?: string | null; isArchived?: boolean; mergedFromIds?: string[]
+  commercialStartDate?: string | null; commercialStartDateAutumn?: string | null
 }
 
 interface CreateTemplateForm {
@@ -33,6 +34,7 @@ interface RawRow { date: string; area: string; weightReal: number }
 interface WeekRow { week: number; kg: number; dates: string; season: 'summer' | 'autumn' | 'preharvest' }
 interface DayData { date: string; kg: number; dayOfWeek: number; isPreHarvest: boolean; isPreHarvestAutumn: boolean }
 interface AreaImport {
+  id?: string
   area: string
   totalKg: number
   weeks: WeekRow[]
@@ -260,6 +262,16 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
         const newDays = area.days.map(d => ({ ...d, isPreHarvest: d.date < date ? true : d.isPreHarvest }))
         return { ...area, days: newDays, commercialStartDate: date }
       }))
+      selectedAreaIdxs.forEach(areaIdx => {
+        const curve = areas[areaIdx]
+        if (curve?.id) {
+          fetch(`/api/harvest-curves/${curve.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commercialStartDate: date })
+          })
+        }
+      })
     } else {
       setMergedCommercialStartDateAutumn(date)
       setAreas(prev => prev.map((area, i) => {
@@ -267,6 +279,16 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
         const newDays = area.days.map(d => ({ ...d, isPreHarvestAutumn: d.date < date ? true : d.isPreHarvestAutumn }))
         return { ...area, days: newDays, commercialStartDateAutumn: date }
       }))
+      selectedAreaIdxs.forEach(areaIdx => {
+        const curve = areas[areaIdx]
+        if (curve?.id) {
+          fetch(`/api/harvest-curves/${curve.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commercialStartDateAutumn: date })
+          })
+        }
+      })
     }
   }
 
@@ -278,6 +300,16 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
         const newDays = area.days.map(d => ({ ...d, isPreHarvest: false }))
         return { ...area, days: newDays, commercialStartDate: null }
       }))
+      selectedAreaIdxs.forEach(areaIdx => {
+        const curve = areas[areaIdx]
+        if (curve?.id) {
+          fetch(`/api/harvest-curves/${curve.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commercialStartDate: null })
+          })
+        }
+      })
     } else {
       setMergedCommercialStartDateAutumn(null)
       setAreas(prev => prev.map((area, i) => {
@@ -285,6 +317,16 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
         const newDays = area.days.map(d => ({ ...d, isPreHarvestAutumn: false }))
         return { ...area, days: newDays, commercialStartDateAutumn: null }
       }))
+      selectedAreaIdxs.forEach(areaIdx => {
+        const curve = areas[areaIdx]
+        if (curve?.id) {
+          fetch(`/api/harvest-curves/${curve.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commercialStartDateAutumn: null })
+          })
+        }
+      })
     }
   }
 
@@ -324,7 +366,19 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       if (showArchived) params.set('includeArchived', 'true')
       const res = await fetch(`/api/harvest-curves?${params}`)
       const data = await res.json()
-      setSavedCurves(data.curves || [])
+      const curves: HarvestCurveRecord[] = data.curves || []
+      setSavedCurves(curves)
+      // Populate areas with commercialStartDate/Autumn from DB
+      setAreas(prev => prev.map(area => {
+        const matchingCurves = curves.filter(c => c.name === area.area)
+        if (matchingCurves.length === 0) return area
+        const summerCurve = matchingCurves.find(c => c.season === 'summer')
+        const autumnCurve = matchingCurves.find(c => c.season === 'autumn')
+        const commercialStartDate = summerCurve?.commercialStartDate || area.commercialStartDate
+        const commercialStartDateAutumn = autumnCurve?.commercialStartDateAutumn || area.commercialStartDateAutumn
+        const id = summerCurve?.id || autumnCurve?.id || area.id
+        return { ...area, id, commercialStartDate, commercialStartDateAutumn }
+      }))
     } catch (e) { console.error(e) }
   }, [filterVariety, showArchived])
 

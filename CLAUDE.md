@@ -2,23 +2,27 @@ Raspberry Harvest Enterprise
 ⛔ ABSOLUTNE ZAKAZY — NIGDY nie łam tych zasad
 
 NIGDY nie modyfikuj .github/workflows/
-NIGDY nie twórz nowych branchy — zawsze git push origin main bezpośrednio
-NIGDY nie pushuj na branch — tylko git push origin main
 NIGDY nie naprawiaj CI/CD bez wyraźnego polecenia
 NIGDY nie mów "Gotowe" jeśli nie scommitowałeś i nie pushowałeś — to kłamstwo które marnuje czas użytkownika
-NIGDY nie twórz PR — użytkownik tego nie chce
-Jeśli masz błąd 403 przy push — powiedz użytkownikowi, nie twórz branchy
 NIGDY nie dodawaj .claude/worktrees/ do git — jest w .gitignore
 NIGDY nie kłam o wykonaniu zadania — jeśli zadanie nie zostało wykonane, powiedz wprost
 NIGDY nie modyfikuj pliku jeśli brief mówi go zastąpić — zastąp CAŁY plik nowym kodem
+NIGDY nie pushuj na main bezpośrednio — dostaniesz 403. Zawsze przez PR.
 
-✅ OBOWIĄZKOWA SEKWENCJA PO KAŻDYM ZADANIU
-Po każdej zmianie kodu wykonaj DOKŁADNIE te komendy w tej kolejności:
-bashnpm run build           # musi przejść — jeśli nie, napraw błędy przed commitem
-git add -A
-git commit -m "opis zmian"
-git push origin main    # ZAWSZE na main, nigdy na branch
-Weryfikacja po commicie: uruchom git log --oneline -3 i sprawdź czy przy ostatnim commicie jest (origin/main). Jeśli nie ma — push nie przeszedł, spróbuj ponownie.
+✅ OBOWIĄZKOWA SEKWENCJA PO KAŻDYM ZADANIU — JAK WDROŻYĆ NA PRODUKCJĘ
+1. Sprawdź typy: `npx tsc --noEmit` (npm run build nie działa w sandbox — brak DATABASE_URL i Google Fonts)
+2. Commituj: `git add -A && git commit -m "opis zmian"`
+3. Push na branch: `git push -u origin <nazwa-brancha>`
+4. Utwórz PR: `gh pr create --title "..." --body "..." --base main --repo jlipczynski/raspberry-harvest-enterprise`
+5. Od razu merguj: `gh pr merge <NR> --squash --repo jlipczynski/raspberry-harvest-enterprise`
+6. Jeśli merge failuje ("not mergeable") → rebase na main i force push:
+   ```
+   git fetch origin main && git rebase origin/main
+   git push -u origin <branch> --force-with-lease
+   gh pr merge <NR> --squash --repo jlipczynski/raspberry-harvest-enterprise
+   ```
+7. Zweryfikuj: `gh pr view <NR> --repo jlipczynski/raspberry-harvest-enterprise --json state --jq '.state'` → powinno być "MERGED"
+8. Podaj numer PR użytkownikowi
 ✅ ZASADY WYKONANIA ZADAŃ
 
 Czytaj brief dokładnie — wykonuj DOKŁADNIE to co napisano, nie więcej, nie mniej
@@ -146,50 +150,76 @@ Każde zapytanie DB MUSI być scopowane przez `tenantId`. Używaj `requireTenant
 pots = potsOverride > 0 ? potsOverride : metersLength × potsPerMeter
 shoots = pots × shootsPerPot
 yield = shoots × yieldPerShoot
-Coding Conventions
+## Znane pułapki i poprawki (z sesji marzec 2026)
 
-TypeScript strict mode — no any types
-@/ path alias
-export const dynamic = 'force-dynamic' na wszystkich route handlers
-Polish UI text throughout
-Dates: date-fns
+### PATCH endpointy — bezpieczeństwo pól
+- PATCH `/api/varieties/[id]` aktualizuje TYLKO pola obecne w request body
+- Wzorzec: `if (field in body) data[field] = body[field] ?? null`
+- BEZ tego wzorca: frontend nie wysyła gdhSummer/gdhAutumn → Prisma ustawia je na null → dane znikają
 
-Environment Variables
+### POST endpointy — zachowanie wartości 0
+- Używaj `field != null ? parseFloat(field)` zamiast `field ? parseFloat(field)`
+- `0` jest falsy w JS → truthy check zamienia 0 na null
 
-DATABASE_URL — PostgreSQL (Neon)
-NEXTAUTH_SECRET — JWT secret
+### GDH thresholds — nowy vs stary system
+- **Stare pola (legacy, NIE UŻYWANE w UI):** `gdhSummer`, `gdhAutumn`
+- **Nowe pola (aktywne):** `gdhWinteredFlower`, `gdhWinteredFruit`, `gdhLcFlower`, `gdhLcFruit`, `gdhAutumnFlower`, `gdhAutumnFruit`
+- UI odmiany edytuje/wyświetla NOWE pola — nie wyświetlaj starych
 
-Git Workflow
-⚠️ Claude Code Desktop używa git worktrees
-.claude/worktrees/ jest w .gitignore — NIGDY go nie commituj.
-Po każdej sesji Claude Code sprawdź:
-bashgit log --oneline -3
-Jeśli przy ostatnim commicie NIE ma (origin/main) — zmerguj ręcznie:
-bashcd /Users/janlipczynski/Desktop/raspberry-harvest-enterprise
-git pull origin main
-git merge claude/[nazwa-worktree] --no-ff -m "opis zmian"
-git push origin main
-Nazwę worktree widać na dole okna Claude Code.
+### ProductionCurveTemplate — dual-season
+- Jeden rekord zawiera OBA sezony: `dailyCurveSummer` + `dailyCurveAutumn`
+- NIE dziel szablonów na summer/autumn w UI — wyświetlaj jedną listę
+- Pole `season` jest derive'owane ale nie powinno być kryterium filtrowania
 
-## Workflow Git — obowiązkowe kroki
-1. Zawsze na początku: git fetch origin && git checkout main && git pull origin main
-2. Po zakończeniu: commituj i pushuj na branch
-3. Utwórz PR przez GitHub API (curl):
-   curl -sk -X POST "https://api.github.com/repos/jlipczynski/raspberry-harvest-enterprise/pulls" \
-     -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" \
-     -d '{"title":"<opis>","head":"<branch>","base":"main","body":"<opis>"}'
-4. **ZAWSZE od razu merguj PR** — nie czekaj na użytkownika:
-   curl -sk -X PUT "https://api.github.com/repos/jlipczynski/raspberry-harvest-enterprise/pulls/<NR>/merge" \
-     -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/json" \
-     -d '{"merge_method":"squash"}'
-5. Podaj numer PR w podsumowaniu
-6. Nigdy nie pushuj na main bezpośrednio (403)
-7. WAŻNE: git remote wskazuje na lokalny proxy (127.0.0.1), nie na github.com — dlatego do gh CLI ZAWSZE dodawaj --repo jlipczynski/raspberry-harvest-enterprise
-8. WAŻNE: gh CLI ma problem z TLS w tym środowisku — używaj curl -sk do GitHub API zamiast gh
+### Import temperatur (XLSX)
+- `src/lib/xlsx-temperature-parser.ts` — parsuje XLSX, każdy arkusz = jeden tunel
+- `extractBlockFromSheetName()` szuka wzorca T{cyfry}{litera} GDZIEKOLWIEK w nazwie (nie tylko exact match)
+- Obsługuje: "T3C", "T3C_20-03-2026", "T3C dane", "Tunel 3C", "3C"
+- `matchBlockToSections()` w `src/lib/temperature-utils.ts` mapuje kod tunelu → sekcje
+- macOS file picker wymaga MIME types w `accept` (nie tylko rozszerzenia): dodaj `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
 
-## ⚠️ GIT — ABSOLUTNE ZASADY
-- ZAWSZE pracuj bezpośrednio na branchu `main`
-- NIGDY nie twórz worktrees ani nowych branchy
-- Przed rozpoczęciem: `git checkout main && git pull origin main`
-- Commituj bezpośrednio na main: `git add -A && git commit && git push origin main`
-- NIGDY nie używaj `git worktree`
+## Coding Conventions
+
+- TypeScript strict mode — no `any` types
+- `@/` path alias
+- `export const dynamic = 'force-dynamic'` na wszystkich route handlers
+- Polish UI text throughout
+- Dates: `date-fns`
+
+## Environment Variables
+
+- `DATABASE_URL` — PostgreSQL (Neon)
+- `NEXTAUTH_SECRET` — JWT secret
+
+## Git Workflow — SPRAWDZONE, DZIAŁAJĄCE KROKI
+
+### Ważne info o środowisku
+- git remote wskazuje na **lokalny proxy (127.0.0.1)**, nie na github.com
+- Dlatego do `gh` CLI **ZAWSZE** dodawaj `--repo jlipczynski/raspberry-harvest-enterprise`
+- Push bezpośrednio na main daje **403** — jedyna droga to PR
+- `gh` CLI działa w tym środowisku (w przeciwieństwie do wcześniejszych sesji z problemami TLS)
+- Jeśli `gh` failuje z TLS — fallback na `curl -sk` do `https://api.github.com`
+- `npm run build` NIE DZIAŁA w sandbox (brak DATABASE_URL, Google Fonts blocked) — używaj `npx tsc --noEmit`
+- Branch name jest przydzielany przez system (np. `claude/prisma-schema-curves-HsAqE`) — użyj go
+
+### Workflow krok po kroku
+1. Na starcie: `git fetch origin main && git checkout main && git pull origin main`
+2. Przełącz na branch: `git checkout -b <branch-name>` lub `git checkout <branch-name>`
+3. Zrób zmiany, sprawdź typy: `npx tsc --noEmit`
+4. Commit: `git add -A && git commit -m "opis"`
+5. Push: `git push -u origin <branch-name>`
+6. PR: `gh pr create --title "..." --body "..." --base main --repo jlipczynski/raspberry-harvest-enterprise`
+7. Merge: `gh pr merge <NR> --squash --repo jlipczynski/raspberry-harvest-enterprise`
+8. Jeśli "not mergeable" → rebase i force push:
+   ```
+   git fetch origin main && git rebase origin/main
+   git push -u origin <branch> --force-with-lease
+   ```
+   Potem ponów merge.
+9. Weryfikacja: `gh pr view <NR> --repo ... --json state --jq '.state'` → "MERGED"
+
+### Czego NIE robić
+- NIE pushuj na main (403)
+- NIE twórz worktrees
+- NIE używaj `git worktree`
+- NIE czekaj na użytkownika z mergem — merguj od razu

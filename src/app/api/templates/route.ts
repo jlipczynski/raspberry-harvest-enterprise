@@ -32,6 +32,8 @@ export async function GET(request: NextRequest) {
       startWeekAutumn: t.startWeekAutumn,
       startDateSummer: t.startDateSummer,
       startDateAutumn: t.startDateAutumn,
+      startDate: t.startDateSummer ?? t.startDateAutumn ?? null,
+      endDate: t.endDateSummer ?? t.endDateAutumn ?? null,
       season: t.totalKgSummer >= t.totalKgAutumn ? 'summer' : 'autumn',
       dailyCurve: t.dailyCurveSummer.length > 0 ? t.dailyCurveSummer : t.dailyCurveAutumn,
       weeklyCurve: t.weeklyCurveSummer.length > 0 ? t.weeklyCurveSummer : t.weeklyCurveAutumn,

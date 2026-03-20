@@ -31,10 +31,14 @@ export async function POST(request: NextRequest) {
         weeklyCurveSummer: summer?.weeklyCurve || [],
         totalKgSummer: summer?.totalKg || 0,
         startWeekSummer: summer?.startWeek || null,
+        startDateSummer: summer?.startDate || null,
+        endDateSummer: summer?.endDate || null,
         dailyCurveAutumn: autumn?.dailyCurve || [],
         weeklyCurveAutumn: autumn?.weeklyCurve || [],
         totalKgAutumn: autumn?.totalKg || 0,
         startWeekAutumn: autumn?.startWeek || null,
+        startDateAutumn: autumn?.startDate || null,
+        endDateAutumn: autumn?.endDate || null,
       },
     })
     return NextResponse.json({ template })

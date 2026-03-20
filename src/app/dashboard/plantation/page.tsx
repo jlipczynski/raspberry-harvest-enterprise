@@ -13,7 +13,7 @@ interface Section { id: string; name: string; metersLength: number; potsPerMeter
 interface Block { id: string; name: string; sections: Section[] }
 interface Farm { id: string; name: string }
 interface TempReading { id: string; timestamp: string; temperature: number; sourceFile?: string }
-interface UploadResult { success?: boolean; error?: string; blockName?: string; totalReadings?: number; sections?: Array<{ sectionId: string; sectionName: string | null; inserted: number }>; debug?: { format?: string; contentPreview?: string; lineCount?: number; tokenCount?: number; testoReadingsFound?: number; parsedBlockName?: string | null } }
+interface UploadResult { success?: boolean; error?: string; blockName?: string; totalReadings?: number; totalInserted?: number; sections?: Array<{ sectionId: string; sectionName: string | null; inserted: number; sheetName?: string; blockName?: string }>; format?: string; totalSheets?: number; errors?: string[]; debug?: { format?: string; contentPreview?: string; lineCount?: number; tokenCount?: number; testoReadingsFound?: number; parsedBlockName?: string | null } }
 
 const PLANT_TYPES = [{ value: 'SMALL_POT', label: 'Doniczka' }, { value: 'ROOT', label: 'Korzeń' }, { value: 'LONGCANE', label: 'Longcane' }, { value: 'PLUG', label: 'Plug' }]
 const PLANT_SOURCES = [{ value: '', label: 'Nie określono' }, { value: 'OWN', label: 'Własne plugi' }, { value: 'NURSERY', label: 'Zewnętrzna szkółka' }]
@@ -78,12 +78,12 @@ export default function PlantationPage() {
     setUploadingPdfs(true)
     setUploadResults([])
     const results: UploadResult[] = []
-    const allowedExts = ['.pdf', '.csv', '.txt']
+    const allowedExts = ['.pdf', '.csv', '.txt', '.xlsx', '.xls']
 
     for (const file of Array.from(files)) {
       const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
       if (!allowedExts.includes(ext)) {
-        results.push({ error: `${file.name}: nieobsługiwany format (akceptowane: PDF, CSV, TXT)` })
+        results.push({ error: `${file.name}: nieobsługiwany format (akceptowane: PDF, CSV, TXT, XLSX)` })
         continue
       }
       const formData = new FormData()
@@ -230,7 +230,7 @@ export default function PlantationPage() {
         onClick={() => fileInputRef.current?.click()}
         className={`relative rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}`}
       >
-        <input ref={fileInputRef} type="file" accept=".pdf,.csv,.txt" multiple className="hidden" onChange={e => { if (e.target.files) handleFileUpload(e.target.files); e.target.value = '' }} />
+        <input ref={fileInputRef} type="file" accept=".pdf,.csv,.txt,.xlsx,.xls" multiple className="hidden" onChange={e => { if (e.target.files) handleFileUpload(e.target.files); e.target.value = '' }} />
         {uploadingPdfs ? (
           <div className="flex items-center justify-center gap-3">
             <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
@@ -240,7 +240,7 @@ export default function PlantationPage() {
           <div className="flex items-center justify-center gap-3">
             <Upload className="w-6 h-6 text-gray-400" />
             <div className="text-sm">
-              <span className="font-medium text-gray-700">Przeciągnij pliki PDF lub CSV z pomiarami temperatury</span>
+              <span className="font-medium text-gray-700">Przeciągnij pliki PDF, CSV lub XLSX z pomiarami temperatury</span>
               <span className="text-gray-400 ml-1">lub kliknij, aby wybrać</span>
             </div>
             <FileText className="w-5 h-5 text-gray-300" />
@@ -254,9 +254,29 @@ export default function PlantationPage() {
           {uploadResults.map((r, i) => (
             <div key={i} className={`rounded-lg px-4 py-3 text-sm ${r.success ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
               {r.success ? (
-                <div className="flex items-center gap-2">
-                  <Thermometer className="w-4 h-4" />
-                  <span>Blok <strong>{r.blockName}</strong>: {r.totalReadings} pomiarów zaimportowano do {r.sections?.length} sekcji ({r.sections?.map(s => s.sectionName).join(', ')})</span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Thermometer className="w-4 h-4" />
+                    {r.format === 'xlsx' ? (
+                      <span>XLSX: {r.totalSheets} arkuszy, <strong>{r.totalInserted}</strong> pomiarów zaimportowano do {r.sections?.length} sekcji</span>
+                    ) : (
+                      <span>Blok <strong>{r.blockName}</strong>: {r.totalReadings} pomiarów zaimportowano do {r.sections?.length} sekcji ({r.sections?.map(s => s.sectionName).join(', ')})</span>
+                    )}
+                  </div>
+                  {r.format === 'xlsx' && r.sections && r.sections.length > 0 && (
+                    <div className="mt-2 ml-6 space-y-0.5 text-xs">
+                      {r.sections.map((s, j) => (
+                        <div key={j} className="text-green-700">
+                          {s.sheetName} → <strong>{s.sectionName}</strong>: {s.inserted} pomiarów
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {r.errors && r.errors.length > 0 && (
+                    <div className="mt-2 ml-6 space-y-0.5 text-xs text-orange-700">
+                      {r.errors.map((e, j) => <div key={j}>{e}</div>)}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div>

@@ -135,7 +135,8 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     setCreatingTemplate(true)
     try {
       // Build summer/autumn objects from selected curves
-      const summerCurves = selected.filter(c => c.season === 'summer')
+      // Combined curves (season=null) are treated as summer
+      const summerCurves = selected.filter(c => c.season === 'summer' || !c.season)
       const autumnCurves = selected.filter(c => c.season === 'autumn')
       const buildFromCurves = (curves: HarvestCurveRecord[]) => {
         if (curves.length === 0) return null
@@ -689,15 +690,13 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     finally { setForecastLoading(false) }
   }
 
-  // Group curves: by variety → by season
+  // Group curves: by variety (flat list, no season split)
   const groupCurves = () => {
-    const groups: Record<string, { summer: HarvestCurveRecord[]; autumn: HarvestCurveRecord[] }> = {}
+    const groups: Record<string, HarvestCurveRecord[]> = {}
     savedCurves.forEach(c => {
       const vName = c.variety?.name || 'Bez odmiany'
-      if (!groups[vName]) groups[vName] = { summer: [], autumn: [] }
-      if (c.season === 'summer') groups[vName].summer.push(c)
-      else if (c.season === 'autumn') groups[vName].autumn.push(c)
-      else groups[vName].summer.push(c) // combined curves show in summer chart
+      if (!groups[vName]) groups[vName] = []
+      groups[vName].push(c)
     })
     return groups
   }
@@ -1117,46 +1116,18 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
             </Card>
           )}
 
-          {/* Grouped by variety, split summer/autumn */}
-          {Object.entries(curveGroups).map(([varName, { summer, autumn }]) => (
+          {/* Grouped by variety — flat table */}
+          {Object.entries(curveGroups).map(([varName, curves]) => (
             <div key={varName} className="space-y-4">
               <h2 className="text-lg font-bold">{varName}</h2>
 
-              {summer.length > 0 && (
-                <Card className="border-orange-200">
-                  <CardHeader className="bg-orange-50 py-3">
-                    <CardTitle className="text-base flex items-center gap-2"><Sun className="w-4 h-4 text-orange-500" />Lato ({summer.length})</CardTitle>
-                  </CardHeader>
+              {curves.length > 0 && (
+                <Card>
                   <CardContent className="pt-4 space-y-3">
-                    {renderChart(summer)}
+                    {renderChart(curves)}
                     <table className="w-full text-sm">
                       <thead><tr className="border-b bg-gray-50">{mergeMode && <th className="w-10 py-2 px-3"></th>}<th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
-                      <tbody>{summer.map(c => (
-                        <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''} ${mergeCurveIds.includes(c.id) ? 'bg-blue-50' : ''} ${c.isArchived ? 'opacity-50 bg-gray-50' : ''}`}>
-                          {mergeMode && <td className="py-2 px-3">{!c.isArchived && <input type="checkbox" checked={mergeCurveIds.includes(c.id)} onChange={() => toggleMergeSelection(c.id)} className="w-4 h-4 accent-blue-600" />}</td>}
-                          <td className="py-2 px-3"><input type="checkbox" checked={selectedCurveIds.includes(c.id)} onChange={() => toggleCurveSelection(c.id)} className="w-4 h-4 accent-green-600" /></td>
-                          <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span>{c.isArchived && <Archive className="w-3 h-3 text-gray-400" />}{c.mergedFromIds && c.mergedFromIds.length > 0 && <Merge className="w-3 h-3 text-blue-400" />}</div></td>
-                          <td className="py-2 px-3 text-gray-600">{c.name || c.section?.name || '—'}</td>
-                          <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
-                          <td className="py-2 px-3 text-gray-500">T{c.startWeek}</td>
-                          <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1">{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button>}{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>}</div></td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-              )}
-
-              {autumn.length > 0 && (
-                <Card className="border-red-200">
-                  <CardHeader className="bg-red-50 py-3">
-                    <CardTitle className="text-base flex items-center gap-2"><Leaf className="w-4 h-4 text-red-500" />Jesień ({autumn.length})</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-4 space-y-3">
-                    {renderChart(autumn)}
-                    <table className="w-full text-sm">
-                      <thead><tr className="border-b bg-gray-50">{mergeMode && <th className="w-10 py-2 px-3"></th>}<th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
-                      <tbody>{autumn.map(c => (
+                      <tbody>{curves.map(c => (
                         <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''} ${mergeCurveIds.includes(c.id) ? 'bg-blue-50' : ''} ${c.isArchived ? 'opacity-50 bg-gray-50' : ''}`}>
                           {mergeMode && <td className="py-2 px-3">{!c.isArchived && <input type="checkbox" checked={mergeCurveIds.includes(c.id)} onChange={() => toggleMergeSelection(c.id)} className="w-4 h-4 accent-blue-600" />}</td>}
                           <td className="py-2 px-3"><input type="checkbox" checked={selectedCurveIds.includes(c.id)} onChange={() => toggleCurveSelection(c.id)} className="w-4 h-4 accent-green-600" /></td>

@@ -1241,7 +1241,7 @@ export default function TemplatesPage() {
 
   const filtered = templates.filter(t => {
     if (filter.varietyId && t.variety?.id !== filter.varietyId) return false
-    if (filter.season && t.season !== filter.season) return false
+
     if (filter.cycle && t.productionCycle !== parseInt(filter.cycle)) return false
     if (filter.tunnel && String(t.winteredInTunnel) !== filter.tunnel) return false
     if (filter.search && !t.name.toLowerCase().includes(filter.search.toLowerCase())) return false
@@ -1285,9 +1285,6 @@ export default function TemplatesPage() {
           <select value={filter.varietyId} onChange={e=>setFilter(p=>({...p,varietyId:e.target.value}))} className="border rounded-lg px-3 py-2 text-sm">
             <option value="">Wszystkie odmiany</option>{varieties.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
           </select>
-          <select value={filter.season} onChange={e=>setFilter(p=>({...p,season:e.target.value}))} className="border rounded-lg px-3 py-2 text-sm">
-            <option value="">Oba sezony</option><option value="summer">☀️ Lato</option><option value="autumn">🍂 Jesień</option>
-          </select>
           <select value={filter.cycle} onChange={e=>setFilter(p=>({...p,cycle:e.target.value}))} className="border rounded-lg px-3 py-2 text-sm">
             <option value="">Cykle</option><option value="1">1.</option><option value="2">2.</option><option value="3">3.</option>
           </select>
@@ -1315,8 +1312,8 @@ export default function TemplatesPage() {
             return (
               <div key={t.id} className="bg-white rounded-xl border overflow-hidden">
                 <div className="flex items-center gap-4 p-4 cursor-pointer hover:bg-gray-50" onClick={()=>setExpandedId(isExp?null:t.id)}>
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-lg ${t.season==='summer'?'bg-orange-500':'bg-red-500'}`}>
-                    {t.season==='summer'?'☀️':'🍂'}
+                  <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-lg bg-green-100">
+                    {t.totalKgSummer > 0 && t.totalKgAutumn > 0 ? '☀️🍂' : t.totalKgAutumn > 0 ? '🍂' : '☀️'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold truncate flex items-center gap-2">{t.name}{t.tenantName && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-normal">{t.tenantName}</span>}</div>
@@ -1331,7 +1328,7 @@ export default function TemplatesPage() {
                   </div>
                   <div className="flex items-end gap-px h-8 w-28">
                     {(t.weeklyCurve||[]).map((v,i)=>(
-                      <div key={i} className="flex-1 rounded-t" style={{height:(v/Math.max(...(t.weeklyCurve||[1])))*28+'px',minHeight:'1px',background:t.season==='summer'?'#fb923c':'#f87171'}}/>
+                      <div key={i} className="flex-1 rounded-t" style={{height:(v/Math.max(...(t.weeklyCurve||[1])))*28+'px',minHeight:'1px',background:'#22c55e'}}/>
                     ))}
                   </div>
                   <div className="text-right w-20">

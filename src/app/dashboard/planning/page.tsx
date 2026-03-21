@@ -35,11 +35,19 @@ interface GdhApiResponse {
 
 interface TemplateAssignment {
   id: string; templateId: string; targetYear: number; season: string; adjustmentPercent: number; isActive: boolean
-  template: { id: string; name: string; season: string; weeklyCurve: number[]; dailyCurve: number[]; startWeek?: number; totalKg: number }
+  template: {
+    id: string; name: string
+    weeklyCurveSummer: number[]; dailyCurveSummer: number[]; startWeekSummer?: number; startDateSummer?: string; totalKgSummer: number
+    weeklyCurveAutumn: number[]; dailyCurveAutumn: number[]; startWeekAutumn?: number; startDateAutumn?: string; totalKgAutumn: number
+  }
 }
 interface AvailableTemplate {
   id: string; name: string; season: string; varietyId?: string; productionYear: number
-  weeklyCurve: number[]; winteredInTunnel: boolean; plantSource?: string; productionCycle: number; totalKg: number
+  weeklyCurve: number[]; weeklyCurveSummer: number[]; weeklyCurveAutumn: number[]
+  dailyCurveSummer: number[]; dailyCurveAutumn: number[]
+  startDateSummer?: string; startDateAutumn?: string
+  totalKgSummer: number; totalKgAutumn: number
+  winteredInTunnel: boolean; plantSource?: string; productionCycle: number; totalKg: number
 }
 interface PlantationSection {
   id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number
@@ -162,7 +170,11 @@ export default function PlanningPage() {
       setBlocks(plantation.blocks || [])
       setAvailableTemplates((templatesData.templates || []).map((t: Record<string, unknown>) => ({
         id: t.id, name: t.name, season: t.season, varietyId: t.varietyId,
-        productionYear: t.productionYear, weeklyCurve: t.weeklyCurve,
+        productionYear: t.productionYear, weeklyCurve: t.weeklyCurve as number[] ?? [],
+        weeklyCurveSummer: (t.weeklyCurveSummer as number[]) ?? [], weeklyCurveAutumn: (t.weeklyCurveAutumn as number[]) ?? [],
+        dailyCurveSummer: (t.dailyCurveSummer as number[]) ?? [], dailyCurveAutumn: (t.dailyCurveAutumn as number[]) ?? [],
+        startDateSummer: t.startDateSummer as string | undefined, startDateAutumn: t.startDateAutumn as string | undefined,
+        totalKgSummer: (t.totalKgSummer as number) ?? 0, totalKgAutumn: (t.totalKgAutumn as number) ?? 0,
         winteredInTunnel: t.winteredInTunnel, plantSource: t.plantSource, productionCycle: t.productionCycle, totalKg: (t.totalKg as number) ?? 0,
       })))
     }).catch(console.error).finally(() => setLoading(false))
@@ -267,6 +279,7 @@ export default function PlanningPage() {
       summerAssignment: TemplateAssignment | null
       autumnAssignment: TemplateAssignment | null
       weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }>
+      dailyKg: Array<{ date: string; kg: number; summerKg: number; autumnKg: number }>
       eff: number
     }> = []
 
@@ -288,22 +301,28 @@ export default function PlanningPage() {
       const summerAssignment = (section.templateAssignments || []).find(a => a.season === 'summer' && a.isActive)
       const sectionSummerCurve = (section.harvestCurveSummer as number[] | undefined)
       const varietySummerCurve = (v?.harvestCurveSummer as number[] | undefined)
-      const assignmentSummerCurve = summerAssignment?.template?.weeklyCurve
-      const summerCurve = (assignmentSummerCurve?.length ? assignmentSummerCurve : null)
+      // Weekly curves for fallback
+      const assignmentSummerWeeklyCurve = summerAssignment?.template?.weeklyCurveSummer
+      const summerWeeklyCurve = (assignmentSummerWeeklyCurve?.length ? assignmentSummerWeeklyCurve : null)
         ?? (sectionSummerCurve?.length ? sectionSummerCurve : null)
         ?? (varietySummerCurve?.length ? varietySummerCurve : null)
         ?? FLAT_CURVE_10W
+      // Daily curves from template assignment (% per day)
+      const summerDailyCurve = summerAssignment?.template?.dailyCurveSummer
+      const summerStartDate = summerAssignment?.template?.startDateSummer
 
       // --- AUTUMN ---
       const autumnYield = section.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
       const autumnAssignment = (section.templateAssignments || []).find(a => a.season === 'autumn' && a.isActive)
       const sectionAutumnCurve = (section.harvestCurveAutumn as number[] | undefined)
       const varietyAutumnCurve = (v?.harvestCurveAutumn as number[] | undefined)
-      const assignmentAutumnCurve = autumnAssignment?.template?.weeklyCurve
-      const autumnCurve = (assignmentAutumnCurve?.length ? assignmentAutumnCurve : null)
+      const assignmentAutumnWeeklyCurve = autumnAssignment?.template?.weeklyCurveAutumn
+      const autumnWeeklyCurve = (assignmentAutumnWeeklyCurve?.length ? assignmentAutumnWeeklyCurve : null)
         ?? (sectionAutumnCurve?.length ? sectionAutumnCurve : null)
         ?? (varietyAutumnCurve?.length ? varietyAutumnCurve : null)
         ?? FLAT_CURVE_10W
+      const autumnDailyCurve = autumnAssignment?.template?.dailyCurveAutumn
+      const autumnStartDate = autumnAssignment?.template?.startDateAutumn
 
       // Autumn start week — from DB (Variety.autumnStartWeek)
       const autumnStartWeek = v?.autumnStartWeek ?? null
@@ -312,35 +331,96 @@ export default function PlanningPage() {
       const autumnKg = (autumnStartWeek && autumnYield > 0) ? shoots * autumnYield : 0
       const totalKg = summerKg + autumnKg
 
-      const weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }> = []
+      // Build dailyKg array — per-day kg values
+      const dailyKgMap = new Map<string, { summerKg: number; autumnKg: number }>()
 
-      // Summer weeks — start from GDH-predicted fruit date
-      if (summerKg > 0 && summerCurve.length > 0) {
-        summerCurve.forEach((pct, i) => {
-          const week = startWeek + i
-          const kg = Math.round(summerKg * pct / 100)
-          const hrs = Math.round(kg / eff)
-          weeklyKg.push({ week, kg, summerKg: kg, autumnKg: 0 })
-          if (!weekMap[week]) weekMap[week] = { kg: 0, hrs: 0, sections: [] }
-          weekMap[week].kg += kg
-          weekMap[week].hrs += hrs
-          if (!weekMap[week].sections.includes(section.name)) weekMap[week].sections.push(section.name)
-        })
+      // --- SUMMER daily distribution ---
+      if (summerKg > 0) {
+        if (summerDailyCurve?.length && summerStartDate) {
+          // Use daily curve from template — real per-day distribution
+          summerDailyCurve.forEach((pct, i) => {
+            const d = new Date(summerStartDate)
+            d.setDate(d.getDate() + i)
+            const dateStr = d.toISOString().slice(0, 10)
+            const kg = Math.round(summerKg * pct / 100)
+            const existing = dailyKgMap.get(dateStr)
+            if (existing) { existing.summerKg += kg } else { dailyKgMap.set(dateStr, { summerKg: kg, autumnKg: 0 }) }
+          })
+        } else {
+          // Fallback: weekly curve divided by 7
+          summerWeeklyCurve.forEach((pct, i) => {
+            const weekStart = new Date(fruitDate)
+            weekStart.setDate(weekStart.getDate() + i * 7)
+            const weekKg = Math.round(summerKg * pct / 100)
+            const dayKg = Math.round(weekKg / 7)
+            for (let d = 0; d < 7; d++) {
+              const day = new Date(weekStart)
+              day.setDate(day.getDate() + d)
+              const dateStr = day.toISOString().slice(0, 10)
+              const existing = dailyKgMap.get(dateStr)
+              if (existing) { existing.summerKg += dayKg } else { dailyKgMap.set(dateStr, { summerKg: dayKg, autumnKg: 0 }) }
+            }
+          })
+        }
       }
 
-      // Autumn weeks — start from variety's autumnStartWeek (from DB)
-      if (autumnKg > 0 && autumnCurve.length > 0 && autumnStartWeek) {
-        autumnCurve.forEach((pct, i) => {
-          const week = autumnStartWeek + i
-          const kg = Math.round(autumnKg * pct / 100)
-          const hrs = Math.round(kg / eff)
-          const existing = weeklyKg.find(w => w.week === week)
-          if (existing) { existing.kg += kg; existing.autumnKg += kg } else { weeklyKg.push({ week, kg, summerKg: 0, autumnKg: kg }) }
-          if (!weekMap[week]) weekMap[week] = { kg: 0, hrs: 0, sections: [] }
-          weekMap[week].kg += kg
-          weekMap[week].hrs += hrs
-          if (!weekMap[week].sections.includes(section.name)) weekMap[week].sections.push(section.name)
-        })
+      // --- AUTUMN daily distribution ---
+      if (autumnKg > 0 && autumnStartWeek) {
+        if (autumnDailyCurve?.length && autumnStartDate) {
+          // Use daily curve from template
+          autumnDailyCurve.forEach((pct, i) => {
+            const d = new Date(autumnStartDate)
+            d.setDate(d.getDate() + i)
+            const dateStr = d.toISOString().slice(0, 10)
+            const kg = Math.round(autumnKg * pct / 100)
+            const existing = dailyKgMap.get(dateStr)
+            if (existing) { existing.autumnKg += kg } else { dailyKgMap.set(dateStr, { summerKg: 0, autumnKg: kg }) }
+          })
+        } else {
+          // Fallback: weekly curve divided by 7
+          const autumnStartDate2 = new Date(year, 0, 1)
+          const daysToMon = (autumnStartDate2.getDay() + 6) % 7
+          autumnStartDate2.setDate(1 - daysToMon + (autumnStartWeek - 1) * 7)
+          autumnWeeklyCurve.forEach((pct, i) => {
+            const weekStart = new Date(autumnStartDate2)
+            weekStart.setDate(weekStart.getDate() + i * 7)
+            const weekKg = Math.round(autumnKg * pct / 100)
+            const dayKg = Math.round(weekKg / 7)
+            for (let d = 0; d < 7; d++) {
+              const day = new Date(weekStart)
+              day.setDate(day.getDate() + d)
+              const dateStr = day.toISOString().slice(0, 10)
+              const existing = dailyKgMap.get(dateStr)
+              if (existing) { existing.autumnKg += dayKg } else { dailyKgMap.set(dateStr, { summerKg: 0, autumnKg: dayKg }) }
+            }
+          })
+        }
+      }
+
+      // Convert dailyKgMap to sorted array
+      const dailyKgArr = [...dailyKgMap.entries()]
+        .map(([date, vals]) => ({ date, kg: vals.summerKg + vals.autumnKg, summerKg: vals.summerKg, autumnKg: vals.autumnKg }))
+        .sort((a, b) => a.date.localeCompare(b.date))
+
+      // Aggregate dailyKg → weeklyKg
+      const weeklyKgMap = new Map<number, { kg: number; summerKg: number; autumnKg: number }>()
+      for (const day of dailyKgArr) {
+        const wk = getWeekNumber(new Date(day.date))
+        const existing = weeklyKgMap.get(wk)
+        if (existing) { existing.kg += day.kg; existing.summerKg += day.summerKg; existing.autumnKg += day.autumnKg }
+        else { weeklyKgMap.set(wk, { kg: day.kg, summerKg: day.summerKg, autumnKg: day.autumnKg }) }
+      }
+      const weeklyKg = [...weeklyKgMap.entries()]
+        .map(([week, vals]) => ({ week, kg: vals.kg, summerKg: vals.summerKg, autumnKg: vals.autumnKg }))
+        .sort((a, b) => a.week - b.week)
+
+      // Update weekMap for global aggregation
+      for (const wk of weeklyKg) {
+        const hrs = Math.round(wk.kg / eff)
+        if (!weekMap[wk.week]) weekMap[wk.week] = { kg: 0, hrs: 0, sections: [] }
+        weekMap[wk.week].kg += wk.kg
+        weekMap[wk.week].hrs += hrs
+        if (!weekMap[wk.week].sections.includes(section.name)) weekMap[wk.week].sections.push(section.name)
       }
 
       const hasSummerAssignment = !!summerAssignment
@@ -349,7 +429,7 @@ export default function PlanningPage() {
         : (sectionSummerCurve?.length || sectionAutumnCurve?.length) ? 'section' as const
         : (varietySummerCurve?.length || varietyAutumnCurve?.length) ? 'variety' as const
         : 'flat' as const
-      sectionDetails.push({ section, fruitStartDate: fruitDate, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg: weeklyKg.sort((a, b) => a.week - b.week), eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null })
+      sectionDetails.push({ section, fruitStartDate: fruitDate, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg, dailyKg: dailyKgArr, eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null })
     }
 
     const weeks = Object.entries(weekMap)
@@ -435,19 +515,21 @@ export default function PlanningPage() {
       }> = []
 
       for (const detail of activeSections) {
-        const weekData = detail.weeklyKg.find(w => w.week === selectedWeek)!
-        const dailyKg = Math.round(weekData.kg / 7)
-        const dailySummerKg = Math.round(weekData.summerKg / 7)
-        const dailyAutumnKg = Math.round(weekData.autumnKg / 7)
-        const hrs = Math.round(dailyKg / detail.eff)
+        // Use actual daily kg for this specific date
+        const dayDateStr = date.toISOString().slice(0, 10)
+        const dayData = detail.dailyKg.find(d => d.date === dayDateStr)
+        const dayKg = dayData?.kg ?? 0
+        const daySummerKg = dayData?.summerKg ?? 0
+        const dayAutumnKg = dayData?.autumnKg ?? 0
+        const hrs = Math.round(dayKg / detail.eff)
 
         sectionBreakdown.push({
           name: detail.section.name,
           blockName: detail.section.blockName,
           varietyName: detail.section.variety?.name || '?',
-          kg: dailyKg, summerKg: dailySummerKg, autumnKg: dailyAutumnKg, hrs, eff: detail.eff,
+          kg: dayKg, summerKg: daySummerKg, autumnKg: dayAutumnKg, hrs, eff: detail.eff,
         })
-        totalKg += dailyKg
+        totalKg += dayKg
         totalHrs += hrs
       }
 

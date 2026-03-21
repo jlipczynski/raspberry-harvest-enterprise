@@ -11,7 +11,7 @@ import * as XLSX from 'xlsx'
 interface Variety { id: string; name: string }
 interface Section { id: string; name: string; variety?: Variety; blockName?: string }
 interface HarvestCurveRecord {
-  id: string; year: number; season: string | null; curve: number[]; totalKg: number
+  id: string; year: number; season?: string | null; curve: number[]; totalKg: number
   startWeek: number; sectionId?: string; varietyId?: string; sourceFile?: string
   importedAt: string; section?: { id: string; name: string }; variety?: { id: string; name: string }
   dailyCurve?: number[]; startDate?: string
@@ -338,7 +338,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
 
   // Edit
   const [editingCurve, setEditingCurve] = useState<HarvestCurveRecord | null>(null)
-  const [editForm, setEditForm] = useState({ varietyId: '', sectionId: '', year: 2025, season: 'summer', winteredInTunnel: false, plantingDate: '', plantSource: '', plantingYear: '' as string | number, autumnShootDate: '' })
+  const [editForm, setEditForm] = useState({ varietyId: '', sectionId: '', year: 2025, winteredInTunnel: false, plantingDate: '', plantSource: '', plantingYear: '' as string | number, autumnShootDate: '' })
 
   // Forecast (Prognoza)
   const [forecastSection, setForecastSection] = useState('')
@@ -524,7 +524,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
 
   const startEdit = (c: HarvestCurveRecord) => {
     setEditingCurve(c)
-    setEditForm({ varietyId: c.varietyId || '', sectionId: c.sectionId || '', year: c.year, season: c.season || '', winteredInTunnel: c.winteredInTunnel || false, plantingDate: c.plantingDate ? c.plantingDate.slice(0, 10) : '', plantSource: c.plantSource || '', plantingYear: c.plantingYear ?? '', autumnShootDate: c.autumnShootDate ? c.autumnShootDate.slice(0, 10) : '' })
+    setEditForm({ varietyId: c.varietyId || '', sectionId: c.sectionId || '', year: c.year, winteredInTunnel: c.winteredInTunnel || false, plantingDate: c.plantingDate ? c.plantingDate.slice(0, 10) : '', plantSource: c.plantSource || '', plantingYear: c.plantingYear ?? '', autumnShootDate: c.autumnShootDate ? c.autumnShootDate.slice(0, 10) : '' })
   }
 
   const saveEdit = async () => {
@@ -690,16 +690,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     finally { setForecastLoading(false) }
   }
 
-  // Group curves: by variety (flat list, no season split)
-  const groupCurves = () => {
-    const groups: Record<string, HarvestCurveRecord[]> = {}
-    savedCurves.forEach(c => {
-      const vName = c.variety?.name || 'Bez odmiany'
-      if (!groups[vName]) groups[vName] = []
-      groups[vName].push(c)
-    })
-    return groups
-  }
 
   const renderChart = (curves: HarvestCurveRecord[]) => {
     if (curves.length === 0) return null
@@ -762,8 +752,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   }
 
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">Ładowanie...</div>
-
-  const curveGroups = groupCurves()
 
   return (
     <div className="space-y-6">
@@ -1097,7 +1085,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div><Label className="text-xs">Rok</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.year} onChange={e => setEditForm({ ...editForm, year: parseInt(e.target.value) })}>{[2022,2023,2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}</select></div>
-                  <div><Label className="text-xs">Sezon</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.season} onChange={e => setEditForm({ ...editForm, season: e.target.value })}><option value="">Cały rok</option><option value="summer">☀️ Lato</option><option value="autumn">🍂 Jesień</option></select></div>
                   <div><Label className="text-xs">Odmiana</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.varietyId} onChange={e => setEditForm({ ...editForm, varietyId: e.target.value })}><option value="">—</option>{varieties.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
                   <div><Label className="text-xs">Sekcja</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.sectionId} onChange={e => setEditForm({ ...editForm, sectionId: e.target.value })}><option value="">—</option>{sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
                 </div>
@@ -1116,34 +1103,28 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
             </Card>
           )}
 
-          {/* Grouped by variety — flat table */}
-          {Object.entries(curveGroups).map(([varName, curves]) => (
-            <div key={varName} className="space-y-4">
-              <h2 className="text-lg font-bold">{varName}</h2>
-
-              {curves.length > 0 && (
-                <Card>
-                  <CardContent className="pt-4 space-y-3">
-                    {renderChart(curves)}
-                    <table className="w-full text-sm">
-                      <thead><tr className="border-b bg-gray-50">{mergeMode && <th className="w-10 py-2 px-3"></th>}<th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
-                      <tbody>{curves.map(c => (
-                        <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''} ${mergeCurveIds.includes(c.id) ? 'bg-blue-50' : ''} ${c.isArchived ? 'opacity-50 bg-gray-50' : ''}`}>
-                          {mergeMode && <td className="py-2 px-3">{!c.isArchived && <input type="checkbox" checked={mergeCurveIds.includes(c.id)} onChange={() => toggleMergeSelection(c.id)} className="w-4 h-4 accent-blue-600" />}</td>}
-                          <td className="py-2 px-3"><input type="checkbox" checked={selectedCurveIds.includes(c.id)} onChange={() => toggleCurveSelection(c.id)} className="w-4 h-4 accent-green-600" /></td>
-                          <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span>{c.isArchived && <Archive className="w-3 h-3 text-gray-400" />}{c.mergedFromIds && c.mergedFromIds.length > 0 && <Merge className="w-3 h-3 text-blue-400" />}</div></td>
-                          <td className="py-2 px-3 text-gray-600">{c.name || c.section?.name || '—'}</td>
-                          <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
-                          <td className="py-2 px-3 text-gray-500">T{c.startWeek}</td>
-                          <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1">{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button>}{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>}</div></td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          ))}
+          {/* All curves — flat table */}
+          {savedCurves.length > 0 && (
+            <Card>
+              <CardContent className="pt-4 space-y-3">
+                {renderChart(savedCurves)}
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b bg-gray-50">{mergeMode && <th className="w-10 py-2 px-3"></th>}<th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Nazwa/Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
+                  <tbody>{savedCurves.map(c => (
+                    <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''} ${mergeCurveIds.includes(c.id) ? 'bg-blue-50' : ''} ${c.isArchived ? 'opacity-50 bg-gray-50' : ''}`}>
+                      {mergeMode && <td className="py-2 px-3">{!c.isArchived && <input type="checkbox" checked={mergeCurveIds.includes(c.id)} onChange={() => toggleMergeSelection(c.id)} className="w-4 h-4 accent-blue-600" />}</td>}
+                      <td className="py-2 px-3"><input type="checkbox" checked={selectedCurveIds.includes(c.id)} onChange={() => toggleCurveSelection(c.id)} className="w-4 h-4 accent-green-600" /></td>
+                      <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span>{c.isArchived && <Archive className="w-3 h-3 text-gray-400" />}{c.mergedFromIds && c.mergedFromIds.length > 0 && <Merge className="w-3 h-3 text-blue-400" />}</div></td>
+                      <td className="py-2 px-3 text-gray-600">{c.name || c.section?.name || '—'}</td>
+                      <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
+                      <td className="py-2 px-3 text-gray-500">T{c.startWeek}</td>
+                      <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1">{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button>}{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>}</div></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Merge bar */}
           {mergeMode && mergeCurveIds.length >= 2 && (

@@ -63,7 +63,7 @@ export default function SettingsPage() {
   const [tempFiles, setTempFiles] = useState<File[]>([])
   const [previewData, setPreviewData] = useState<PreviewRow[] | null>(null)
   const [allSections, setAllSections] = useState<SectionOption[]>([])
-  const [sectionOverrides, setSectionOverrides] = useState<Record<number, string>>({})
+  const [sectionOverrides, setSectionOverrides] = useState<Record<number, string[]>>({})
   const [previewLoading, setPreviewLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<UploadResult[] | null>(null)
@@ -265,15 +265,16 @@ export default function SettingsPage() {
     setPreviewLoading(false)
   }, [farm])
 
-  // Get effective sectionId for a row (user override or auto-detected)
-  const getEffectiveSectionId = (rowIndex: number): string | null => {
-    if (sectionOverrides[rowIndex]) return sectionOverrides[rowIndex]
-    return previewData?.[rowIndex]?.sectionId ?? null
+  // Get effective sectionIds for a row (user override or auto-detected)
+  const getEffectiveSectionIds = (rowIndex: number): string[] => {
+    if (sectionOverrides[rowIndex]?.length) return sectionOverrides[rowIndex]
+    const autoId = previewData?.[rowIndex]?.sectionId
+    return autoId ? [autoId] : []
   }
 
-  // Check if all rows have a section assigned (either auto or manual)
+  // Check if all rows have at least one section assigned
   const allRowsMapped = Array.isArray(previewData) && previewData.length > 0
-    ? previewData.every((_, i) => getEffectiveSectionId(i) !== null)
+    ? previewData.every((_, i) => getEffectiveSectionIds(i).length > 0)
     : false
 
   const handleTempImport = useCallback(async () => {
@@ -285,28 +286,29 @@ export default function SettingsPage() {
 
     for (let i = 0; i < previewData.length; i++) {
       const row = previewData[i]
-      const effectiveSectionId = getEffectiveSectionId(i)
-      if (!effectiveSectionId) continue
+      const sectionIds = getEffectiveSectionIds(i)
+      if (sectionIds.length === 0) continue
 
-      // Find the file matching this row
       const file = tempFiles.find(f => f.name === row.fileName)
       if (!file) continue
 
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('farmId', farm.id)
-      fd.append('targetSectionId', effectiveSectionId)
-      if (row.sheetName) {
-        fd.append('sheetName', row.sheetName)
-      }
+      for (const sectionId of sectionIds) {
+        const fd = new FormData()
+        fd.append('file', file)
+        fd.append('farmId', farm.id)
+        fd.append('targetSectionId', sectionId)
+        if (row.sheetName) {
+          fd.append('sheetName', row.sheetName)
+        }
 
-      try {
-        const res = await fetch('/api/plantation/temperature-upload', { method: 'POST', body: fd })
-        const data = await res.json()
-        if (!res.ok) results.push({ error: `${row.fileName}${row.sheetName ? ` (${row.sheetName})` : ''}: ${data.error || `błąd ${res.status}`}` })
-        else results.push({ ...data, success: true })
-      } catch (err) {
-        results.push({ error: `${row.fileName}: ${err instanceof Error ? err.message : 'błąd połączenia'}` })
+        try {
+          const res = await fetch('/api/plantation/temperature-upload', { method: 'POST', body: fd })
+          const data = await res.json()
+          if (!res.ok) results.push({ error: `${row.fileName}${row.sheetName ? ` (${row.sheetName})` : ''}: ${data.error || `błąd ${res.status}`}` })
+          else results.push({ ...data, success: true })
+        } catch (err) {
+          results.push({ error: `${row.fileName}: ${err instanceof Error ? err.message : 'błąd połączenia'}` })
+        }
       }
     }
     setImportResults(results)
@@ -619,8 +621,29 @@ export default function SettingsPage() {
                     </thead>
                     <tbody className="divide-y">
                       {previewData.map((row, i) => {
-                        const effectiveId = getEffectiveSectionId(i)
-                        const isOk = effectiveId !== null
+                        const ids = getEffectiveSectionIds(i)
+                        const current = sectionOverrides[i] ?? (row.sectionId ? [row.sectionId] : [])
+                        const primary = current[0] ?? ''
+                        const secondary = current[1] ?? ''
+                        const isOk = ids.length > 0
+                        const updateOverride = (slot: 0 | 1, value: string) => {
+                          setSectionOverrides(prev => {
+                            const arr = [...(prev[i] ?? (row.sectionId ? [row.sectionId] : []))]
+                            if (slot === 0) {
+                              arr[0] = value
+                            } else {
+                              arr[1] = value
+                            }
+                            const filtered = arr.filter(Boolean)
+                            const next = { ...prev }
+                            if (filtered.length > 0) {
+                              next[i] = filtered
+                            } else {
+                              delete next[i]
+                            }
+                            return next
+                          })
+                        }
                         return (
                           <tr key={i} className="hover:bg-gray-50">
                             <td className="px-3 py-2 text-gray-800 font-mono text-xs">
@@ -628,23 +651,25 @@ export default function SettingsPage() {
                               {row.sheetName && <span className="text-gray-400 ml-1">({row.sheetName})</span>}
                             </td>
                             <td className="px-3 py-2 text-gray-700">{row.detectedTunnel}</td>
-                            <td className="px-3 py-2">
+                            <td className="px-3 py-2 space-y-1">
                               <select
                                 className={`w-full h-8 border rounded px-2 text-sm ${!isOk ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`}
-                                value={sectionOverrides[i] ?? row.sectionId ?? ''}
-                                onChange={e => {
-                                  setSectionOverrides(prev => {
-                                    const next = { ...prev }
-                                    if (e.target.value) {
-                                      next[i] = e.target.value
-                                    } else {
-                                      delete next[i]
-                                    }
-                                    return next
-                                  })
-                                }}
+                                value={primary}
+                                onChange={e => updateOverride(0, e.target.value)}
                               >
                                 <option value="">— wybierz sekcję —</option>
+                                {(allSections ?? []).map(s => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.blockName} — {s.name || '(bez nazwy)'}
+                                  </option>
+                                ))}
+                              </select>
+                              <select
+                                className="w-full h-8 border border-gray-200 rounded px-2 text-sm text-gray-500"
+                                value={secondary}
+                                onChange={e => updateOverride(1, e.target.value)}
+                              >
+                                <option value="">+ druga sekcja (opcjonalnie)</option>
                                 {(allSections ?? []).map(s => (
                                   <option key={s.id} value={s.id}>
                                     {s.blockName} — {s.name || '(bez nazwy)'}

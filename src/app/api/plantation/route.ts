@@ -17,7 +17,7 @@ export async function GET() {
                 variety: true,
                 templateAssignments: {
                   where: { isActive: true },
-                  include: { template: { select: { id: true, name: true, weeklyCurveSummer: true, dailyCurveSummer: true, startWeekSummer: true, totalKgSummer: true, weeklyCurveAutumn: true, dailyCurveAutumn: true, startWeekAutumn: true, totalKgAutumn: true } } },
+                  include: { template: { select: { id: true, name: true, weeklyCurveSummer: true, dailyCurveSummer: true, startWeekSummer: true, startDateSummer: true, totalKgSummer: true, weeklyCurveAutumn: true, dailyCurveAutumn: true, startWeekAutumn: true, startDateAutumn: true, totalKgAutumn: true } } },
                   orderBy: { createdAt: 'desc' as const },
                 },
               }

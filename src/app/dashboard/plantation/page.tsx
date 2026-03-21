@@ -28,7 +28,7 @@ export default function PlantationPage() {
   const [showSectionForm, setShowSectionForm] = useState<string | null>(null)
   const [editingSection, setEditingSection] = useState<Section | null>(null)
   const [expandedBlock, setExpandedBlock] = useState<string | null>(null)
-  const [sectionForm, setSectionForm] = useState({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '' as string | number, plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', plantSource: '', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' })
+  const [sectionForm, setSectionForm] = useState({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '' as string | number, plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', plantSource: '', varietyId: '', yieldSummerPerShoot: '' as string | number, yieldAutumnPerShoot: '' as string | number, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' })
 
   // Temperature readings state (per section)
   const [tempReadings, setTempReadings] = useState<Record<string, TempReading[]>>({})
@@ -103,12 +103,12 @@ export default function PlantationPage() {
   }
   const delBlock = async (id: string) => { if (confirm('Usunąć blok?')) { await fetch(`/api/plantation/block/${id}`, { method: 'DELETE' }); fetchData() } }
 
-  const resetSection = () => { setSectionForm({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '', plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', plantSource: '', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' }); setEditingSection(null); setShowSectionForm(null) }
+  const resetSection = () => { setSectionForm({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '', plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', plantSource: '', varietyId: '', yieldSummerPerShoot: '', yieldAutumnPerShoot: '', gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' }); setEditingSection(null); setShowSectionForm(null) }
   const startAddSection = (bid: string) => { resetSection(); setShowSectionForm(bid) }
   const startEditSection = (bid: string, s: Section) => {
     setEditingSection(s)
     const v = varieties.find(x => x.id === s.varietyId)
-    setSectionForm({ name: s.name || '', metersLength: s.metersLength, potsPerMeter: s.potsPerMeter, shootsPerPot: s.shootsPerPot, potsOverride: s.potsOverride ?? '', plantingYear: s.plantingYear || new Date().getFullYear(), productionYear: s.productionYear || 1, plantMaterialType: s.plantMaterialType || 'SMALL_POT', plantSource: s.plantSource || '', varietyId: s.varietyId, yieldSummerPerShoot: s.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0, yieldAutumnPerShoot: s.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0, gdhSummer: s.gdhSummer || v?.gdhSummer || 20000, gdhAutumn: s.gdhAutumn || v?.gdhAutumn || 25000, winteredInTunnel: s.winteredInTunnel || false, plantingDate: s.plantingDate ? s.plantingDate.slice(0, 10) : '', winterShootsDate: s.winterShootsDate ? s.winterShootsDate.slice(0, 10) : '' })
+    setSectionForm({ name: s.name || '', metersLength: s.metersLength, potsPerMeter: s.potsPerMeter, shootsPerPot: s.shootsPerPot, potsOverride: s.potsOverride ?? '', plantingYear: s.plantingYear || new Date().getFullYear(), productionYear: s.productionYear || 1, plantMaterialType: s.plantMaterialType || 'SMALL_POT', plantSource: s.plantSource || '', varietyId: s.varietyId, yieldSummerPerShoot: s.yieldSummerPerShoot ?? '', yieldAutumnPerShoot: s.yieldAutumnPerShoot ?? '', gdhSummer: s.gdhSummer || v?.gdhSummer || 20000, gdhAutumn: s.gdhAutumn || v?.gdhAutumn || 25000, winteredInTunnel: s.winteredInTunnel || false, plantingDate: s.plantingDate ? s.plantingDate.slice(0, 10) : '', winterShootsDate: s.winterShootsDate ? s.winterShootsDate.slice(0, 10) : '' })
     setShowSectionForm(bid)
   }
   const onVarChange = (vid: string) => {
@@ -117,13 +117,19 @@ export default function PlantationPage() {
   }
   const saveSection = async (bid: string) => {
     if (!sectionForm.name || !sectionForm.varietyId) return
-    if (editingSection) await fetch(`/api/plantation/section/${editingSection.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...sectionForm, blockId: bid }) })
-    else await fetch('/api/plantation/section', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ section: { ...sectionForm, blockId: bid } }) })
+    const payload = {
+      ...sectionForm,
+      blockId: bid,
+      yieldSummerPerShoot: sectionForm.yieldSummerPerShoot !== '' ? Number(sectionForm.yieldSummerPerShoot) : null,
+      yieldAutumnPerShoot: sectionForm.yieldAutumnPerShoot !== '' ? Number(sectionForm.yieldAutumnPerShoot) : null,
+    }
+    if (editingSection) await fetch(`/api/plantation/section/${editingSection.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    else await fetch('/api/plantation/section', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ section: payload }) })
     resetSection(); fetchData()
   }
   const delSection = async (id: string) => { if (confirm('Usunąć sekcję?')) { await fetch(`/api/plantation/section/${id}`, { method: 'DELETE' }); fetchData() } }
 
-  const pv = (() => { const potsCalc = sectionForm.metersLength * sectionForm.potsPerMeter; const potsOvr = sectionForm.potsOverride !== '' && sectionForm.potsOverride !== null && Number(sectionForm.potsOverride) > 0 ? Number(sectionForm.potsOverride) : null; const pots = potsOvr ?? potsCalc; const shoots = pots * sectionForm.shootsPerPot; const fs = shoots * (sectionForm.yieldSummerPerShoot || 0); const fa = shoots * (sectionForm.yieldAutumnPerShoot || 0); return { pots, shoots, fs, fa, total: fs + fa, potsOvr } })()
+  const pv = (() => { const potsCalc = sectionForm.metersLength * sectionForm.potsPerMeter; const potsOvr = sectionForm.potsOverride !== '' && sectionForm.potsOverride !== null && Number(sectionForm.potsOverride) > 0 ? Number(sectionForm.potsOverride) : null; const pots = potsOvr ?? potsCalc; const shoots = pots * sectionForm.shootsPerPot; const fs = shoots * (Number(sectionForm.yieldSummerPerShoot) || 0); const fa = shoots * (Number(sectionForm.yieldAutumnPerShoot) || 0); return { pots, shoots, fs, fa, total: fs + fa, potsOvr } })()
   const totals = blocks.reduce((a, b) => { b.sections.forEach(s => { const st = calcStats(s); a.fs += st.fs; a.fa += st.fa; a.pots += st.pots; a.sections++ }); return a }, { fs: 0, fa: 0, pots: 0, sections: 0 })
 
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">Ładowanie...</div>

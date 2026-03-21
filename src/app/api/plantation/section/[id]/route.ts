@@ -11,33 +11,44 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
     
+    // Only update fields that are explicitly present in the request body
+    // This prevents wiping fields the frontend doesn't send
+    const data: Record<string, unknown> = {}
+
+    // Fields that use ?? null (preserve 0 as valid value)
+    const nullishFields = [
+      'name', 'metersLength', 'potsPerMeter', 'shootsPerPot',
+      'yieldSummerPerShoot', 'yieldAutumnPerShoot',
+      'gdhSummer', 'gdhAutumn', 'varietyId',
+    ]
+    for (const field of nullishFields) {
+      if (field in body) data[field] = body[field] ?? null
+    }
+
+    // Fields that use || null (empty string → null)
+    const orNullFields = [
+      'plantingYear', 'productionYear', 'plantMaterialType',
+      'plantSource', 'certificateUrl', 'deliveryProofUrl',
+    ]
+    for (const field of orNullFields) {
+      if (field in body) data[field] = body[field] || null
+    }
+
+    // Special handling fields
+    if ('potsOverride' in body) {
+      data.potsOverride = body.potsOverride !== undefined && body.potsOverride !== null && body.potsOverride !== ''
+        ? parseInt(String(body.potsOverride))
+        : null
+    }
+    if ('winteredInTunnel' in body) data.winteredInTunnel = body.winteredInTunnel || false
+    if ('plantingDate' in body) data.plantingDate = body.plantingDate ? new Date(body.plantingDate) : null
+    if ('winterShootsDate' in body) data.winterShootsDate = body.winterShootsDate ? new Date(body.winterShootsDate) : null
+    if ('harvestCurveSummer' in body) data.harvestCurveSummer = body.harvestCurveSummer || []
+    if ('harvestCurveAutumn' in body) data.harvestCurveAutumn = body.harvestCurveAutumn || []
+
     const section = await prisma.section.update({
       where: { id },
-      data: {
-        name: body.name,
-        metersLength: body.metersLength,
-        potsPerMeter: body.potsPerMeter,
-        shootsPerPot: body.shootsPerPot,
-        plantingYear: body.plantingYear || null,
-        productionYear: body.productionYear || null,
-        plantMaterialType: body.plantMaterialType || null,
-        plantSource: body.plantSource || null,
-        yieldSummerPerShoot: body.yieldSummerPerShoot ?? null,
-        yieldAutumnPerShoot: body.yieldAutumnPerShoot ?? null,
-        gdhSummer: body.gdhSummer ?? null,
-        gdhAutumn: body.gdhAutumn ?? null,
-        varietyId: body.varietyId,
-        certificateUrl: body.certificateUrl || null,
-        deliveryProofUrl: body.deliveryProofUrl || null,
-        potsOverride: body.potsOverride !== undefined && body.potsOverride !== null && body.potsOverride !== ''
-          ? parseInt(String(body.potsOverride))
-          : null,
-        winteredInTunnel: body.winteredInTunnel || false,
-        plantingDate: body.plantingDate ? new Date(body.plantingDate) : null,
-        winterShootsDate: body.winterShootsDate ? new Date(body.winterShootsDate) : null,
-        harvestCurveSummer: body.harvestCurveSummer || [],
-        harvestCurveAutumn: body.harvestCurveAutumn || [],
-      }
+      data,
     })
 
     return NextResponse.json({ section })

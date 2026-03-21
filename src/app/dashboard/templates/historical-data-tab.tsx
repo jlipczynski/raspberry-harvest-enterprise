@@ -143,7 +143,13 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
         // Use first curve's data (for single selection) or merge
         const c = curves[0]
         return {
-          dailyCurve: c.dailyCurve || c.curve.map(pct => (pct / 100) * c.totalKg),
+          dailyCurve: c.dailyCurve
+            ? c.dailyCurve.map(kg => c.totalKg > 0 ? (kg / c.totalKg) * 100 : 0)
+            : c.curve.flatMap(pct => {
+                // weeklyCurve has one % per week — distribute evenly across 7 days
+                const dailyPct = pct / 7
+                return Array(7).fill(dailyPct)
+              }),
           weeklyCurve: c.curve,
           totalKg: c.totalKg,
           startWeek: c.startWeek,

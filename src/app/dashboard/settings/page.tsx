@@ -23,6 +23,13 @@ interface PreviewRow {
   sectionId: string | null
   count: number
   status: 'ok' | 'unknown_tunnel' | 'section_not_found'
+  sheetName?: string
+}
+
+interface SectionOption {
+  id: string
+  name: string | null
+  blockName: string
 }
 
 interface UploadResult {
@@ -55,6 +62,8 @@ export default function SettingsPage() {
   // Temperature import state
   const [tempFiles, setTempFiles] = useState<File[]>([])
   const [previewData, setPreviewData] = useState<PreviewRow[] | null>(null)
+  const [allSections, setAllSections] = useState<SectionOption[]>([])
+  const [sectionOverrides, setSectionOverrides] = useState<Record<number, string>>({})
   const [previewLoading, setPreviewLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<UploadResult[] | null>(null)
@@ -226,6 +235,7 @@ export default function SettingsPage() {
     setTempFiles(validFiles)
     setPreviewData(null)
     setImportResults(null)
+    setSectionOverrides({})
     setPreviewLoading(true)
 
     try {
@@ -236,8 +246,9 @@ export default function SettingsPage() {
       }
       const res = await fetch('/api/plantation/temperature-preview', { method: 'POST', body: fd })
       if (res.ok) {
-        const data: PreviewRow[] = await res.json()
-        setPreviewData(data)
+        const data: { rows: PreviewRow[]; allSections: SectionOption[] } = await res.json()
+        setPreviewData(data.rows)
+        setAllSections(data.allSections)
       } else {
         const err = await res.json()
         setPreviewData([])
@@ -252,30 +263,55 @@ export default function SettingsPage() {
     setPreviewLoading(false)
   }, [farm])
 
+  // Get effective sectionId for a row (user override or auto-detected)
+  const getEffectiveSectionId = (rowIndex: number): string | null => {
+    if (sectionOverrides[rowIndex]) return sectionOverrides[rowIndex]
+    return previewData?.[rowIndex]?.sectionId ?? null
+  }
+
+  // Check if all rows have a section assigned (either auto or manual)
+  const allRowsMapped = previewData?.every((_, i) => getEffectiveSectionId(i) !== null) ?? false
+
   const handleTempImport = useCallback(async () => {
-    if (!farm || tempFiles.length === 0) return
+    if (!farm || tempFiles.length === 0 || !previewData) return
     setImporting(true)
     setImportResults(null)
 
     const results: UploadResult[] = []
-    for (const file of tempFiles) {
+
+    for (let i = 0; i < previewData.length; i++) {
+      const row = previewData[i]
+      const effectiveSectionId = getEffectiveSectionId(i)
+      if (!effectiveSectionId) continue
+
+      // Find the file matching this row
+      const file = tempFiles.find(f => f.name === row.fileName)
+      if (!file) continue
+
       const fd = new FormData()
       fd.append('file', file)
       fd.append('farmId', farm.id)
+      fd.append('targetSectionId', effectiveSectionId)
+      if (row.sheetName) {
+        fd.append('sheetName', row.sheetName)
+      }
+
       try {
         const res = await fetch('/api/plantation/temperature-upload', { method: 'POST', body: fd })
         const data = await res.json()
-        if (!res.ok) results.push({ error: `${file.name}: ${data.error || `błąd ${res.status}`}` })
+        if (!res.ok) results.push({ error: `${row.fileName}${row.sheetName ? ` (${row.sheetName})` : ''}: ${data.error || `błąd ${res.status}`}` })
         else results.push({ ...data, success: true })
       } catch (err) {
-        results.push({ error: `${file.name}: ${err instanceof Error ? err.message : 'błąd połączenia'}` })
+        results.push({ error: `${row.fileName}: ${err instanceof Error ? err.message : 'błąd połączenia'}` })
       }
     }
     setImportResults(results)
     setImporting(false)
     setTempFiles([])
     setPreviewData(null)
-  }, [farm, tempFiles])
+    setSectionOverrides({})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [farm, tempFiles, previewData, sectionOverrides])
 
   const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }, [])
   const onDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false) }, [])
@@ -283,8 +319,6 @@ export default function SettingsPage() {
     e.preventDefault(); setIsDragging(false)
     if (e.dataTransfer.files.length > 0) handleTempFilesSelected(e.dataTransfer.files)
   }, [handleTempFilesSelected])
-
-  const hasWarnings = previewData?.some(r => r.status !== 'ok') ?? false
 
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">Ładowanie...</div>
 
@@ -580,21 +614,51 @@ export default function SettingsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {previewData.map((row, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-3 py-2 text-gray-800 font-mono text-xs">{row.fileName}</td>
-                          <td className="px-3 py-2 text-gray-700">{row.detectedTunnel}</td>
-                          <td className="px-3 py-2 text-gray-700">{row.sectionName}</td>
-                          <td className="px-3 py-2 text-right text-gray-700">{row.status === 'ok' ? row.count.toLocaleString('pl-PL') : '—'}</td>
-                          <td className="px-3 py-2 text-center">
-                            {row.status === 'ok' ? (
-                              <CheckCircle className="w-5 h-5 text-green-500 inline-block" />
-                            ) : (
-                              <AlertTriangle className="w-5 h-5 text-amber-500 inline-block" />
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                      {previewData.map((row, i) => {
+                        const effectiveId = getEffectiveSectionId(i)
+                        const isOk = effectiveId !== null
+                        return (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-3 py-2 text-gray-800 font-mono text-xs">
+                              {row.fileName}
+                              {row.sheetName && <span className="text-gray-400 ml-1">({row.sheetName})</span>}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700">{row.detectedTunnel}</td>
+                            <td className="px-3 py-2">
+                              <select
+                                className={`w-full h-8 border rounded px-2 text-sm ${!isOk ? 'border-amber-400 bg-amber-50' : 'border-gray-300'}`}
+                                value={sectionOverrides[i] ?? row.sectionId ?? ''}
+                                onChange={e => {
+                                  setSectionOverrides(prev => {
+                                    const next = { ...prev }
+                                    if (e.target.value) {
+                                      next[i] = e.target.value
+                                    } else {
+                                      delete next[i]
+                                    }
+                                    return next
+                                  })
+                                }}
+                              >
+                                <option value="">— wybierz sekcję —</option>
+                                {allSections.map(s => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.blockName} — {s.name || '(bez nazwy)'}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700">{row.count > 0 ? row.count.toLocaleString('pl-PL') : '—'}</td>
+                            <td className="px-3 py-2 text-center">
+                              {isOk ? (
+                                <CheckCircle className="w-5 h-5 text-green-500 inline-block" />
+                              ) : (
+                                <AlertTriangle className="w-5 h-5 text-amber-500 inline-block" />
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -602,7 +666,7 @@ export default function SettingsPage() {
                 <div className="mt-4 flex items-center gap-3">
                   <Button
                     onClick={handleTempImport}
-                    disabled={hasWarnings || importing}
+                    disabled={!allRowsMapped || importing}
                     className="bg-green-600 hover:bg-green-700"
                   >
                     {importing ? (
@@ -613,14 +677,14 @@ export default function SettingsPage() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => { setPreviewData(null); setTempFiles([]); setImportResults(null) }}
+                    onClick={() => { setPreviewData(null); setTempFiles([]); setImportResults(null); setSectionOverrides({}) }}
                   >
                     Anuluj
                   </Button>
-                  {hasWarnings && (
+                  {!allRowsMapped && (
                     <span className="text-xs text-amber-600 flex items-center gap-1">
                       <AlertTriangle className="w-3.5 h-3.5" />
-                      Rozpoznaj wszystkie tunele, aby aktywować import
+                      Wybierz sekcję dla wszystkich plików, aby aktywować import
                     </span>
                   )}
                 </div>
@@ -637,7 +701,7 @@ export default function SettingsPage() {
                     <div className="flex items-center gap-2">
                       <Thermometer className="w-4 h-4" />
                       {r.format === 'xlsx' ? (
-                        <span>XLSX: {r.totalSheets} arkuszy, <strong>{r.totalInserted}</strong> pomiarów zaimportowano do {r.sections?.length} sekcji</span>
+                        <span>XLSX: <strong>{r.totalInserted}</strong> pomiarów &rarr; {r.sections?.map(s => s.sectionName).join(', ')}</span>
                       ) : (
                         <span>Blok <strong>{r.blockName}</strong>: {r.totalReadings} pomiarów &rarr; {r.sections?.map(s => s.sectionName).join(', ')}</span>
                       )}

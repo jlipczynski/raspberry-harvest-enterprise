@@ -23,6 +23,8 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const file = formData.get('file') as File | null
     const farmId = formData.get('farmId') as string | null
+    const targetSectionId = formData.get('targetSectionId') as string | null
+    const filterSheetName = formData.get('sheetName') as string | null
 
     if (!file || !farmId) {
       return NextResponse.json(
@@ -43,6 +45,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Helper: upsert readings to a specific section
+    const upsertReadings = async (sectionId: string, readings: TemperatureRecord[], sourceFileName: string) => {
+      let inserted = 0
+      for (const reading of readings) {
+        await prisma.temperatureReading.upsert({
+          where: {
+            sectionId_timestamp: {
+              sectionId,
+              timestamp: reading.timestamp,
+            },
+          },
+          update: {
+            temperature: reading.temperature,
+            sourceFile: sourceFileName,
+          },
+          create: {
+            sectionId,
+            timestamp: reading.timestamp,
+            temperature: reading.temperature,
+            sourceFile: sourceFileName,
+          },
+        })
+        inserted++
+      }
+      return inserted
+    }
+
     // Fetch blocks once for matching
     const blocks = await prisma.block.findMany({
       where: { farmId },
@@ -55,6 +84,27 @@ export async function POST(request: NextRequest) {
       const arrayBuffer = await file.arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
       const sheetResults = parseTemperatureXlsx(buffer)
+
+      // If targetSectionId + sheetName are provided, import only that sheet to that section
+      if (targetSectionId && filterSheetName) {
+        const sheet = sheetResults.find(s => s.sheetName === filterSheetName)
+        if (!sheet || sheet.readings.length === 0) {
+          return NextResponse.json(
+            { error: `Arkusz "${filterSheetName}" nie zawiera odczytów temperatury.` },
+            { status: 422 }
+          )
+        }
+        const inserted = await upsertReadings(targetSectionId, sheet.readings, file.name)
+        const section = await prisma.section.findUnique({ where: { id: targetSectionId }, select: { name: true } })
+        return NextResponse.json({
+          success: true,
+          format: 'xlsx',
+          totalSheets: 1,
+          totalReadings: sheet.readings.length,
+          totalInserted: inserted,
+          sections: [{ sheetName: sheet.sheetName, blockName: sheet.blockName, sectionId: targetSectionId, sectionName: section?.name ?? null, inserted }],
+        })
+      }
 
       if (sheetResults.length === 0) {
         return NextResponse.json(
@@ -80,28 +130,7 @@ export async function POST(request: NextRequest) {
         }
 
         for (const match of matches) {
-          let inserted = 0
-          for (const reading of sheet.readings) {
-            await prisma.temperatureReading.upsert({
-              where: {
-                sectionId_timestamp: {
-                  sectionId: match.sectionId,
-                  timestamp: reading.timestamp,
-                },
-              },
-              update: {
-                temperature: reading.temperature,
-                sourceFile: file.name,
-              },
-              create: {
-                sectionId: match.sectionId,
-                timestamp: reading.timestamp,
-                temperature: reading.temperature,
-                sourceFile: file.name,
-              },
-            })
-            inserted++
-          }
+          const inserted = await upsertReadings(match.sectionId, sheet.readings, file.name)
           totalInserted += inserted
           sections.push({
             sheetName: sheet.sheetName,
@@ -144,6 +173,25 @@ export async function POST(request: NextRequest) {
       debug = parsed.debug as Record<string, unknown> | undefined
     }
 
+    // If targetSectionId provided, skip block detection and import directly
+    if (targetSectionId) {
+      if (readings.length === 0) {
+        return NextResponse.json(
+          { error: 'Nie znaleziono pomiarów temperatury w pliku.', debug },
+          { status: 422 }
+        )
+      }
+      const inserted = await upsertReadings(targetSectionId, readings, file.name)
+      const section = await prisma.section.findUnique({ where: { id: targetSectionId }, select: { name: true } })
+      return NextResponse.json({
+        success: true,
+        blockName: blockName || '(ręcznie)',
+        totalReadings: readings.length,
+        totalInserted: inserted,
+        sections: [{ sectionId: targetSectionId, sectionName: section?.name ?? null, inserted }],
+      })
+    }
+
     if (!blockName) {
       return NextResponse.json(
         {
@@ -181,28 +229,7 @@ export async function POST(request: NextRequest) {
     const results: Array<{ sectionId: string; sectionName: string | null; inserted: number }> = []
 
     for (const match of matches) {
-      let inserted = 0
-      for (const reading of readings) {
-        await prisma.temperatureReading.upsert({
-          where: {
-            sectionId_timestamp: {
-              sectionId: match.sectionId,
-              timestamp: reading.timestamp,
-            },
-          },
-          update: {
-            temperature: reading.temperature,
-            sourceFile: file.name,
-          },
-          create: {
-            sectionId: match.sectionId,
-            timestamp: reading.timestamp,
-            temperature: reading.temperature,
-            sourceFile: file.name,
-          },
-        })
-        inserted++
-      }
+      const inserted = await upsertReadings(match.sectionId, readings, file.name)
       totalInserted += inserted
       results.push({
         sectionId: match.sectionId,

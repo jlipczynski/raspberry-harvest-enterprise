@@ -462,7 +462,21 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
             year: yr,
             season: null,
             curve: a.weeks.map(w => totalKg > 0 ? (w.kg / totalKg) * 100 : 0),
-            dailyCurve: a.days.map(d => d.kg),
+            dailyCurve: (() => {
+              // Build dense dailyCurve: one entry per calendar day from first to last
+              if (a.days.length === 0) return []
+              const dayMap: Record<string, number> = {}
+              for (const d of a.days) dayMap[d.date] = d.kg
+              const result: number[] = []
+              const cur = new Date(a.days[0].date)
+              const end = new Date(a.days[a.days.length - 1].date)
+              while (cur <= end) {
+                const key = cur.toISOString().split('T')[0]
+                result.push(dayMap[key] || 0)
+                cur.setDate(cur.getDate() + 1)
+              }
+              return result
+            })(),
             totalKg,
             startWeek: a.weeks[0]?.week || 1,
             startDate: a.days[0]?.date || null,
@@ -665,7 +679,22 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       autumnDays.sort((a, b) => a.date.localeCompare(b.date))
       const buildCurve = (days: { date: string; kg: number }[]) => {
         const total = days.reduce((s, d) => s + d.kg, 0)
-        const dailyCurve = days.map(d => total > 0 ? (d.kg / total) * 100 : 0)
+        const startDate = days.length > 0 ? days[0].date : null
+        const endDate = days.length > 0 ? days[days.length - 1].date : null
+        // Build dense dailyCurve: one entry per calendar day from startDate to endDate
+        const dayMap: Record<string, number> = {}
+        for (const d of days) dayMap[d.date] = (dayMap[d.date] || 0) + d.kg
+        const dailyCurve: number[] = []
+        if (startDate && endDate) {
+          const cur = new Date(startDate)
+          const end = new Date(endDate)
+          while (cur <= end) {
+            const key = cur.toISOString().split('T')[0]
+            const kg = dayMap[key] || 0
+            dailyCurve.push(total > 0 ? (kg / total) * 100 : 0)
+            cur.setDate(cur.getDate() + 1)
+          }
+        }
         // Build weeklyCurve from the actual days in this season
         const weekMap: Record<number, number> = {}
         for (const d of days) {
@@ -675,8 +704,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
         const sortedWeekEntries = Object.entries(weekMap).sort(([a], [b]) => Number(a) - Number(b))
         const weeklyCurve = sortedWeekEntries.map(([, kg]) => total > 0 ? (kg / total) * 100 : 0)
         const startWeek = sortedWeekEntries.length > 0 ? Number(sortedWeekEntries[0][0]) : null
-        const startDate = days.length > 0 ? days[0].date : null
-        const endDate = days.length > 0 ? days[days.length - 1].date : null
         return { dailyCurve, weeklyCurve, totalKg: total, startWeek, startDate, endDate }
       }
       const summer = summerDays.length > 0 ? buildCurve(summerDays) : null

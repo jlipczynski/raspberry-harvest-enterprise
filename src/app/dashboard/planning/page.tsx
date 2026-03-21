@@ -294,6 +294,12 @@ export default function PlanningPage() {
       const shoots = pots * section.shootsPerPot
       const eff = v?.pickingEfficiency ?? 6 // kg/h — from DB, fallback only if not set
 
+      // Gross multiplier — zbieracze zbierają WSZYSTKO (I kl + II kat + odpad)
+      // yieldPerShoot w DB = I klasa (netto), planowanie załogi wymaga brutto
+      const secondCat = v?.secondCategoryPercent ?? 0
+      const waste = v?.wastePercent ?? 0
+      const grossMultiplier = (secondCat + waste) > 0 ? 100 / (100 - secondCat - waste) : 1
+
       // Yields from DB: section-level overrides variety-level
       // --- SUMMER ---
       const summerYield = section.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
@@ -327,8 +333,8 @@ export default function PlanningPage() {
       // Autumn start week — from DB (Variety.autumnStartWeek)
       const autumnStartWeek = v?.autumnStartWeek ?? null
 
-      const summerKg = shoots * summerYield
-      const autumnKg = (autumnStartWeek && autumnYield > 0) ? shoots * autumnYield : 0
+      const summerKg = shoots * summerYield * grossMultiplier
+      const autumnKg = (autumnStartWeek && autumnYield > 0) ? shoots * autumnYield * grossMultiplier : 0
       const totalKg = summerKg + autumnKg
 
       // Build dailyKg array — per-day kg values

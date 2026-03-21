@@ -615,11 +615,11 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
   const [showCurveTable, setShowCurveTable] = useState(false)
 
   // Build weekly data separately for summer and autumn
-  // dailyCurve contains percentages — convert to real kg using totalKg
+  // dailyCurveSummer/Autumn contains daily percentages (0-100) — convert to real kg using totalKg
   const buildWeeklyFromCurve = (dailyCurve: number[], startDate: string, totalKg: number) => {
     const weekMap: Record<number, { kg: number; days: { date: string; kg: number }[] }> = {}
     dailyCurve.forEach((pct, i) => {
-      const kg = totalKg > 0 ? (pct / 100) * totalKg : 0
+      const kg = (pct / 100) * totalKg
       const d = new Date(startDate); d.setDate(d.getDate() + i)
       const ds = d.toISOString().split('T')[0]
       const wk = getWeekNumber(d)

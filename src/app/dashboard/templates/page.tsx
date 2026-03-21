@@ -615,9 +615,11 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
   const [showCurveTable, setShowCurveTable] = useState(false)
 
   // Build weekly data separately for summer and autumn
-  const buildWeeklyFromCurve = (dailyCurve: number[], startDate: string) => {
+  // dailyCurve contains percentages — convert to real kg using totalKg
+  const buildWeeklyFromCurve = (dailyCurve: number[], startDate: string, totalKg: number) => {
     const weekMap: Record<number, { kg: number; days: { date: string; kg: number }[] }> = {}
-    dailyCurve.forEach((kg, i) => {
+    dailyCurve.forEach((pct, i) => {
+      const kg = totalKg > 0 ? (pct / 100) * totalKg : 0
       const d = new Date(startDate); d.setDate(d.getDate() + i)
       const ds = d.toISOString().split('T')[0]
       const wk = getWeekNumber(d)
@@ -631,13 +633,13 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
 
   const weeklyDataSummer = useMemo(() => {
     if (!t.dailyCurveSummer?.length || !t.startDateSummer) return []
-    return buildWeeklyFromCurve(t.dailyCurveSummer, t.startDateSummer)
-  }, [t.dailyCurveSummer, t.startDateSummer])
+    return buildWeeklyFromCurve(t.dailyCurveSummer, t.startDateSummer, t.totalKgSummer || 0)
+  }, [t.dailyCurveSummer, t.startDateSummer, t.totalKgSummer])
 
   const weeklyDataAutumn = useMemo(() => {
     if (!t.dailyCurveAutumn?.length || !t.startDateAutumn) return []
-    return buildWeeklyFromCurve(t.dailyCurveAutumn, t.startDateAutumn)
-  }, [t.dailyCurveAutumn, t.startDateAutumn])
+    return buildWeeklyFromCurve(t.dailyCurveAutumn, t.startDateAutumn, t.totalKgAutumn || 0)
+  }, [t.dailyCurveAutumn, t.startDateAutumn, t.totalKgAutumn])
 
   // Combined weeklyData for chart and boundary selector (backward compat)
   const weeklyData = useMemo(() => {

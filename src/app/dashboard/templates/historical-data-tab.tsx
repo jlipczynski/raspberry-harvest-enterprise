@@ -643,44 +643,44 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     try {
       const summerDays: { date: string; kg: number }[] = []
       const autumnDays: { date: string; kg: number }[] = []
+      const effectiveSummerStart = mergedCommercialStartDate
+      const effectiveAutumnStart = mergedCommercialStartDateAutumn
       for (const area of selectedAreas) {
-        for (const week of area.weeks) {
-          if (week.season === 'preharvest') continue
-          const weekDays = area.days.filter(d => {
-            const date = new Date(d.date)
-            const wk = getWeekNumber(date)
-            if (wk !== week.week) return false
-            if (week.season === 'summer' && d.isPreHarvest) return false
-            if (week.season === 'autumn' && d.isPreHarvestAutumn) return false
-            return true
-          })
-          for (const day of weekDays) {
-            if (week.season === 'summer') {
-              const existing = summerDays.find(d => d.date === day.date)
-              if (existing) existing.kg += day.kg
-              else summerDays.push({ date: day.date, kg: day.kg })
-            } else {
-              const existing = autumnDays.find(d => d.date === day.date)
-              if (existing) existing.kg += day.kg
-              else autumnDays.push({ date: day.date, kg: day.kg })
-            }
+        for (const day of area.days) {
+          // Skip preharvest days (before commercial summer start)
+          if (effectiveSummerStart && day.date < effectiveSummerStart) continue
+          // If no summer start set, include all days as summer
+          if (effectiveAutumnStart && day.date >= effectiveAutumnStart) {
+            const existing = autumnDays.find(d => d.date === day.date)
+            if (existing) existing.kg += day.kg
+            else autumnDays.push({ date: day.date, kg: day.kg })
+          } else {
+            const existing = summerDays.find(d => d.date === day.date)
+            if (existing) existing.kg += day.kg
+            else summerDays.push({ date: day.date, kg: day.kg })
           }
         }
       }
       summerDays.sort((a, b) => a.date.localeCompare(b.date))
       autumnDays.sort((a, b) => a.date.localeCompare(b.date))
-      const buildCurve = (days: { date: string; kg: number }[], season: 'summer' | 'autumn') => {
+      const buildCurve = (days: { date: string; kg: number }[]) => {
         const total = days.reduce((s, d) => s + d.kg, 0)
         const dailyCurve = days.map(d => total > 0 ? (d.kg / total) * 100 : 0)
-        const seasonTotal = season === 'summer' ? mergedSummerKg : mergedAutumnKg
-        const weeklyCurve = mergedWeeks.filter(w => w.season === season).map(w => seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0)
-        const startWeek = mergedWeeks.filter(w => w.season === season)[0]?.week || null
+        // Build weeklyCurve from the actual days in this season
+        const weekMap: Record<number, number> = {}
+        for (const d of days) {
+          const wk = getWeekNumber(new Date(d.date))
+          weekMap[wk] = (weekMap[wk] || 0) + d.kg
+        }
+        const sortedWeekEntries = Object.entries(weekMap).sort(([a], [b]) => Number(a) - Number(b))
+        const weeklyCurve = sortedWeekEntries.map(([, kg]) => total > 0 ? (kg / total) * 100 : 0)
+        const startWeek = sortedWeekEntries.length > 0 ? Number(sortedWeekEntries[0][0]) : null
         const startDate = days.length > 0 ? days[0].date : null
         const endDate = days.length > 0 ? days[days.length - 1].date : null
         return { dailyCurve, weeklyCurve, totalKg: total, startWeek, startDate, endDate }
       }
-      const summer = summerDays.length > 0 ? buildCurve(summerDays, 'summer') : null
-      const autumn = autumnDays.length > 0 ? buildCurve(autumnDays, 'autumn') : null
+      const summer = summerDays.length > 0 ? buildCurve(summerDays) : null
+      const autumn = autumnDays.length > 0 ? buildCurve(autumnDays) : null
       const res = await fetch('/api/harvest-curves/to-template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

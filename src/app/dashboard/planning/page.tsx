@@ -286,19 +286,15 @@ export default function PlanningPage() {
     for (const section of allPlantationSections) {
       const v = section.variety
       const fruitDate = sectionFruitDates.get(section.id)
+      const autumnStartWeekFromVariety = v?.autumnStartWeek ?? null
 
-      if (!fruitDate) continue // no fruit date prediction → skip
+      // Skip sections that have neither a fruit date (summer) nor autumnStartWeek (autumn-only)
+      if (!fruitDate && !autumnStartWeekFromVariety) continue
 
-      const startWeek = getWeekNumber(new Date(fruitDate))
+      const startWeek = fruitDate ? getWeekNumber(new Date(fruitDate)) : null
       const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter
       const shoots = pots * section.shootsPerPot
       const eff = v?.pickingEfficiency ?? 6 // kg/h — from DB, fallback only if not set
-
-      // Gross multiplier — zbieracze zbierają WSZYSTKO (I kl + II kat + odpad)
-      // yieldPerShoot w DB = I klasa (netto), planowanie załogi wymaga brutto
-      const secondCat = v?.secondCategoryPercent ?? 0
-      const waste = v?.wastePercent ?? 0
-      const grossMultiplier = (secondCat + waste) > 0 ? 100 / (100 - secondCat - waste) : 1
 
       // Yields from DB: section-level overrides variety-level
       // --- SUMMER ---
@@ -333,15 +329,15 @@ export default function PlanningPage() {
       // Autumn start week — from DB (Variety.autumnStartWeek)
       const autumnStartWeek = v?.autumnStartWeek ?? null
 
-      const summerKg = shoots * summerYield * grossMultiplier
-      const autumnKg = (autumnStartWeek && autumnYield > 0) ? shoots * autumnYield * grossMultiplier : 0
+      const summerKg = shoots * summerYield
+      const autumnKg = (autumnStartWeek && autumnYield > 0) ? shoots * autumnYield : 0
       const totalKg = summerKg + autumnKg
 
       // Build dailyKg array — per-day kg values
       const dailyKgMap = new Map<string, { summerKg: number; autumnKg: number }>()
 
       // --- SUMMER daily distribution ---
-      if (summerKg > 0) {
+      if (summerKg > 0 && fruitDate) {
         if (summerDailyCurve?.length && summerStartDate) {
           // Use daily curve from template — real per-day distribution
           summerDailyCurve.forEach((pct, i) => {
@@ -435,7 +431,7 @@ export default function PlanningPage() {
         : (sectionSummerCurve?.length || sectionAutumnCurve?.length) ? 'section' as const
         : (varietySummerCurve?.length || varietyAutumnCurve?.length) ? 'variety' as const
         : 'flat' as const
-      sectionDetails.push({ section, fruitStartDate: fruitDate, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg, dailyKg: dailyKgArr, eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null })
+      sectionDetails.push({ section, fruitStartDate: fruitDate ?? null, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg, dailyKg: dailyKgArr, eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null })
     }
 
     const weeks = Object.entries(weekMap)
@@ -1248,7 +1244,7 @@ export default function PlanningPage() {
                               {d.fruitStartDate ? new Date(d.fruitStartDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : '—'}
                             </span>
                           </td>
-                          <td className="text-center px-3 font-medium">T{d.startWeek}</td>
+                          <td className="text-center px-3 font-medium">{d.startWeek ? `T${d.startWeek}` : '—'}</td>
                           <td className="text-right px-3 text-green-700">{d.totalSummerKg > 0 ? `${Math.round(d.totalSummerKg).toLocaleString('pl-PL')}` : '—'}</td>
                           <td className="text-right px-3 text-amber-700">{d.totalAutumnKg > 0 ? `${Math.round(d.totalAutumnKg).toLocaleString('pl-PL')}` : '—'}</td>
                           <td className="text-right px-3 font-medium">{d.totalKg.toLocaleString('pl-PL')}</td>

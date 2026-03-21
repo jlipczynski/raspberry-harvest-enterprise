@@ -536,6 +536,14 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     fetchCurves()
   }
 
+  const deleteSelectedCurves = async () => {
+    if (selectedCurveIds.length === 0) return
+    if (!confirm(`Usunąć ${selectedCurveIds.length} zaznaczonych krzywych?`)) return
+    await Promise.all(selectedCurveIds.map(id => fetch(`/api/harvest-curves/${id}`, { method: 'DELETE' })))
+    setSelectedCurveIds([])
+    fetchCurves()
+  }
+
   const startEdit = (c: HarvestCurveRecord) => {
     setEditingCurve(c)
     setEditForm({ varietyId: c.varietyId || '', sectionId: c.sectionId || '', year: c.year, winteredInTunnel: c.winteredInTunnel || false, plantingDate: c.plantingDate ? c.plantingDate.slice(0, 10) : '', plantSource: c.plantSource || '', plantingYear: c.plantingYear ?? '', autumnShootDate: c.autumnShootDate ? c.autumnShootDate.slice(0, 10) : '' })
@@ -1165,6 +1173,14 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                   >
                     <Merge className="w-3.5 h-3.5" />Połącz krzywe
                   </button>
+                  {selectedCurveIds.length > 0 && (
+                    <button
+                      onClick={deleteSelectedCurves}
+                      className="flex items-center gap-1 px-3 py-1 text-sm rounded-md border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />Usuń zaznaczone ({selectedCurveIds.length})
+                    </button>
+                  )}
                   <Label className="text-xs text-gray-500">Oś Y:</Label>
                   <div className="flex bg-gray-100 rounded-lg p-0.5">
                     <button onClick={() => setYAxis('kg')} className={`px-3 py-1 text-sm rounded-md ${yAxis === 'kg' ? 'bg-white shadow font-medium' : 'text-gray-500'}`}>kg</button>

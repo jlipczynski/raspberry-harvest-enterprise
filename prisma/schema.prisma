@@ -190,7 +190,7 @@ model Section {
 model HarvestCurve {
   id            String   @id @default(cuid())
   year          Int                          // rok danych (2023, 2024, 2025)
-  season        String                       // 'summer' | 'autumn'
+  season        String?                      // 'summer' | 'autumn' | null (combined)
   curve         Float[]                      // % na tydzień [5, 12, 18, 22, 20, 13, 7, 3]
   dailyCurve    Float[]                      // kg na dzień
   startDate     String?                      // data startu zbioru

@@ -11,7 +11,7 @@ import * as XLSX from 'xlsx'
 interface Variety { id: string; name: string }
 interface Section { id: string; name: string; variety?: Variety; blockName?: string }
 interface HarvestCurveRecord {
-  id: string; year: number; season: string; curve: number[]; totalKg: number
+  id: string; year: number; season: string | null; curve: number[]; totalKg: number
   startWeek: number; sectionId?: string; varietyId?: string; sourceFile?: string
   importedAt: string; section?: { id: string; name: string }; variety?: { id: string; name: string }
   dailyCurve?: number[]; startDate?: string
@@ -370,13 +370,11 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       setSavedCurves(curves)
       // Populate areas with commercialStartDate/Autumn from DB
       setAreas(prev => prev.map(area => {
-        const matchingCurves = curves.filter(c => c.name === area.area)
-        if (matchingCurves.length === 0) return area
-        const summerCurve = matchingCurves.find(c => c.season === 'summer')
-        const autumnCurve = matchingCurves.find(c => c.season === 'autumn')
-        const commercialStartDate = summerCurve?.commercialStartDate || area.commercialStartDate
-        const commercialStartDateAutumn = autumnCurve?.commercialStartDateAutumn || area.commercialStartDateAutumn
-        const id = summerCurve?.id || autumnCurve?.id || area.id
+        const matchingCurve = curves.find(c => c.name === area.area)
+        if (!matchingCurve) return area
+        const commercialStartDate = matchingCurve.commercialStartDate || area.commercialStartDate
+        const commercialStartDateAutumn = matchingCurve.commercialStartDateAutumn || area.commercialStartDateAutumn
+        const id = matchingCurve.id || area.id
         return { ...area, id, commercialStartDate, commercialStartDateAutumn }
       }))
     } catch (e) { console.error(e) }
@@ -455,49 +453,20 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
         setAreas(parsed)
         setSelectedAreaIdxs(new Set())
 
-        // Zapisz krzywe do DB natychmiast po imporcie
-        const curvesToSave = parsed.flatMap(a => {
-          const summerWeeks = a.weeks.filter(w => w.season === 'summer')
-          const autumnWeeks = a.weeks.filter(w => w.season === 'autumn')
-          const curves: Record<string, unknown>[] = []
-          if (summerWeeks.length > 0) {
-            const total = summerWeeks.reduce((s, w) => s + w.kg, 0)
-            curves.push({
-              name: a.area,
-              year: yr,
-              season: 'summer',
-              curve: summerWeeks.map(w => total > 0 ? (w.kg / total) * 100 : 0),
-              dailyCurve: a.days.filter(d => {
-                const wk = getWeekNumber(new Date(d.date))
-                return summerWeeks.some(sw => sw.week === wk)
-              }).map(d => d.kg),
-              totalKg: total,
-              startWeek: summerWeeks[0].week,
-              startDate: a.days[0]?.date || null,
-              sourceFile: file.name,
-            })
+        // Zapisz krzywe do DB natychmiast po imporcie — JEDEN rekord per obszar per rok
+        const curvesToSave = parsed.map(a => {
+          const totalKg = a.weeks.reduce((s, w) => s + w.kg, 0)
+          return {
+            name: a.area,
+            year: yr,
+            season: null,
+            curve: a.weeks.map(w => totalKg > 0 ? (w.kg / totalKg) * 100 : 0),
+            dailyCurve: a.days.map(d => d.kg),
+            totalKg,
+            startWeek: a.weeks[0]?.week || 1,
+            startDate: a.days[0]?.date || null,
+            sourceFile: file.name,
           }
-          if (autumnWeeks.length > 0) {
-            const total = autumnWeeks.reduce((s, w) => s + w.kg, 0)
-            curves.push({
-              name: a.area,
-              year: yr,
-              season: 'autumn',
-              curve: autumnWeeks.map(w => total > 0 ? (w.kg / total) * 100 : 0),
-              dailyCurve: a.days.filter(d => {
-                const wk = getWeekNumber(new Date(d.date))
-                return autumnWeeks.some(aw => aw.week === wk)
-              }).map(d => d.kg),
-              totalKg: total,
-              startWeek: autumnWeeks[0].week,
-              startDate: a.days.find(d => {
-                const wk = getWeekNumber(new Date(d.date))
-                return autumnWeeks.some(aw => aw.week === wk)
-              })?.date || null,
-              sourceFile: file.name,
-            })
-          }
-          return curves
         })
         if (curvesToSave.length > 0) {
           fetch('/api/harvest-curves', {
@@ -554,7 +523,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
 
   const startEdit = (c: HarvestCurveRecord) => {
     setEditingCurve(c)
-    setEditForm({ varietyId: c.varietyId || '', sectionId: c.sectionId || '', year: c.year, season: c.season, winteredInTunnel: c.winteredInTunnel || false, plantingDate: c.plantingDate ? c.plantingDate.slice(0, 10) : '', plantSource: c.plantSource || '', plantingYear: c.plantingYear ?? '', autumnShootDate: c.autumnShootDate ? c.autumnShootDate.slice(0, 10) : '' })
+    setEditForm({ varietyId: c.varietyId || '', sectionId: c.sectionId || '', year: c.year, season: c.season || '', winteredInTunnel: c.winteredInTunnel || false, plantingDate: c.plantingDate ? c.plantingDate.slice(0, 10) : '', plantSource: c.plantSource || '', plantingYear: c.plantingYear ?? '', autumnShootDate: c.autumnShootDate ? c.autumnShootDate.slice(0, 10) : '' })
   }
 
   const saveEdit = async () => {
@@ -727,7 +696,8 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       const vName = c.variety?.name || 'Bez odmiany'
       if (!groups[vName]) groups[vName] = { summer: [], autumn: [] }
       if (c.season === 'summer') groups[vName].summer.push(c)
-      else groups[vName].autumn.push(c)
+      else if (c.season === 'autumn') groups[vName].autumn.push(c)
+      else groups[vName].summer.push(c) // combined curves show in summer chart
     })
     return groups
   }
@@ -1128,7 +1098,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div><Label className="text-xs">Rok</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.year} onChange={e => setEditForm({ ...editForm, year: parseInt(e.target.value) })}>{[2022,2023,2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}</select></div>
-                  <div><Label className="text-xs">Sezon</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.season} onChange={e => setEditForm({ ...editForm, season: e.target.value })}><option value="summer">☀️ Lato</option><option value="autumn">🍂 Jesień</option></select></div>
+                  <div><Label className="text-xs">Sezon</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.season} onChange={e => setEditForm({ ...editForm, season: e.target.value })}><option value="">Cały rok</option><option value="summer">☀️ Lato</option><option value="autumn">🍂 Jesień</option></select></div>
                   <div><Label className="text-xs">Odmiana</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.varietyId} onChange={e => setEditForm({ ...editForm, varietyId: e.target.value })}><option value="">—</option>{varieties.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
                   <div><Label className="text-xs">Sekcja</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.sectionId} onChange={e => setEditForm({ ...editForm, sectionId: e.target.value })}><option value="">—</option>{sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
                 </div>
@@ -1210,7 +1180,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
               <span className="text-blue-800 font-medium">Zaznaczono {mergeCurveIds.length} krzywych do połączenia</span>
               <div className="flex gap-2">
                 {(() => {
-                  const selectedSeasons = new Set(savedCurves.filter(c => mergeCurveIds.includes(c.id)).map(c => c.season))
+                  const selectedSeasons = new Set(savedCurves.filter(c => mergeCurveIds.includes(c.id)).map(c => c.season).filter(Boolean))
                   if (selectedSeasons.size > 1) {
                     return <span className="text-red-600 text-sm flex items-center gap-1"><AlertCircle className="w-4 h-4" />Zaznaczone krzywe mają różne sezony!</span>
                   }
@@ -1249,7 +1219,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                       {savedCurves.filter(c => mergeCurveIds.includes(c.id)).map(c => (
                         <li key={c.id} className="text-sm text-gray-600 flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} />
-                          {c.section?.name || c.name || c.id} — {c.season === 'summer' ? 'Lato' : 'Jesień'} {c.year} ({(c.totalKg / 1000).toFixed(1)}t)
+                          {c.section?.name || c.name || c.id} — {c.season === 'summer' ? 'Lato' : c.season === 'autumn' ? 'Jesień' : 'Cały rok'} {c.year} ({(c.totalKg / 1000).toFixed(1)}t)
                         </li>
                       ))}
                     </ul>
@@ -1341,7 +1311,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                     {savedCurves.filter(c => selectedCurveIds.includes(c.id)).map(c => (
                       <li key={c.id} className="text-sm text-gray-600 flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} />
-                        {c.name || c.section?.name || c.id} — {c.season === 'summer' ? 'Lato' : 'Jesień'} {c.year} ({(c.totalKg / 1000).toFixed(1)}t)
+                        {c.name || c.section?.name || c.id} — {c.season === 'summer' ? 'Lato' : c.season === 'autumn' ? 'Jesień' : 'Cały rok'} {c.year} ({(c.totalKg / 1000).toFixed(1)}t)
                       </li>
                     ))}
                   </ul>

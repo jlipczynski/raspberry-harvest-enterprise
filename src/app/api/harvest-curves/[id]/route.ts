@@ -12,7 +12,7 @@ export async function PATCH(
       where: { id },
       data: {
         ...(body.year !== undefined && { year: body.year }),
-        ...(body.season !== undefined && { season: body.season }),
+        ...(body.season !== undefined && { season: body.season || null }),
         ...(body.curve !== undefined && { curve: body.curve }),
         ...(body.totalKg !== undefined && { totalKg: body.totalKg }),
         ...(body.startWeek !== undefined && { startWeek: body.startWeek }),

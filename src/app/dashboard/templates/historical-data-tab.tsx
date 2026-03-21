@@ -612,8 +612,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   }, [selectedAreaIdxs, areas])
 
   const mergedTotalKg = mergedWeeks.reduce((s, w) => s + w.kg, 0)
-  const mergedSummerKg = mergedWeeks.filter(w => w.season === 'summer').reduce((s, w) => s + w.kg, 0)
-  const mergedAutumnKg = mergedWeeks.filter(w => w.season === 'autumn').reduce((s, w) => s + w.kg, 0)
 
   const mergedDaysByWeek = useMemo(() => {
     const result: Record<number, Array<{ date: string; kg: number; isPreHarvest: boolean; isPreHarvestAutumn: boolean }>> = {}
@@ -641,6 +639,9 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     if (summerStartWeek !== null && weekNum < summerStartWeek) return 'preharvest'
     return 'summer'
   }
+
+  const mergedSummerKg = mergedWeeks.filter(w => getWeekComputedSeason(w.week) === 'summer').reduce((s, w) => s + w.kg, 0)
+  const mergedAutumnKg = mergedWeeks.filter(w => getWeekComputedSeason(w.week) === 'autumn').reduce((s, w) => s + w.kg, 0)
 
   const setAutumnStartWeek = (weekNum: number) => {
     if (!mergedCommercialStartDate) return

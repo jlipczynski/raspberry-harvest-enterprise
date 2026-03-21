@@ -12,6 +12,13 @@ interface PreviewRow {
   sectionId: string | null
   count: number
   status: 'ok' | 'unknown_tunnel' | 'section_not_found'
+  sheetName?: string
+}
+
+interface SectionOption {
+  id: string
+  name: string | null
+  blockName: string
 }
 
 export async function POST(request: NextRequest) {
@@ -31,6 +38,11 @@ export async function POST(request: NextRequest) {
       where: { farmId },
       include: { sections: { select: { id: true, name: true } } },
     })
+
+    // Build flat list of all sections for the dropdown
+    const allSections: SectionOption[] = blocks.flatMap(b =>
+      b.sections.map(s => ({ id: s.id, name: s.name, blockName: b.name }))
+    )
 
     const results: PreviewRow[] = []
 
@@ -78,6 +90,7 @@ export async function POST(request: NextRequest) {
                 sectionId: matches[0].sectionId,
                 count: sheet.readings.length,
                 status: 'ok',
+                sheetName: sheet.sheetName,
               })
             } else {
               results.push({
@@ -87,6 +100,7 @@ export async function POST(request: NextRequest) {
                 sectionId: null,
                 count: sheet.readings.length,
                 status: 'section_not_found',
+                sheetName: sheet.sheetName,
               })
             }
           }
@@ -158,7 +172,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(results)
+    return NextResponse.json({ rows: results, allSections })
   } catch (error) {
     console.error('Error previewing temperature files:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'

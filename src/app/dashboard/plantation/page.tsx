@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp, Upload, FileText, Thermometer, Loader2, TrendingUp } from 'lucide-react'
+import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp, Thermometer, Loader2, TrendingUp } from 'lucide-react'
 import GDHModule from './gdh-module'
 import GDHMatrix from './gdh-matrix'
 
@@ -13,7 +13,6 @@ interface Section { id: string; name: string; metersLength: number; potsPerMeter
 interface Block { id: string; name: string; sections: Section[] }
 interface Farm { id: string; name: string }
 interface TempReading { id: string; timestamp: string; temperature: number; sourceFile?: string }
-interface UploadResult { success?: boolean; error?: string; blockName?: string; totalReadings?: number; totalInserted?: number; sections?: Array<{ sectionId: string; sectionName: string | null; inserted: number; sheetName?: string; blockName?: string }>; format?: string; totalSheets?: number; errors?: string[]; debug?: { format?: string; contentPreview?: string; lineCount?: number; tokenCount?: number; testoReadingsFound?: number; parsedBlockName?: string | null } }
 
 const PLANT_TYPES = [{ value: 'SMALL_POT', label: 'Doniczka' }, { value: 'ROOT', label: 'Korzeń' }, { value: 'LONGCANE', label: 'Longcane' }, { value: 'PLUG', label: 'Plug' }]
 const PLANT_SOURCES = [{ value: '', label: 'Nie określono' }, { value: 'OWN', label: 'Własne plugi' }, { value: 'NURSERY', label: 'Zewnętrzna szkółka' }]
@@ -30,12 +29,6 @@ export default function PlantationPage() {
   const [editingSection, setEditingSection] = useState<Section | null>(null)
   const [expandedBlock, setExpandedBlock] = useState<string | null>(null)
   const [sectionForm, setSectionForm] = useState({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '' as string | number, plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', plantSource: '', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' })
-
-  // PDF upload state
-  const [isDragging, setIsDragging] = useState(false)
-  const [uploadingPdfs, setUploadingPdfs] = useState(false)
-  const [uploadResults, setUploadResults] = useState<UploadResult[]>([])
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Temperature readings state (per section)
   const [tempReadings, setTempReadings] = useState<Record<string, TempReading[]>>({})
@@ -71,51 +64,6 @@ export default function PlantationPage() {
   }, [blocks])
 
   useEffect(() => { fetchTempCounts() }, [blocks, fetchTempCounts])
-
-  // File upload handlers (PDF + CSV)
-  const handleFileUpload = useCallback(async (files: FileList | File[]) => {
-    if (!farm) return
-    setUploadingPdfs(true)
-    setUploadResults([])
-    const results: UploadResult[] = []
-    const allowedExts = ['.pdf', '.csv', '.txt', '.xlsx', '.xls']
-
-    for (const file of Array.from(files)) {
-      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
-      if (!allowedExts.includes(ext)) {
-        results.push({ error: `${file.name}: nieobsługiwany format (akceptowane: PDF, CSV, TXT, XLSX)` })
-        continue
-      }
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('farmId', farm.id)
-      try {
-        const res = await fetch('/api/plantation/temperature-upload', { method: 'POST', body: formData })
-        let data: Record<string, unknown>
-        try {
-          data = await res.json()
-        } catch {
-          const text = await res.text().catch(() => '')
-          results.push({ error: `${file.name}: serwer zwrócił błąd ${res.status}${text ? ` - ${text.slice(0, 200)}` : ''}` })
-          continue
-        }
-        if (!res.ok) results.push({ error: `${file.name}: ${data.error || `błąd ${res.status}`}` })
-        else results.push({ ...data, success: true })
-      } catch (err) {
-        results.push({ error: `${file.name}: ${err instanceof Error ? err.message : 'błąd połączenia'}` })
-      }
-    }
-    setUploadResults(results)
-    setUploadingPdfs(false)
-    fetchTempCounts()
-  }, [farm, fetchTempCounts])
-
-  const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }, [])
-  const onDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false) }, [])
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault(); setIsDragging(false)
-    if (e.dataTransfer.files.length > 0) handleFileUpload(e.dataTransfer.files)
-  }, [handleFileUpload])
 
   // Fetch temp readings for a specific section
   const fetchTempReadings = async (sectionId: string, page = 1) => {
@@ -219,87 +167,6 @@ export default function PlantationPage() {
       {showGDH && (
         <div className="mt-3">
           <GDHMatrix />
-        </div>
-      )}
-
-      {/* PDF Drag & Drop Zone */}
-      <div
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className={`relative rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}`}
-      >
-        <input ref={fileInputRef} type="file" accept=".pdf,.csv,.txt,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" multiple className="hidden" onChange={e => { if (e.target.files) handleFileUpload(e.target.files); e.target.value = '' }} />
-        {uploadingPdfs ? (
-          <div className="flex items-center justify-center gap-3">
-            <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-            <span className="text-blue-600 font-medium">Przetwarzanie plików...</span>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-3">
-            <Upload className="w-6 h-6 text-gray-400" />
-            <div className="text-sm">
-              <span className="font-medium text-gray-700">Przeciągnij pliki PDF, CSV lub XLSX z pomiarami temperatury</span>
-              <span className="text-gray-400 ml-1">lub kliknij, aby wybrać</span>
-            </div>
-            <FileText className="w-5 h-5 text-gray-300" />
-          </div>
-        )}
-      </div>
-
-      {/* Upload results */}
-      {uploadResults.length > 0 && (
-        <div className="space-y-2">
-          {uploadResults.map((r, i) => (
-            <div key={i} className={`rounded-lg px-4 py-3 text-sm ${r.success ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
-              {r.success ? (
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Thermometer className="w-4 h-4" />
-                    {r.format === 'xlsx' ? (
-                      <span>XLSX: {r.totalSheets} arkuszy, <strong>{r.totalInserted}</strong> pomiarów zaimportowano do {r.sections?.length} sekcji</span>
-                    ) : (
-                      <span>Blok <strong>{r.blockName}</strong>: {r.totalReadings} pomiarów zaimportowano do {r.sections?.length} sekcji ({r.sections?.map(s => s.sectionName).join(', ')})</span>
-                    )}
-                  </div>
-                  {r.format === 'xlsx' && r.sections && r.sections.length > 0 && (
-                    <div className="mt-2 ml-6 space-y-0.5 text-xs">
-                      {r.sections.map((s, j) => (
-                        <div key={j} className="text-green-700">
-                          {s.sheetName} → <strong>{s.sectionName}</strong>: {s.inserted} pomiarów
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {r.errors && r.errors.length > 0 && (
-                    <div className="mt-2 ml-6 space-y-0.5 text-xs text-orange-700">
-                      {r.errors.map((e, j) => <div key={j}>{e}</div>)}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div>
-                  <span>{r.error}</span>
-                  {r.debug && (
-                    <details className="mt-2 text-xs text-red-600">
-                      <summary className="cursor-pointer">Diagnostyka</summary>
-                      <pre className="mt-1 p-2 bg-red-100 rounded overflow-x-auto whitespace-pre-wrap break-all">
-{`Format: ${r.debug.format || '?'}
-Blok (parsed): ${r.debug.parsedBlockName || '(nie znaleziono)'}
-Linii: ${r.debug.lineCount || '?'}
-Tokenów: ${r.debug.tokenCount || '-'}
-Odczytów Testo: ${r.debug.testoReadingsFound ?? '-'}
-Preview (500 znaków):
-${r.debug.contentPreview || '(brak)'}`}
-                      </pre>
-                    </details>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-          <Button variant="ghost" size="sm" className="text-gray-400" onClick={() => setUploadResults([])}>Zamknij</Button>
         </div>
       )}
 

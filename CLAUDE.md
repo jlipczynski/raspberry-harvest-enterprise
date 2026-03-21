@@ -223,3 +223,33 @@ yield = shoots × yieldPerShoot
 - NIE twórz worktrees
 - NIE używaj `git worktree`
 - NIE czekaj na użytkownika z mergem — merguj od razu
+
+## Zasady pisania briefów i debugowania
+
+### PRZED napisaniem briefu
+1. Zawsze przeczytaj kod który ma być zmieniony:
+   `cat src/app/[ścieżka]/plik.tsx`
+   lub `sed -n '[start],[end]p' plik.tsx` dla konkretnych linii
+2. Znajdź konkretną funkcję i linię która jest błędna
+3. Pokaż Janowi co dokładnie jest nie tak i dlaczego
+4. Dopiero potem pisz brief
+
+### Brief musi zawierać
+- Nazwę konkretnej funkcji do zmiany
+- Obecny błędny kod (skopiowany z pliku)
+- Nowy poprawny kod
+- Nigdy ogólne opisy typu "napraw logikę X"
+
+### Po każdym PR
+- Zawsze: `git pull origin main`
+- Zweryfikuj zmianę: `grep -n "kluczowa_funkcja" plik.tsx`
+- Claude Code może kłamać że naprawił — zawsze weryfikuj kodem
+
+### Kluczowe zasady domenowe
+- `dailyCurve` w ProductionCurveTemplate = PROCENTY (0-100), nie kg
+  Przy wyświetlaniu: `kg = (pct / 100) * totalKg`
+- Podział lato/jesień przy zapisie TYLKO przez daty:
+  - `commercialStartDate` = start lata (klikany przez użytkownika)
+  - `commercialStartDateAutumn` = start jesieni (klikany przez użytkownika)
+  - `detectSummerEnd` = tylko wizualna sugestia, NIGDY nie decyduje o zapisie
+- Jeden szablon per blok — nie osobno lato i jesień

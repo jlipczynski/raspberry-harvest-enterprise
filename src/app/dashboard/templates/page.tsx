@@ -191,40 +191,44 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
 
   const dateToX = (date: string) => PAD.left + ((daysBetween(timeStart, date) - visibleStart) / visibleDays) * chartW
 
-  // Build daily harvest map
+  // Build daily harvest map — convert percentages to real kg
   const dailyHarvest: Record<string, number> = {}
   if (t.dailyCurveSummer?.length && t.startDateSummer) {
-    t.dailyCurveSummer.forEach((kg, i) => {
+    const totalKg = t.totalKgSummer || 0
+    t.dailyCurveSummer.forEach((pct, i) => {
       const d = new Date(t.startDateSummer!); d.setDate(d.getDate() + i)
-      dailyHarvest[d.toISOString().split('T')[0]] = kg
+      dailyHarvest[d.toISOString().split('T')[0]] = (pct / 100) * totalKg
     })
   }
   if (t.dailyCurveAutumn?.length && t.startDateAutumn) {
-    t.dailyCurveAutumn.forEach((kg, i) => {
+    const totalKg = t.totalKgAutumn || 0
+    t.dailyCurveAutumn.forEach((pct, i) => {
       const d = new Date(t.startDateAutumn!); d.setDate(d.getDate() + i)
-      dailyHarvest[d.toISOString().split('T')[0]] = (dailyHarvest[d.toISOString().split('T')[0]] || 0) + kg
+      dailyHarvest[d.toISOString().split('T')[0]] = (dailyHarvest[d.toISOString().split('T')[0]] || 0) + (pct / 100) * totalKg
     })
   }
 
-  // Build weekly harvest data
+  // Build weekly harvest data — convert percentages to real kg
   const weeklyHarvest: { weekStart: string; weekEnd: string; kg: number; week: number }[] = []
   {
     const weekMap: Record<number, { kg: number; dates: string[] }> = {}
     if (t.dailyCurveSummer?.length && t.startDateSummer) {
-      t.dailyCurveSummer.forEach((kg, i) => {
+      const totalKg = t.totalKgSummer || 0
+      t.dailyCurveSummer.forEach((pct, i) => {
         const d = new Date(t.startDateSummer!); d.setDate(d.getDate() + i)
         const wk = getWeekNumber(d)
         if (!weekMap[wk]) weekMap[wk] = { kg: 0, dates: [] }
-        weekMap[wk].kg += kg
+        weekMap[wk].kg += (pct / 100) * totalKg
         weekMap[wk].dates.push(d.toISOString().split('T')[0])
       })
     }
     if (t.dailyCurveAutumn?.length && t.startDateAutumn) {
-      t.dailyCurveAutumn.forEach((kg, i) => {
+      const totalKg = t.totalKgAutumn || 0
+      t.dailyCurveAutumn.forEach((pct, i) => {
         const d = new Date(t.startDateAutumn!); d.setDate(d.getDate() + i)
         const wk = getWeekNumber(d)
         if (!weekMap[wk]) weekMap[wk] = { kg: 0, dates: [] }
-        weekMap[wk].kg += kg
+        weekMap[wk].kg += (pct / 100) * totalKg
         weekMap[wk].dates.push(d.toISOString().split('T')[0])
       })
     }

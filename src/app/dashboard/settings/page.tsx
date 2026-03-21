@@ -246,9 +246,11 @@ export default function SettingsPage() {
       }
       const res = await fetch('/api/plantation/temperature-preview', { method: 'POST', body: fd })
       if (res.ok) {
-        const data: { rows: PreviewRow[]; allSections: SectionOption[] } = await res.json()
-        setPreviewData(data.rows)
-        setAllSections(data.allSections)
+        const data = await res.json()
+        const rows = Array.isArray(data.rows) ? data.rows : Array.isArray(data) ? data : []
+        const sections = Array.isArray(data.allSections) ? data.allSections : []
+        setPreviewData(rows)
+        setAllSections(sections)
       } else {
         const err = await res.json()
         setPreviewData([])
@@ -270,7 +272,9 @@ export default function SettingsPage() {
   }
 
   // Check if all rows have a section assigned (either auto or manual)
-  const allRowsMapped = previewData?.every((_, i) => getEffectiveSectionId(i) !== null) ?? false
+  const allRowsMapped = Array.isArray(previewData) && previewData.length > 0
+    ? previewData.every((_, i) => getEffectiveSectionId(i) !== null)
+    : false
 
   const handleTempImport = useCallback(async () => {
     if (!farm || tempFiles.length === 0 || !previewData) return
@@ -593,7 +597,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Preview table */}
-          {previewData && previewData.length > 0 && (
+          {Array.isArray(previewData) && previewData.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -641,7 +645,7 @@ export default function SettingsPage() {
                                 }}
                               >
                                 <option value="">— wybierz sekcję —</option>
-                                {allSections.map(s => (
+                                {(allSections ?? []).map(s => (
                                   <option key={s.id} value={s.id}>
                                     {s.blockName} — {s.name || '(bez nazwy)'}
                                   </option>
@@ -693,7 +697,7 @@ export default function SettingsPage() {
           )}
 
           {/* Import results */}
-          {importResults && importResults.length > 0 && (
+          {Array.isArray(importResults) && importResults.length > 0 && (
             <div className="space-y-2">
               {importResults.map((r, i) => (
                 <div key={i} className={`rounded-lg px-4 py-3 text-sm ${r.success ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>

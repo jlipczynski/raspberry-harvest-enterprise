@@ -611,6 +611,32 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAreaIdxs, areas])
 
+  // Compute season for a week based on commercial start dates
+  const getWeekComputedSeason = (weekNum: number): 'preharvest' | 'summer' | 'autumn' => {
+    const summerStartWeek = mergedCommercialStartDate ? getWeekNumber(new Date(mergedCommercialStartDate)) : null
+    const autumnStartWeek = mergedCommercialStartDateAutumn ? getWeekNumber(new Date(mergedCommercialStartDateAutumn)) : null
+    if (autumnStartWeek !== null && weekNum >= autumnStartWeek) return 'autumn'
+    if (summerStartWeek !== null && weekNum < summerStartWeek) return 'preharvest'
+    return 'summer'
+  }
+
+  const setAutumnStartWeek = (weekNum: number) => {
+    if (!mergedCommercialStartDate) return
+    const days = mergedDaysByWeek[weekNum]
+    const firstDay = days?.[0]?.date
+    if (!firstDay) return
+    markMergedCommercialStart(firstDay, 'autumn')
+    // Update underlying week seasons for save logic
+    setAreas(prev => prev.map((a, ai) => {
+      if (!selectedAreaIdxs.has(ai)) return a
+      const newWeeks = a.weeks.map(w => ({
+        ...w,
+        season: (w.week >= weekNum ? 'autumn' : 'summer') as 'summer' | 'autumn' | 'preharvest'
+      }))
+      return { ...a, weeks: newWeeks }
+    }))
+  }
+
   const handleSaveMergedTemplate = async () => {
     if (!templateName.trim()) return
     setSavingTemplate(true)
@@ -859,13 +885,13 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                     <div>
                       <p className="text-sm font-medium">
                         {mergedCommercialStartDate
-                          ? `☀️ Start lata: ${new Date(mergedCommercialStartDate).toLocaleDateString('pl-PL')}`
-                          : '☀️ Oznacz start lata'}
+                          ? `⚓ Start lata: ${new Date(mergedCommercialStartDate).toLocaleDateString('pl-PL')}`
+                          : '⚓ Start lata: kliknij dzień w tabeli'}
                       </p>
                       <p className="text-xs text-gray-500 mt-0.5">
                         {mergedCommercialStartDate
-                          ? 'Dni przed startem = pośpiech lata'
-                          : 'Rozwiń tydzień letni i kliknij "Oznacz jako start"'}
+                          ? 'Dni przed startem = pośpiech'
+                          : 'Rozwiń tydzień i kliknij "Oznacz jako start"'}
                       </p>
                     </div>
                     {mergedCommercialStartDate && (
@@ -874,30 +900,54 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                       </Button>
                     )}
                   </div>
-                  {mergedAutumnKg > 0 && (
-                    <div className={`flex items-center justify-between p-3 rounded-lg border ${
-                      mergedCommercialStartDateAutumn ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
-                    }`}>
-                      <div>
-                        <p className="text-sm font-medium">
-                          {mergedCommercialStartDateAutumn
-                            ? `🍂 Start jesieni: ${new Date(mergedCommercialStartDateAutumn).toLocaleDateString('pl-PL')}`
-                            : '🍂 Oznacz start jesieni'}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {mergedCommercialStartDateAutumn
-                            ? 'Dni przed startem = pośpiech jesieni'
-                            : 'Rozwiń tydzień jesienny i kliknij "Oznacz jako start"'}
-                        </p>
-                      </div>
-                      {mergedCommercialStartDateAutumn && (
-                        <Button size="sm" variant="outline" onClick={() => resetMergedCommercialStart('autumn')}>
-                          <X className="w-3 h-3 mr-1" />Resetuj
-                        </Button>
-                      )}
+                  <div className={`flex items-center justify-between p-3 rounded-lg border ${
+                    mergedCommercialStartDateAutumn ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
+                  }`}>
+                    <div>
+                      <p className="text-sm font-medium">
+                        {mergedCommercialStartDateAutumn
+                          ? `🍂 Start jesieni: ${new Date(mergedCommercialStartDateAutumn).toLocaleDateString('pl-PL')}`
+                          : '🍂 Start jesieni: kliknij badge "Lato" w tabeli'}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {mergedCommercialStartDateAutumn
+                          ? 'Tygodnie od tego miejsca = jesień'
+                          : mergedCommercialStartDate ? 'Kliknij badge ☀️ Lato przy tygodniu, aby ustawić start jesieni' : 'Najpierw oznacz start lata'}
+                      </p>
                     </div>
-                  )}
+                    {mergedCommercialStartDateAutumn && (
+                      <Button size="sm" variant="outline" onClick={() => resetMergedCommercialStart('autumn')}>
+                        <X className="w-3 h-3 mr-1" />Resetuj
+                      </Button>
+                    )}
+                  </div>
                 </div>
+
+                {/* Bar chart */}
+                {(() => {
+                  const maxKg = Math.max(...mergedWeeks.map(w => w.kg), 1)
+                  return (
+                    <div className="flex items-end gap-px h-20 mb-4">
+                      {mergedWeeks.map(w => {
+                        const cs = getWeekComputedSeason(w.week)
+                        const heightPct = (w.kg / maxKg) * 100
+                        return (
+                          <div key={w.week} className="flex-1 flex flex-col items-center gap-0.5">
+                            <div
+                              className="w-full rounded-t"
+                              style={{
+                                height: `${heightPct}%`,
+                                minHeight: w.kg > 0 ? '2px' : '0',
+                                backgroundColor: cs === 'preharvest' ? '#d1d5db' : cs === 'summer' ? '#fb923c' : '#f87171'
+                              }}
+                            />
+                            <span className="text-[9px] text-gray-400">T{w.week}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
 
                 <table className="w-full text-sm">
                   <thead>
@@ -911,100 +961,124 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                     </tr>
                   </thead>
                   <tbody>
-                    {mergedWeeks.map((w, i) => {
-                      const seasonTotal = w.season === 'summer' ? mergedSummerKg : mergedAutumnKg
-                      const pct = seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0
-                      const sameSeasonWeeks = mergedWeeks.filter(x => x.season === w.season)
-                      const idxInSeason = sameSeasonWeeks.indexOf(w)
-                      const cumPct = sameSeasonWeeks.slice(0, idxInSeason + 1).reduce((s, x) => {
-                        const st = w.season === 'summer' ? mergedSummerKg : mergedAutumnKg
-                        return s + (st > 0 ? (x.kg / st) * 100 : 0)
-                      }, 0)
-                      const isBoundary = i > 0 && mergedWeeks[i-1].season !== w.season
-                      return (
-                        <React.Fragment key={`merged-week-${w.week}`}>
-                          <tr
-                            className={`border-b hover:bg-gray-50 cursor-pointer ${isBoundary ? 'border-t-4 border-t-gray-300' : ''}`}
-                            onClick={() => toggleMergedWeek(w.week)}
-                          >
-                            <td className="py-2 px-3 font-medium">T{w.week}</td>
-                            <td className="py-2 px-3 text-right">{w.kg.toLocaleString('pl-PL', { maximumFractionDigits: 0 })}</td>
-                            <td className="py-2 px-3 text-right">
-                              <span className={pct > 15 ? 'text-green-600 font-medium' : ''}>{pct.toFixed(1)}%</span>
-                            </td>
-                            <td className="py-2 px-3 text-right text-gray-400">{cumPct.toFixed(1)}%</td>
-                            <td className="py-2 px-3 text-center">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); cycleWeekSeason(i) }}
-                                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-                                  w.season === 'preharvest'
-                                    ? 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                                    : w.season === 'summer'
-                                      ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                                      : 'bg-red-100 text-red-700 hover:bg-red-200'
-                                }`}
-                              >
-                                {w.season === 'preharvest' ? 'Pośpiech' : w.season === 'summer' ? <><Sun className="w-3 h-3" />Lato</> : <><Leaf className="w-3 h-3" />Jesień</>}
-                              </button>
-                            </td>
-                            <td className="py-2 px-3 text-center text-gray-400 w-8">
-                              {mergedExpandedWeeks.has(w.week) ? '▼' : '▶'}
-                            </td>
-                          </tr>
-                          {mergedExpandedWeeks.has(w.week) && (mergedDaysByWeek[w.week] || []).map(d => {
-                            const seasonStart = w.season === 'summer' ? mergedCommercialStartDate : mergedCommercialStartDateAutumn
-                            const isPreHarvestForSeason = w.season === 'summer' ? d.isPreHarvest : d.isPreHarvestAutumn
-                            const isStartDate = d.date === seasonStart
-                            return (
-                            <tr key={`merged-day-${d.date}`} className={`border-b ${isStartDate ? 'bg-green-50' : isPreHarvestForSeason ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
-                              <td className="py-1 px-3 pl-8 text-xs text-gray-500" colSpan={2}>
-                                {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
-                                {isStartDate && <button onClick={() => resetMergedCommercialStart(w.season as 'summer' | 'autumn')} className="ml-2 text-green-600 font-medium hover:text-red-600 cursor-pointer">← start {w.season === 'summer' ? 'lata' : 'jesieni'}</button>}
+                    {(() => {
+                      const computedSeasons = mergedWeeks.map(w => getWeekComputedSeason(w.week))
+                      const cSummerKg = mergedWeeks.filter((_, i) => computedSeasons[i] === 'summer').reduce((s, w) => s + w.kg, 0)
+                      const cAutumnKg = mergedWeeks.filter((_, i) => computedSeasons[i] === 'autumn').reduce((s, w) => s + w.kg, 0)
+                      return mergedWeeks.map((w, i) => {
+                        const cs = computedSeasons[i]
+                        const seasonTotal = cs === 'summer' ? cSummerKg : cs === 'autumn' ? cAutumnKg : 0
+                        const pct = seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0
+                        const sameSeasonWeeks = mergedWeeks.filter((_, j) => computedSeasons[j] === cs)
+                        const idxInSeason = sameSeasonWeeks.indexOf(w)
+                        const cumPct = sameSeasonWeeks.slice(0, idxInSeason + 1).reduce((s, x) => {
+                          return s + (seasonTotal > 0 ? (x.kg / seasonTotal) * 100 : 0)
+                        }, 0)
+                        const isBoundary = i > 0 && computedSeasons[i-1] !== cs
+                        return (
+                          <React.Fragment key={`merged-week-${w.week}`}>
+                            <tr
+                              className={`border-b hover:bg-gray-50 cursor-pointer ${isBoundary ? 'border-t-4 border-t-gray-300' : ''}`}
+                              onClick={() => toggleMergedWeek(w.week)}
+                            >
+                              <td className="py-2 px-3 font-medium">T{w.week}</td>
+                              <td className="py-2 px-3 text-right">{w.kg.toLocaleString('pl-PL', { maximumFractionDigits: 0 })}</td>
+                              <td className="py-2 px-3 text-right">
+                                <span className={pct > 15 ? 'text-green-600 font-medium' : ''}>{cs === 'preharvest' ? '—' : `${pct.toFixed(1)}%`}</span>
                               </td>
-                              <td className="py-1 px-3 text-right text-xs font-medium">{d.kg.toFixed(1)}</td>
-                              <td className="py-1 px-3 text-center" colSpan={2}>
-                                {seasonStart ? (
-                                  isStartDate ? (
+                              <td className="py-2 px-3 text-right text-gray-400">{cs === 'preharvest' ? '—' : `${cumPct.toFixed(1)}%`}</td>
+                              <td className="py-2 px-3 text-center">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (cs === 'summer' && mergedCommercialStartDate) {
+                                      setAutumnStartWeek(w.week)
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                                    cs === 'preharvest'
+                                      ? 'bg-gray-200 text-gray-600'
+                                      : cs === 'summer'
+                                        ? `bg-orange-100 text-orange-700 ${mergedCommercialStartDate ? 'hover:bg-red-100 hover:text-red-700 cursor-pointer' : ''}`
+                                        : 'bg-red-100 text-red-700'
+                                  }`}
+                                >
+                                  {cs === 'preharvest' ? 'Pośpiech' : cs === 'summer' ? <><Sun className="w-3 h-3" />Lato</> : <><Leaf className="w-3 h-3" />Jesień</>}
+                                </button>
+                              </td>
+                              <td className="py-2 px-3 text-center text-gray-400 w-8">
+                                {mergedExpandedWeeks.has(w.week) ? '▼' : '▶'}
+                              </td>
+                            </tr>
+                            {mergedExpandedWeeks.has(w.week) && (mergedDaysByWeek[w.week] || []).map(d => {
+                              const isSummerStart = d.date === mergedCommercialStartDate
+                              const isAutumnStart = d.date === mergedCommercialStartDateAutumn
+                              const isBeforeSummerStart = mergedCommercialStartDate && d.date < mergedCommercialStartDate
+                              const isInAutumn = mergedCommercialStartDateAutumn && d.date >= mergedCommercialStartDateAutumn
+                              const daySeason = isBeforeSummerStart ? 'preharvest' : isInAutumn ? 'autumn' : 'summer'
+                              return (
+                              <tr key={`merged-day-${d.date}`} className={`border-b ${isSummerStart || isAutumnStart ? 'bg-green-50' : daySeason === 'preharvest' ? 'bg-gray-50 text-gray-400' : daySeason === 'autumn' ? 'bg-red-50/30' : 'bg-orange-50/30'}`}>
+                                <td className="py-1 px-3 pl-8 text-xs text-gray-500" colSpan={2}>
+                                  {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                  {isSummerStart && <span className="ml-2 text-green-600 font-medium">⚓ start lata</span>}
+                                  {isAutumnStart && <span className="ml-2 text-red-600 font-medium">🍂 start jesieni</span>}
+                                </td>
+                                <td className="py-1 px-3 text-right text-xs font-medium">{d.kg.toFixed(1)}</td>
+                                <td className="py-1 px-3 text-center" colSpan={2}>
+                                  {cs === 'summer' && !mergedCommercialStartDate ? (
                                     <button
-                                      onClick={() => resetMergedCommercialStart(w.season as 'summer' | 'autumn')}
+                                      onClick={() => markMergedCommercialStart(d.date, 'summer')}
+                                      className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                    >
+                                      Oznacz jako start lata
+                                    </button>
+                                  ) : isSummerStart ? (
+                                    <button
+                                      onClick={() => resetMergedCommercialStart('summer')}
                                       className="px-2 py-0.5 rounded-full text-xs bg-green-200 text-green-800 font-medium hover:bg-red-200 hover:text-red-800 cursor-pointer"
                                     >
-                                      ← start {w.season === 'summer' ? 'lata' : 'jesieni'}
+                                      ← start lata
+                                    </button>
+                                  ) : isAutumnStart ? (
+                                    <button
+                                      onClick={() => resetMergedCommercialStart('autumn')}
+                                      className="px-2 py-0.5 rounded-full text-xs bg-red-200 text-red-800 font-medium hover:bg-gray-200 hover:text-gray-800 cursor-pointer"
+                                    >
+                                      ← start jesieni
                                     </button>
                                   ) : (
                                     <span className={`px-2 py-0.5 rounded-full text-xs ${
-                                      isPreHarvestForSeason
-                                        ? 'bg-gray-200 text-gray-600'
-                                        : w.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'
+                                      daySeason === 'preharvest' ? 'bg-gray-200 text-gray-600'
+                                        : daySeason === 'autumn' ? 'bg-red-100 text-red-700'
+                                        : 'bg-orange-100 text-orange-700'
                                     }`}>
-                                      {isPreHarvestForSeason ? 'Pośpiech' : w.season === 'summer' ? 'Lato' : 'Jesień'}
+                                      {daySeason === 'preharvest' ? 'Pośpiech' : daySeason === 'autumn' ? 'Jesień' : 'Lato'}
                                     </span>
-                                  )
-                                ) : (
-                                  <button
-                                    onClick={() => markMergedCommercialStart(d.date, w.season as 'summer' | 'autumn')}
-                                    className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                  >
-                                    Oznacz jako start
-                                  </button>
-                                )}
-                              </td>
-                              <td />
-                            </tr>
-                            )
-                          })}
-                        </React.Fragment>
-                      )
-                    })}
+                                  )}
+                                </td>
+                                <td />
+                              </tr>
+                              )
+                            })}
+                          </React.Fragment>
+                        )
+                      })
+                    })()}
                     <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
                       <td className="py-2 px-3">Razem</td>
                       <td className="py-2 px-3 text-right">{mergedTotalKg.toLocaleString('pl-PL', { maximumFractionDigits: 0 })} kg</td>
                       <td className="py-2 px-3 text-right">100%</td>
                       <td className="py-2 px-3 text-right text-gray-400"></td>
                       <td className="py-2 px-3 text-center text-xs text-gray-500">
-                        {mergedSummerKg > 0 && <span className="text-orange-600">☀️ {(mergedSummerKg/1000).toFixed(1)}t</span>}
-                        {mergedSummerKg > 0 && mergedAutumnKg > 0 && ' · '}
-                        {mergedAutumnKg > 0 && <span className="text-red-600">🍂 {(mergedAutumnKg/1000).toFixed(1)}t</span>}
+                        {(() => {
+                          const cSumKg = mergedWeeks.filter(w => getWeekComputedSeason(w.week) === 'summer').reduce((s, w) => s + w.kg, 0)
+                          const cAutKg = mergedWeeks.filter(w => getWeekComputedSeason(w.week) === 'autumn').reduce((s, w) => s + w.kg, 0)
+                          return <>
+                            {cSumKg > 0 && <span className="text-orange-600">☀️ {(cSumKg/1000).toFixed(1)}t</span>}
+                            {cSumKg > 0 && cAutKg > 0 && ' · '}
+                            {cAutKg > 0 && <span className="text-red-600">🍂 {(cAutKg/1000).toFixed(1)}t</span>}
+                          </>
+                        })()}
                       </td>
                       <td />
                     </tr>
@@ -1109,7 +1183,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
               <CardContent className="pt-4 space-y-3">
                 {renderChart(savedCurves)}
                 <table className="w-full text-sm">
-                  <thead><tr className="border-b bg-gray-50">{mergeMode && <th className="w-10 py-2 px-3"></th>}<th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Nazwa/Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
+                  <thead><tr className="border-b bg-gray-50">{mergeMode && <th className="w-10 py-2 px-3"></th>}<th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Nazwa/Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="text-center py-2 px-3">Sezon</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
                   <tbody>{savedCurves.map(c => (
                     <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''} ${mergeCurveIds.includes(c.id) ? 'bg-blue-50' : ''} ${c.isArchived ? 'opacity-50 bg-gray-50' : ''}`}>
                       {mergeMode && <td className="py-2 px-3">{!c.isArchived && <input type="checkbox" checked={mergeCurveIds.includes(c.id)} onChange={() => toggleMergeSelection(c.id)} className="w-4 h-4 accent-blue-600" />}</td>}
@@ -1118,6 +1192,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                       <td className="py-2 px-3 text-gray-600">{c.name || c.section?.name || '—'}</td>
                       <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
                       <td className="py-2 px-3 text-gray-500">T{c.startWeek}</td>
+                      <td className="py-2 px-3 text-center"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.season === 'summer' ? 'bg-orange-100 text-orange-700' : c.season === 'autumn' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{c.season === 'summer' ? '☀️ Lato' : c.season === 'autumn' ? '🍂 Jesień' : '📅 Cały rok'}</span></td>
                       <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1">{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button>}{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>}</div></td>
                     </tr>
                   ))}</tbody>

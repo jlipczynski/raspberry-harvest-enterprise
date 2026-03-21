@@ -45,31 +45,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Helper: upsert readings to a specific section
-    const upsertReadings = async (sectionId: string, readings: TemperatureRecord[], sourceFileName: string) => {
-      let inserted = 0
-      for (const reading of readings) {
-        await prisma.temperatureReading.upsert({
-          where: {
-            sectionId_timestamp: {
-              sectionId,
-              timestamp: reading.timestamp,
-            },
-          },
-          update: {
-            temperature: reading.temperature,
-            sourceFile: sourceFileName,
-          },
-          create: {
-            sectionId,
-            timestamp: reading.timestamp,
-            temperature: reading.temperature,
-            sourceFile: sourceFileName,
-          },
-        })
-        inserted++
-      }
-      return inserted
+    // Helper: bulk insert readings to a specific section (skip duplicates)
+    const insertReadings = async (sectionId: string, readings: TemperatureRecord[], sourceFileName: string) => {
+      const result = await prisma.temperatureReading.createMany({
+        data: readings.map(r => ({
+          sectionId,
+          timestamp: r.timestamp,
+          temperature: r.temperature,
+          sourceFile: sourceFileName,
+        })),
+        skipDuplicates: true,
+      })
+      return result.count
     }
 
     // Fetch blocks once for matching
@@ -94,7 +81,7 @@ export async function POST(request: NextRequest) {
             { status: 422 }
           )
         }
-        const inserted = await upsertReadings(targetSectionId, sheet.readings, file.name)
+        const inserted = await insertReadings(targetSectionId, sheet.readings, file.name)
         const section = await prisma.section.findUnique({ where: { id: targetSectionId }, select: { name: true } })
         return NextResponse.json({
           success: true,
@@ -130,7 +117,7 @@ export async function POST(request: NextRequest) {
         }
 
         for (const match of matches) {
-          const inserted = await upsertReadings(match.sectionId, sheet.readings, file.name)
+          const inserted = await insertReadings(match.sectionId, sheet.readings, file.name)
           totalInserted += inserted
           sections.push({
             sheetName: sheet.sheetName,
@@ -181,7 +168,7 @@ export async function POST(request: NextRequest) {
           { status: 422 }
         )
       }
-      const inserted = await upsertReadings(targetSectionId, readings, file.name)
+      const inserted = await insertReadings(targetSectionId, readings, file.name)
       const section = await prisma.section.findUnique({ where: { id: targetSectionId }, select: { name: true } })
       return NextResponse.json({
         success: true,
@@ -229,7 +216,7 @@ export async function POST(request: NextRequest) {
     const results: Array<{ sectionId: string; sectionName: string | null; inserted: number }> = []
 
     for (const match of matches) {
-      const inserted = await upsertReadings(match.sectionId, readings, file.name)
+      const inserted = await insertReadings(match.sectionId, readings, file.name)
       totalInserted += inserted
       results.push({
         sectionId: match.sectionId,

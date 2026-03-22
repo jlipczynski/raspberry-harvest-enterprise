@@ -167,6 +167,26 @@ async function main() {
     }
   }
 
+  // KROK 7b — skopiuj TemperatureReadings dla każdej sekcji
+  let totalReadings = 0
+  for (const [sourceId, targetId] of sectionIdMap.entries()) {
+    const readings = await prisma.temperatureReading.findMany({
+      where: { sectionId: sourceId },
+      orderBy: { timestamp: 'asc' }
+    })
+    if (readings.length === 0) continue
+    await prisma.temperatureReading.createMany({
+      data: readings.map(r => ({
+        timestamp: r.timestamp,
+        temperature: r.temperature,
+        sourceFile: r.sourceFile,
+        sectionId: targetId,
+      }))
+    })
+    totalReadings += readings.length
+    console.log(`  Skopiowano ${readings.length} pomiarów dla sekcji ${targetId}`)
+  }
+
   // KROK 8 — skopiuj ProductionCurveTemplate
   const templates = await prisma.productionCurveTemplate.findMany({
     where: { tenantId: sourceUser.tenantId }
@@ -224,6 +244,7 @@ async function main() {
   console.log(`   Sekcji: ${sectionIdMap.size}`)
   console.log(`   Danych pogodowych: ${weatherData.length}`)
   console.log(`   Szablonów: ${templates.length}`)
+  console.log(`   Pomiarów temperatury: ${totalReadings}`)
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect())

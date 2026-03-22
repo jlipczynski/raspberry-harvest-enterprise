@@ -66,9 +66,14 @@ interface WeekCell {
   progress: number // 0-100 toward next threshold
 }
 
-export default function GDHMatrix() {
-  const [data, setData] = useState<ApiResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+interface Props {
+  initialData: ApiResponse | null
+  initialLoading: boolean
+}
+
+export default function GDHMatrix({ initialData, initialLoading }: Props) {
+  const [data, setData] = useState<ApiResponse | null>(initialData)
+  const [loading, setLoading] = useState(initialLoading)
   const [scenario, setScenario] = useState<Scenario>('p50')
   const [activeScenarios, setActiveScenarios] = useState<Set<AllScenario>>(new Set(ALL_SCENARIOS))
   const dateTableRef = useRef<HTMLDivElement>(null)
@@ -86,19 +91,11 @@ export default function GDHMatrix() {
   }, [])
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const res = await fetch('/api/gdh')
-        const json = await res.json()
-        setData(json)
-      } catch (e) {
-        console.error('Error fetching GDH matrix data:', e)
-      } finally {
-        setLoading(false)
-      }
+    if (initialData) {
+      setData(initialData)
+      setLoading(false)
     }
-    fetchData()
-  }, [])
+  }, [initialData])
 
   const sections = useMemo(() => data?.sections?.filter(s => s.totalReadings > 0 || s.flowerThreshold || s.fruitThreshold) || [], [data?.sections])
   const forecast = data?.forecast

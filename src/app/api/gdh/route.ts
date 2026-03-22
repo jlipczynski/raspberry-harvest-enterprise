@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { Prisma } from '@prisma/client'
 import { NextResponse } from 'next/server'
 import { requireTenantId } from '@/lib/tenant'
 
@@ -178,6 +179,35 @@ export async function GET(request: Request) {
 
     if (lat && lon) {
       try {
+        // === Cache check — tylko dla dynamic offset ===
+        if (!useStaticOffset) {
+          const cached = await prisma.forecastCache.findUnique({
+            where: { farmId: farm.id }
+          })
+          const cacheAgeMs = cached ? Date.now() - cached.cachedAt.getTime() : Infinity
+          const cacheValid = cacheAgeMs < 24 * 60 * 60 * 1000 // 24h
+
+          if (cached && cacheValid) {
+            forecast = {
+              meteoDays: cached.meteoDays as { date: string; gdhTunnel: number }[],
+              scenarios: cached.scenarios as { p10: { date: string; gdhTunnel: number }[]; p50: { date: string; gdhTunnel: number }[]; p90: { date: string; gdhTunnel: number }[]; best?: { date: string; gdhTunnel: number }[] },
+              seasonalAnomaly: cached.seasonalAnomaly as { months: Array<{ month: string; anomaly: number }>; avgAnomaly: number; verdict: string } | null,
+              lastForecastDate: cached.lastForecastDate,
+              historicalYears: cached.historicalYears,
+              tunnelModel: {
+                alpha: TUNNEL_ALPHA,
+                offsetModel: 'dynamic',
+                staticOffset: null,
+                maxOffset: MAX_OFFSET,
+                radiationK: RADIATION_K,
+              },
+              fromCache: true,
+            }
+            // Pomiń cały fetch Open-Meteo — skocz do return
+          }
+        }
+
+        if (!forecast) {
         // === 1. Fetch 16-day hourly forecast from Open-Meteo (with radiation for dynamic offset) ===
         const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,is_day,shortwave_radiation&forecast_days=16&timezone=Europe/Warsaw`
         const forecastRes = await fetch(forecastUrl)
@@ -382,6 +412,31 @@ export async function GET(request: Request) {
           },
           historicalYears,
         }
+
+        // Zapisz do cache jeśli dynamic offset
+        if (!useStaticOffset && forecast) {
+          await prisma.forecastCache.upsert({
+            where: { farmId: farm.id },
+            create: {
+              farmId: farm.id,
+              meteoDays: forecast.meteoDays,
+              scenarios: forecast.scenarios,
+              seasonalAnomaly: forecast.seasonalAnomaly ?? Prisma.JsonNull,
+              lastForecastDate: forecast.lastForecastDate,
+              historicalYears: forecast.historicalYears,
+              cachedAt: new Date(),
+            },
+            update: {
+              meteoDays: forecast.meteoDays,
+              scenarios: forecast.scenarios,
+              seasonalAnomaly: forecast.seasonalAnomaly ?? Prisma.JsonNull,
+              lastForecastDate: forecast.lastForecastDate,
+              historicalYears: forecast.historicalYears,
+              cachedAt: new Date(),
+            },
+          })
+        }
+        } // zamknięcie if (!forecast)
       } catch (e) {
         console.error('Forecast fetch error:', e)
       }

@@ -54,7 +54,8 @@ model Farm {
   blocks          Block[]
   workers         Worker[]
   weatherData     WeatherData[]
-  
+  forecastCache   ForecastCache?
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   
@@ -477,4 +478,20 @@ model Feedback {
   userEmail String?
   tenantName String?
   createdAt DateTime @default(now())
+}
+
+// ==================== FORECAST CACHE ====================
+model ForecastCache {
+  id              String   @id @default(cuid())
+  farmId          String   @unique
+  meteoDays       Json
+  scenarios       Json
+  seasonalAnomaly Json?
+  lastForecastDate String
+  historicalYears Int
+  cachedAt        DateTime @default(now())
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@map("forecast_cache")
 }

@@ -473,8 +473,8 @@ export default function PlanningPage() {
     return { weeks, sectionDetails }
   }, [allPlantationSections, sectionFruitDates, hoursPerDay, staffingTiers])
 
-  const peakPickers = Math.max(...weeklyPlan.sectionDetails.flatMap(d => d.dailyKg).map(d => { const hrs = Math.round(d.kg / 5); return Math.ceil(hrs / (hoursPerDay || 8)); }), 0)
-  const peakTotalStaff = Math.max(...weeklyPlan.sectionDetails.flatMap(d => d.dailyKg).map(day => { const tier = matchStaffingTier(day.kg, staffingTiers); const hrs = Math.round(day.kg / 5); const pickers = Math.ceil(hrs / (hoursPerDay || 8)); return pickers + (tier?.qualityControl || 0) + (tier?.weighingStaff || 0) + (tier?.infrastructure || 0); }), 0)
+  // peakPickers obliczane po filteredPlanData — patrz linia ~597
+  // peakTotalStaff obliczane po filteredPlanData — patrz linia ~598
   const totalKgAll = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalKg, 0)
   const totalSummerKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalSummerKg, 0)
   const totalAutumnKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalAutumnKg, 0)
@@ -594,6 +594,8 @@ export default function PlanningPage() {
 
     return { weeks, days }
   }, [weeklyPlan, planSections, planDateMode, planDateFrom, planDateTo, hoursPerDay, staffingTiers])
+  const peakPickers = Math.max(...(filteredPlanData.days.map(d => d.pickers)), 0)
+  const peakTotalStaff = Math.max(...(filteredPlanData.days.map(d => d.totalStaff)), 0)
 
   // ==================== PDF EXPORT ====================
   const handleExportPdf = useCallback(async () => {

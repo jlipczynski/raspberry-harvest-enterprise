@@ -148,7 +148,7 @@ export default function PlanningPage() {
   const [curveDropdownOpen, setCurveDropdownOpen] = useState<string | null>(null)
   const [showCurveAssignment, setShowCurveAssignment] = useState(false)
   const [planView, setPlanView] = useState<'weekly' | 'daily'>('weekly')
-  const [planSections, setPlanSections] = useState<string[]>(['all'])
+  const [planSections, setPlanSections] = useState<string>('all')
   const [planDateMode, setPlanDateMode] = useState<'season' | 'range'>('season')
   const [planDateFrom, setPlanDateFrom] = useState<string>('')
   const [planDateTo, setPlanDateTo] = useState<string>('')
@@ -483,76 +483,46 @@ export default function PlanningPage() {
 
   // ==================== FILTERED PLAN DATA ====================
   const filteredPlanData = useMemo(() => {
+    if (!weeklyPlan.sectionDetails.length) return { weeks: [], days: [] }
+
     const year = new Date().getFullYear()
-    const DAY_NAMES_PL = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb']
+    const DAY_SHORT = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb']
 
-    const selectedDetails = planSections.includes('all')
+    // Filtruj sekcje
+    const activeSections = planSections === 'all'
       ? weeklyPlan.sectionDetails
-      : weeklyPlan.sectionDetails.filter(d => planSections.includes(d.section.id))
+      : weeklyPlan.sectionDetails.filter(d => d.section.id === planSections)
 
-    // === WEEKLY DATA ===
-    const weekKgMap = new Map<number, number>()
-    const weekHrsMap = new Map<number, number>()
-    for (const detail of selectedDetails) {
-      for (const wk of detail.weeklyKg) {
-        weekKgMap.set(wk.week, (weekKgMap.get(wk.week) || 0) + wk.kg)
-        weekHrsMap.set(wk.week, (weekHrsMap.get(wk.week) || 0) + Math.round(wk.kg / detail.eff))
-      }
-    }
+    // Zakres dat
+    const fromDate = planDateMode === 'range' && planDateFrom ? planDateFrom : null
+    const toDate = planDateMode === 'range' && planDateTo ? planDateTo : null
 
-    let filteredWeeks = weeklyPlan.weeks.map(w => {
-      const kg = planSections.includes('all') ? w.kg : (weekKgMap.get(w.week) || 0)
-      const dailyKg = Math.round(kg / 7)
-      const hrs = planSections.includes('all') ? w.hrs : (weekHrsMap.get(w.week) || 0)
-      const dailyHrs = Math.round(hrs / 7)
-      const pickers = Math.ceil(dailyHrs / hoursPerDay)
-      const tier = matchStaffingTier(dailyKg, staffingTiers)
-      const qc = tier?.qualityControl || 0
-      const weighing = tier?.weighingStaff || 0
-      const infra = tier?.infrastructure || 0
-      return { ...w, kg, dailyKg, hrs, dailyHrs, pickers, qc, weighing, infra, totalStaff: pickers + qc + weighing + infra }
-    }).filter(w => w.kg > 0)
-
-    if (planDateMode === 'range') {
-      filteredWeeks = filteredWeeks.filter(w => {
-        const jan1 = new Date(year, 0, 1)
-        const daysToMonday = (jan1.getDay() + 6) % 7
-        const monday = new Date(year, 0, 1 - daysToMonday + (w.week - 1) * 7)
-        const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6)
-        const sundayStr = sunday.toISOString().slice(0, 10)
-        const mondayStr = monday.toISOString().slice(0, 10)
-        if (planDateFrom && sundayStr < planDateFrom) return false
-        if (planDateTo && mondayStr > planDateTo) return false
-        return true
-      })
-    }
-
-    // === DAILY DATA ===
-    const dayMap = new Map<string, number>()
-    const dayHrsMap = new Map<string, number>()
-    for (const detail of selectedDetails) {
-      for (const day of detail.dailyKg) {
-        dayMap.set(day.date, (dayMap.get(day.date) || 0) + day.kg)
-        dayHrsMap.set(day.date, (dayHrsMap.get(day.date) || 0) + Math.round(day.kg / detail.eff))
-      }
-    }
-
-    let filteredDays = [...dayMap.entries()]
-      .map(([date, kg]) => {
-        const d = new Date(date)
-        const dayOfWeek = DAY_NAMES_PL[d.getDay()]
-        const totalHrs = dayHrsMap.get(date) || 0
-        const pickers = Math.ceil(totalHrs / hoursPerDay)
-        const tier = matchStaffingTier(kg, staffingTiers)
+    // ── Widok TYGODNIOWY ──
+    const weeks = weeklyPlan.weeks
+      .map(w => {
+        // Przelicz kg tylko dla wybranych sekcji
+        const kg = activeSections.reduce((sum, d) => {
+          const wd = d.weeklyKg.find(x => x.week === w.week)
+          return sum + (wd?.kg ?? 0)
+        }, 0)
+        // Przelicz godziny z per-section eff
+        const hrs = activeSections.reduce((sum, d) => {
+          const wd = d.weeklyKg.find(x => x.week === w.week)
+          return sum + Math.round((wd?.kg ?? 0) / d.eff)
+        }, 0)
+        const dailyKg = Math.round(kg / 7)
+        const dailyHrs = Math.round(hrs / 7)
+        const pickers = Math.ceil(dailyHrs / hoursPerDay)
+        const tier = matchStaffingTier(dailyKg, staffingTiers)
         const qc = tier?.qualityControl || 0
         const weighing = tier?.weighingStaff || 0
         const infra = tier?.infrastructure || 0
         return {
-          date,
-          dateFormatted: `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`,
-          dayOfWeek,
+          ...w,
           kg,
-          hrs: totalHrs,
+          dailyKg,
+          hrs,
+          dailyHrs,
           pickers,
           qc,
           weighing,
@@ -560,18 +530,69 @@ export default function PlanningPage() {
           totalStaff: pickers + qc + weighing + infra,
         }
       })
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .filter(d => d.kg > 0)
-
-    if (planDateMode === 'range') {
-      filteredDays = filteredDays.filter(d => {
-        if (planDateFrom && d.date < planDateFrom) return false
-        if (planDateTo && d.date > planDateTo) return false
+      .filter(w => {
+        if (w.kg <= 0) return false
+        if (!fromDate && !toDate) return true
+        // Oblicz daty tygodnia
+        const jan1 = new Date(year, 0, 1)
+        const daysToMonday = (jan1.getDay() + 6) % 7
+        const monday = new Date(year, 0, 1 - daysToMonday + (w.week - 1) * 7)
+        const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6)
+        if (fromDate && sunday < new Date(fromDate)) return false
+        if (toDate && monday > new Date(toDate)) return false
         return true
       })
+
+    // ── Widok DZIENNY ──
+    // Zbierz wszystkie daty z dailyKg wszystkich aktywnych sekcji
+    const dayMap = new Map<string, { kg: number; summerKg: number; autumnKg: number; hrs: number; sectionKg: Record<string, number> }>()
+    for (const detail of activeSections) {
+      for (const d of detail.dailyKg) {
+        if (d.kg <= 0) continue
+        if (fromDate && d.date < fromDate) continue
+        if (toDate && d.date > toDate) continue
+        const existing = dayMap.get(d.date)
+        if (existing) {
+          existing.kg += d.kg
+          existing.summerKg += d.summerKg
+          existing.autumnKg += d.autumnKg
+          existing.hrs += Math.round(d.kg / detail.eff)
+          existing.sectionKg[detail.section.id] = (existing.sectionKg[detail.section.id] ?? 0) + d.kg
+        } else {
+          const sectionKg: Record<string, number> = {}
+          sectionKg[detail.section.id] = d.kg
+          dayMap.set(d.date, { kg: d.kg, summerKg: d.summerKg, autumnKg: d.autumnKg, hrs: Math.round(d.kg / detail.eff), sectionKg })
+        }
+      }
     }
 
-    return { weeks: filteredWeeks, days: filteredDays }
+    const days = [...dayMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, data]) => {
+        const d = new Date(date)
+        const pickers = Math.ceil(data.hrs / hoursPerDay)
+        const tier = matchStaffingTier(data.kg, staffingTiers)
+        const qc = tier?.qualityControl || 0
+        const weighing = tier?.weighingStaff || 0
+        const infra = tier?.infrastructure || 0
+        return {
+          date,
+          dateDisplay: `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`,
+          dayName: DAY_SHORT[d.getDay()],
+          kg: data.kg,
+          summerKg: data.summerKg,
+          autumnKg: data.autumnKg,
+          hrs: data.hrs,
+          pickers,
+          qc,
+          weighing,
+          infra,
+          totalStaff: pickers + qc + weighing + infra,
+          sectionKg: data.sectionKg,
+        }
+      })
+
+    return { weeks, days }
   }, [weeklyPlan, planSections, planDateMode, planDateFrom, planDateTo, hoursPerDay, staffingTiers])
 
   // ==================== PDF EXPORT ====================
@@ -1060,8 +1081,8 @@ export default function PlanningPage() {
               {/* Section select */}
               <select
                 className="border rounded-lg px-3 py-1.5 text-sm"
-                value={planSections.includes('all') ? 'all' : planSections[0]}
-                onChange={e => setPlanSections(e.target.value === 'all' ? ['all'] : [e.target.value])}>
+                value={planSections}
+                onChange={e => setPlanSections(e.target.value)}>
                 <option value="all">Cała plantacja</option>
                 {weeklyPlan.sectionDetails.map(d => (
                   <option key={d.section.id} value={d.section.id}>
@@ -1137,7 +1158,12 @@ export default function PlanningPage() {
             )}
 
             {/* Daily view */}
-            {planView === 'daily' && (
+            {planView === 'daily' && (() => {
+              const dailySections = planSections === 'all'
+                ? weeklyPlan.sectionDetails
+                : weeklyPlan.sectionDetails.filter(d => d.section.id === planSections)
+              const sectionColSpan = dailySections.length
+              return (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm border-collapse">
                   <thead>
@@ -1145,6 +1171,11 @@ export default function PlanningPage() {
                       <th className="text-left py-2 px-3">Data</th>
                       <th className="text-left py-2 px-3">Dzień</th>
                       <th className="text-right py-2 px-3">kg/dzień</th>
+                      {dailySections.map(sec => (
+                        <th key={sec.section.id} className="text-right py-2 px-2 text-xs text-gray-400 max-w-[80px] truncate" title={`${sec.section.blockName}/${sec.section.name}`}>
+                          {sec.section.blockName}/{sec.section.name}
+                        </th>
+                      ))}
                       <th className="text-right py-2 px-3">h pracy</th>
                       <th className="text-right py-2 px-3 text-blue-600">Zbieracze</th>
                       <th className="text-right py-2 px-3 text-amber-600">KJ</th>
@@ -1155,10 +1186,18 @@ export default function PlanningPage() {
                   </thead>
                   <tbody>
                     {filteredPlanData.days.map(d => (
-                      <tr key={d.date} className={`border-b ${d.dayOfWeek === 'Sb' || d.dayOfWeek === 'Nd' ? 'bg-gray-50' : ''}`}>
-                        <td className="py-2 px-3 font-medium">{d.dateFormatted}</td>
-                        <td className="py-2 px-3 text-gray-600">{d.dayOfWeek}</td>
+                      <tr key={d.date} className={`border-b ${d.dayName === 'Sb' || d.dayName === 'Nd' ? 'bg-gray-50' : ''}`}>
+                        <td className="py-2 px-3 font-medium">{d.dateDisplay}</td>
+                        <td className="py-2 px-3 text-gray-600">{d.dayName}</td>
                         <td className="text-right px-3 font-medium">{d.kg.toLocaleString('pl-PL')} kg</td>
+                        {dailySections.map(sec => {
+                          const secKg = d.sectionKg[sec.section.id] ?? 0
+                          return (
+                            <td key={sec.section.id} className="text-right px-2 text-xs text-gray-500">
+                              {secKg > 0 ? secKg.toLocaleString('pl-PL') : '—'}
+                            </td>
+                          )
+                        })}
                         <td className="text-right px-3 text-gray-500">{d.hrs}h</td>
                         <td className="text-right px-3 font-semibold text-blue-600">{d.pickers}</td>
                         <td className="text-right px-3 text-amber-600">{d.qc}</td>
@@ -1171,6 +1210,12 @@ export default function PlanningPage() {
                     <tr className="border-t-2 border-gray-300 font-bold">
                       <td className="py-2 px-3" colSpan={2}>SUMA</td>
                       <td className="text-right px-3">{filteredPlanData.days.reduce((s, d) => s + d.kg, 0).toLocaleString('pl-PL')} kg</td>
+                      {dailySections.map(sec => {
+                        const total = filteredPlanData.days.reduce((s, d) => s + (d.sectionKg[sec.section.id] ?? 0), 0)
+                        return (
+                          <td key={sec.section.id} className="text-right px-2 text-xs">{total > 0 ? total.toLocaleString('pl-PL') : '—'}</td>
+                        )
+                      })}
                       <td className="text-right px-3 text-gray-500">{filteredPlanData.days.reduce((s, d) => s + d.hrs, 0)}h</td>
                       <td className="text-right px-3 text-blue-600">{Math.max(...filteredPlanData.days.map(d => d.pickers), 0)}</td>
                       <td className="text-right px-3 text-amber-600" colSpan={3}></td>
@@ -1179,7 +1224,8 @@ export default function PlanningPage() {
                   </tbody>
                 </table>
               </div>
-            )}
+              )
+            })()}
           </div>
 
           {/* Per-section breakdown */}

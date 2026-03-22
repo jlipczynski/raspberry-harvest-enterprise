@@ -342,7 +342,7 @@ export default function PlanningPage() {
 
       // --- SUMMER daily distribution ---
       if (summerKg > 0 && fruitDate && summerWeeklyCurve) {
-        if (summerDailyCurve?.length && summerStartDate) {
+        if (summerDailyCurve?.length && fruitDate) {
           // Use daily curve from template — real per-day distribution
           summerDailyCurve.forEach((pct, i) => {
             const d = new Date(fruitDate)

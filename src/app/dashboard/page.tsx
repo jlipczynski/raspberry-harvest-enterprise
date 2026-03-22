@@ -54,7 +54,7 @@ function countdown(targetDate: string) {
   return { days, hours, minutes }
 }
 
-function computeDates(gdhData: GdhApiResponse): Map<string, { flowerDate: string | null; fruitDate: string | null }> {
+function computeDates(gdhData: GdhApiResponse, scenario: 'p10'|'p50'|'p90'|'best'): Map<string, { flowerDate: string | null; fruitDate: string | null }> {
   const result = new Map<string, { flowerDate: string | null; fruitDate: string | null }>()
   if (!gdhData?.sections?.length || !gdhData.forecast) return result
 
@@ -87,7 +87,9 @@ function computeDates(gdhData: GdhApiResponse): Map<string, { flowerDate: string
       dailyGdh.set(day.date, Math.round(cumGdh))
     }
 
-    const scenarioData = forecast.scenarios.best || forecast.scenarios.p50
+    const scenarioData = scenario === 'best'
+      ? (forecast.scenarios.best || forecast.scenarios.p50)
+      : forecast.scenarios[scenario]
     for (const day of scenarioData) {
       if (gdhStartDate && day.date < gdhStartDate) continue
       cumGdh += day.gdhTunnel
@@ -114,6 +116,7 @@ export default function DashboardPage() {
   const [plantationData, setPlantationData] = useState<PlantationData | null>(null)
   const [gdhData, setGdhData] = useState<GdhApiResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  const [scenario, setScenario] = useState<'p10'|'p50'|'p90'|'best'>('best')
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
@@ -171,8 +174,8 @@ export default function DashboardPage() {
   // ==================== GDH DATES ====================
   const sectionDates = useMemo(() => {
     if (!gdhData) return new Map<string, { flowerDate: string | null; fruitDate: string | null }>()
-    return computeDates(gdhData)
-  }, [gdhData])
+    return computeDates(gdhData, scenario)
+  }, [gdhData, scenario])
 
   // ==================== FLOWER SECTIONS ====================
   const flowerSections = useMemo(() => {
@@ -243,9 +246,21 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Panel główny</h1>
-        <p className="text-gray-500">{farmName || 'Witaj w systemie zarządzania plantacją'}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Panel główny</h1>
+          <p className="text-gray-500">{farmName || 'Witaj w systemie zarządzania plantacją'}</p>
+        </div>
+        <select
+          className="h-8 border rounded-md px-2 text-xs bg-white"
+          value={scenario}
+          onChange={e => setScenario(e.target.value as 'p10'|'p50'|'p90'|'best')}
+        >
+          <option value="best">ECMWF — najbardziej prawdopodobny</option>
+          <option value="p50">P50 — typowy rok</option>
+          <option value="p90">P90 — ciepły rok</option>
+          <option value="p10">P10 — zimny rok</option>
+        </select>
       </div>
 
       {/* SEKCJA 1 — Podsumowanie plantacji */}
@@ -308,6 +323,7 @@ export default function DashboardPage() {
           <CardTitle className="flex items-center gap-2">
             <Flower2 className="w-5 h-5 text-pink-500" />
             Do pierwszego kwitnienia
+            <span className="text-xs text-gray-400 font-normal">Scenariusz: {scenario.toUpperCase()}</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -362,6 +378,7 @@ export default function DashboardPage() {
           <CardTitle className="flex items-center gap-2">
             <Cherry className="w-5 h-5 text-red-500" />
             Do pierwszych zbiorów
+            <span className="text-xs text-gray-400 font-normal">Scenariusz: {scenario.toUpperCase()}</span>
           </CardTitle>
         </CardHeader>
         <CardContent>

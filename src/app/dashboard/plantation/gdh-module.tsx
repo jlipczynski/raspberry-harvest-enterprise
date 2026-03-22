@@ -92,12 +92,17 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
   const [offsetMode, setOffsetMode] = useState<'dynamic' | 'static'>('dynamic')
   const [staticOffset, setStaticOffset] = useState(4)
 
+  // Sync danych z parenta — bez fetcha
   useEffect(() => {
-    if (offsetMode === 'dynamic' && staticOffset === 4 && initialData) {
+    if (initialData) {
       setData(initialData)
       setLoading(false)
-      return
     }
+  }, [initialData])
+
+  // Re-fetch tylko gdy użytkownik zmieni offset — nie na mount
+  useEffect(() => {
+    if (offsetMode === 'dynamic' && staticOffset === 4) return
     async function fetchData() {
       try {
         setLoading(true)
@@ -116,7 +121,7 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
       }
     }
     fetchData()
-  }, [offsetMode, staticOffset, initialData])
+  }, [offsetMode, staticOffset])
 
   const sections = data?.sections || []
   const forecast = data?.forecast

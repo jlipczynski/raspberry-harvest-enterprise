@@ -478,8 +478,8 @@ export default function PlanningPage() {
   const totalKgAll = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalKg, 0)
   const totalSummerKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalSummerKg, 0)
   const totalAutumnKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalAutumnKg, 0)
-  const bottleneckThreshold = peakPickers * 0.8
-  const bottleneckWeeks = weeklyPlan.weeks.filter(w => w.pickers >= bottleneckThreshold)
+  // bottleneckThreshold — obliczane po filteredPlanData
+  // bottleneckWeeks — obliczane po filteredPlanData
 
   // ==================== FILTERED PLAN DATA ====================
   const filteredPlanData = useMemo(() => {
@@ -596,6 +596,8 @@ export default function PlanningPage() {
   }, [weeklyPlan, planSections, planDateMode, planDateFrom, planDateTo, hoursPerDay, staffingTiers])
   const peakPickers = Math.max(...(filteredPlanData.days.map(d => d.pickers)), 0)
   const peakTotalStaff = Math.max(...(filteredPlanData.days.map(d => d.totalStaff)), 0)
+  const bottleneckThreshold = peakPickers * 0.8
+  const bottleneckWeeks = weeklyPlan.weeks.filter(w => w.pickers >= bottleneckThreshold)
 
   // ==================== PDF EXPORT ====================
   const handleExportPdf = useCallback(async () => {

@@ -34,7 +34,7 @@ interface GdhApiResponse {
 }
 
 interface TemplateAssignment {
-  id: string; templateId: string; targetYear: number; season: string; adjustmentPercent: number; isActive: boolean
+  id: string; templateId: string; targetYear: number; season: string; adjustmentPercent: number; isActive: boolean; createdAt: string
   template: {
     id: string; name: string
     weeklyCurveSummer: number[]; dailyCurveSummer: number[]; startWeekSummer?: number; startDateSummer?: string; totalKgSummer: number
@@ -296,7 +296,9 @@ export default function PlanningPage() {
       // --- SUMMER ---
       const summerYield = section.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
       // Priority: 1. SectionTemplateAssignment curve  2. Section curve  3. Variety curve  4. Flat
-      const summerAssignment = (section.templateAssignments || []).find(a => a.season === 'summer' && a.isActive)
+      const summerAssignment = (section.templateAssignments || [])
+        .filter(a => a.season === 'summer' && a.isActive)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
       const sectionSummerCurve = (section.harvestCurveSummer as number[] | undefined)
       const varietySummerCurve = (v?.harvestCurveSummer as number[] | undefined)
       // Weekly curves for fallback
@@ -311,7 +313,9 @@ export default function PlanningPage() {
 
       // --- AUTUMN ---
       const autumnYield = section.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
-      const autumnAssignment = (section.templateAssignments || []).find(a => a.season === 'autumn' && a.isActive)
+      const autumnAssignment = (section.templateAssignments || [])
+        .filter(a => a.season === 'autumn' && a.isActive)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
       const sectionAutumnCurve = (section.harvestCurveAutumn as number[] | undefined)
       const varietyAutumnCurve = (v?.harvestCurveAutumn as number[] | undefined)
       const assignmentAutumnWeeklyCurve = autumnAssignment?.template?.weeklyCurveAutumn

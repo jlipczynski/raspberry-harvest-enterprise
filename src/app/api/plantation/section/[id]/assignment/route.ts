@@ -34,6 +34,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       plantingDate: body.plantingDate || null,
     }
     if (body.harvestCurveId) data.harvestCurve = { connect: { id: body.harvestCurveId } }
+    // Deaktywuj poprzednie przypisania dla tej sekcji+season+year
+    await prisma.sectionTemplateAssignment.updateMany({
+      where: {
+        sectionId: id,
+        season: body.season || 'summer',
+        targetYear: body.targetYear || new Date().getFullYear(),
+        isActive: true,
+        NOT: {
+          templateId: body.templateId,
+        }
+      },
+      data: { isActive: false }
+    })
     const assignment = await prisma.sectionTemplateAssignment.upsert({
       where: {
         sectionId_templateId_targetYear_season: {

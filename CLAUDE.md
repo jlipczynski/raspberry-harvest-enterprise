@@ -253,3 +253,80 @@ yield = shoots × yieldPerShoot
   - `commercialStartDateAutumn` = start jesieni (klikany przez użytkownika)
   - `detectSummerEnd` = tylko wizualna sugestia, NIGDY nie decyduje o zapisie
 - Jeden szablon per blok — nie osobno lato i jesień
+
+## ⛔ KRYTYCZNE ZASADY ARCHITEKTONICZNE — NIGDY NIE ŁAM
+
+### 1. Data startu zbiorów pochodzi WYŁĄCZNIE z GDH (`fruitDate`)
+`fruitDate` = data gdy skumulowane GDH sekcji osiągnie `fruitThreshold`.
+Obliczana z: realnych pomiarów loggerów → prognoza 16-dniowa Open-Meteo → scenariusz klimatologiczny.
+
+**NIGDY nie używaj jako punktu startowego zbiorów:**
+- `startDateSummer` z ProductionCurveTemplate
+- `startDateAutumn` z ProductionCurveTemplate
+- żadnej innej daty z szablonu
+
+**Szablon dostarcza WYŁĄCZNIE procenty rozkładu (0-100%).**
+Punkt startowy procentów = zawsze `fruitDate`.
+
+Weryfikacja po każdej zmianie w planning/page.tsx:
+```bash
+grep -n "new Date(summerStartDate)\|new Date(autumnStartDate)" src/app/dashboard/planning/page.tsx
+# Wynik musi być PUSTY
+```
+
+### 2. Wolumen zbiorów pochodzi WYŁĄCZNIE z sekcji/odmiany
+```
+kg = poty × pędy × norma_kg_per_pęd
+poty = potsOverride ?? (metersLength × potsPerMeter)
+norma = section.yieldSummerPerShoot ?? variety.yieldSummerPerShoot
+```
+**NIGDY nie używaj `totalKgSummer` z szablonu jako wolumenu zbiorów.**
+Szablon nie zna liczby doniczek ani pędów konkretnej sekcji.
+
+### 3. ProductionCurveTemplate — co przechowuje, co nie
+| Pole | Znaczenie | Używać do |
+|------|-----------|-----------|
+| `dailyCurveSummer` | % dzienne (0-100) | Rozkład kg w czasie |
+| `weeklyCurveSummer` | % tygodniowe (0-100) | Rozkład kg w czasie |
+| `totalKgSummer` | Historyczne kg z MaxCrop | NIE DO PLANOWANIA |
+| `startDateSummer` | Data z historii 2024/2025 | NIE JAKO START ZBIORÓW |
+
+### 4. Hierarchia krzywej zbiorów
+```
+1. SectionTemplateAssignment → weeklyCurveSummer/dailyCurveSummer
+2. section.harvestCurveSummer
+3. variety.harvestCurveSummer
+4. BRAK krzywej → pokazuj ostrzeżenie, nie generuj danych
+```
+**NIGDY nie dodawaj fallbacku który generuje dane bez krzywej.**
+
+### 5. Fallbacki — zasada zerowej tolerancji
+**Jeśli brakuje kluczowych danych — pokaż błąd, nie generuj danych.**
+
+❌ NIEDOPUSZCZALNE fallbacki:
+- Płaska krzywa 10×10% gdy brak krzywej
+- Użycie daty z szablonu gdy brak fruitDate
+- Użycie totalKg z szablonu gdy brak normy sekcji
+
+✅ POPRAWNA reakcja na brak danych:
+- Komunikat "Uzupełnij datę wysadzenia"
+- Komunikat "Brak krzywej zbiorów — wybierz szablon"
+- Sekcja bez danych = brak wierszy w tabeli
+
+### 6. Weryfikacja po każdej zmianie w planning/page.tsx
+```bash
+# 1. Brak użycia dat z szablonu jako punktu startowego
+grep -n "new Date(summerStartDate)\|new Date(autumnStartDate)" src/app/dashboard/planning/page.tsx
+# Wynik: PUSTY
+
+# 2. filteredPlanData istnieje i ma logikę
+grep -n "filteredPlanData" src/app/dashboard/planning/page.tsx
+# Wynik: minimum 5 wystąpień
+
+# 3. FLAT_CURVE nie istnieje
+grep -n "FLAT_CURVE" src/app/dashboard/planning/page.tsx
+# Wynik: PUSTY
+
+# 4. Build przechodzi
+npm run build
+```

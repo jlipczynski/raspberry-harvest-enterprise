@@ -1172,7 +1172,7 @@ export default function PlanningPage() {
                       <th className="text-left py-2 px-3">Dzień</th>
                       <th className="text-right py-2 px-3">kg/dzień</th>
                       {dailySections.map(sec => (
-                        <th key={sec.section.id} className="text-right py-2 px-2 text-xs text-gray-400 max-w-[80px] truncate" title={`${sec.section.blockName}/${sec.section.name}`}>
+                        <th key={sec.section.id} className="text-right py-2 px-2 text-xs text-gray-400 max-w-[80px] whitespace-normal break-words text-center" title={`${sec.section.blockName}/${sec.section.name}`}>
                           {sec.section.blockName}/{sec.section.name}
                         </th>
                       ))}

@@ -9,7 +9,7 @@ import GDHModule from './gdh-module'
 import GDHMatrix from './gdh-matrix'
 
 interface Variety { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number }
-interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; potsOverride?: number | null; plantingYear?: number; productionYear?: number; plantMaterialType?: string; plantSource?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string; _tempCount?: number }
+interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; potsOverride?: number | null; plantingYear?: number; productionYear?: number; plantMaterialType?: string; plantSource?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string; _tempCount?: number; _count?: { temperatureReadings: number } }
 interface Block { id: string; name: string; sections: Section[] }
 interface Farm { id: string; name: string }
 interface TempReading { id: string; timestamp: string; temperature: number; sourceFile?: string }
@@ -44,7 +44,13 @@ export default function PlantationPage() {
     try {
       const res = await fetch('/api/plantation')
       const data = await res.json()
-      setBlocks(data.blocks || []); setVarieties(data.varieties || []); setFarm(data.farm)
+      const bs = data.blocks || []
+      setBlocks(bs); setVarieties(data.varieties || []); setFarm(data.farm)
+      const counts: Record<string, number> = {}
+      bs.forEach((b: Block) => b.sections.forEach((s: Section) => {
+        counts[s.id] = s._count?.temperatureReadings ?? 0
+      }))
+      setTempCounts(counts)
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }
 
@@ -63,7 +69,7 @@ export default function PlantationPage() {
     setTempCounts(counts)
   }, [blocks])
 
-  useEffect(() => { fetchTempCounts() }, [blocks, fetchTempCounts])
+
 
   // Fetch temp readings for a specific section
   const fetchTempReadings = async (sectionId: string, page = 1) => {

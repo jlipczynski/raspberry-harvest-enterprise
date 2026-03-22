@@ -473,8 +473,8 @@ export default function PlanningPage() {
     return { weeks, sectionDetails }
   }, [allPlantationSections, sectionFruitDates, hoursPerDay, staffingTiers])
 
-  const peakPickers = Math.max(...weeklyPlan.sectionDetails.flatMap(d => d.dailyKg.map(day => { const tier = matchStaffingTier(day.kg, staffingTiers); const hrs = Math.round(day.kg / (d.eff || 5)); const pickers = Math.ceil(hrs / (hoursPerDay || 8)); return pickers; })), 0)
-  const peakTotalStaff = Math.max(...weeklyPlan.weeks.map(w => w.totalStaff), 0)
+  const peakPickers = Math.max(...weeklyPlan.sectionDetails.flatMap(d => d.dailyKg).map(d => { const hrs = Math.round(d.kg / 5); return Math.ceil(hrs / (hoursPerDay || 8)); }), 0)
+  const peakTotalStaff = Math.max(...weeklyPlan.sectionDetails.flatMap(d => d.dailyKg).map(day => { const tier = matchStaffingTier(day.kg, staffingTiers); const hrs = Math.round(day.kg / 5); const pickers = Math.ceil(hrs / (hoursPerDay || 8)); return pickers + (tier?.qualityControl || 0) + (tier?.weighingStaff || 0) + (tier?.infrastructure || 0); }), 0)
   const totalKgAll = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalKg, 0)
   const totalSummerKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalSummerKg, 0)
   const totalAutumnKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalAutumnKg, 0)

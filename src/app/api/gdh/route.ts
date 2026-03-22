@@ -146,9 +146,12 @@ export async function GET(request: Request) {
           fruitThreshold = section.gdhLcFruit ?? v?.gdhLcFruit ?? null
           thresholdType = 'lc'
         } else {
+          // Dla sekcji wysadzanych wiosną (SMALL_POT/ROOT/PLUG z datą wysadzenia)
+          // użyj gdhSummer jeśli ustawione, fallback na gdhAutumnFruit
           flowerThreshold = section.gdhAutumnFlower ?? v?.gdhAutumnFlower ?? null
-          fruitThreshold = section.gdhAutumnFruit ?? v?.gdhAutumnFruit ?? null
-          thresholdType = 'autumn'
+          fruitThreshold = section.gdhSummer ?? section.gdhAutumnFruit
+            ?? v?.gdhAutumnFruit ?? null
+          thresholdType = section.gdhSummer ? 'summer_planted' : 'autumn'
         }
 
         return {

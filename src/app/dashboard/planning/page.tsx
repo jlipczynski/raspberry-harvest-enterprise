@@ -640,6 +640,19 @@ export default function PlanningPage() {
 
   const noFruitDates = weeklyPlan.sectionDetails.length === 0 && allPlantationSections.length > 0
 
+  // Sections missing from planning — distinguish "no planting date" vs "future planting"
+  const plannedSectionIds = new Set(weeklyPlan.sectionDetails.map(d => d.section.id))
+  const today = new Date().toISOString().slice(0, 10)
+  const missingSections = allPlantationSections
+    .filter(s => !plannedSectionIds.has(s.id))
+    .map(s => {
+      const gdhSection = gdhData?.sections?.find(g => g.id === s.id)
+      const gdhStartDate = gdhSection?.gdhStartDate || null
+      return { section: s, gdhStartDate }
+    })
+  const sectionsNoPlantingDate = missingSections.filter(m => !m.gdhStartDate)
+  const sectionsFuturePlanting = missingSections.filter(m => m.gdhStartDate && m.gdhStartDate > today)
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
@@ -767,6 +780,34 @@ export default function PlanningPage() {
           <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto mb-2" />
           <p className="font-semibold text-amber-800">Brak dat owocowania</p>
           <p className="text-sm text-amber-600 mt-1">Żadna sekcja nie ma jeszcze prognozowanej daty owocowania z GDH. Sprawdź macierz plantacji — czy są odczyty temperatur i progi GDH?</p>
+        </div>
+      )}
+
+      {/* Missing sections warnings */}
+      {sectionsNoPlantingDate.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-amber-600" /><h3 className="font-semibold text-amber-800">Uzupełnij datę wysadzenia</h3></div>
+          <p className="text-sm text-amber-600 mb-3">Poniższe sekcje nie mają daty wysadzenia — nie można obliczyć GDH i daty owocowania.</p>
+          <div className="flex flex-wrap gap-2">
+            {sectionsNoPlantingDate.map(m => (
+              <span key={m.section.id} className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm">
+                {m.section.blockName}/{m.section.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sectionsFuturePlanting.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2"><Calendar className="w-5 h-5 text-blue-600" /><h3 className="font-semibold text-blue-800">Planowane wysadzenie</h3></div>
+          <div className="flex flex-wrap gap-2">
+            {sectionsFuturePlanting.map(m => (
+              <span key={m.section.id} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                {m.section.blockName}/{m.section.name}: {new Date(m.gdhStartDate!).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 

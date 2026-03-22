@@ -345,7 +345,7 @@ export default function PlanningPage() {
         if (summerDailyCurve?.length && summerStartDate) {
           // Use daily curve from template — real per-day distribution
           summerDailyCurve.forEach((pct, i) => {
-            const d = new Date(summerStartDate)
+            const d = new Date(fruitDate)
             d.setDate(d.getDate() + i)
             const dateStr = d.toISOString().slice(0, 10)
             const kg = Math.round(summerKg * pct / 100)

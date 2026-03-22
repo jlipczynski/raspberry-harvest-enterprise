@@ -40,7 +40,7 @@ interface SeasonalAnomaly {
   verdict: string
 }
 
-interface ApiResponse {
+export interface ApiResponse {
   sections: SectionGdh[]
   forecast: {
     meteoDays: ForecastDay[]
@@ -76,10 +76,15 @@ interface ScenarioPrediction {
 
 // ── Component ──
 
-export default function GDHModule() {
-  const [data, setData] = useState<ApiResponse | null>(null)
+interface Props {
+  initialData: ApiResponse | null
+  initialLoading: boolean
+}
+
+export default function GDHModule({ initialData, initialLoading }: Props) {
+  const [data, setData] = useState<ApiResponse | null>(initialData)
   const [selectedSectionId, setSelectedSectionId] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(initialLoading)
   const [showMethodology, setShowMethodology] = useState(false)
   const [visibleLines, setVisibleLines] = useState<Record<string, boolean>>({
     realGdh: true, meteoGdh: true, bestGdh: true, p90Gdh: true, p50Gdh: true, p10Gdh: true,
@@ -88,6 +93,11 @@ export default function GDHModule() {
   const [staticOffset, setStaticOffset] = useState(4)
 
   useEffect(() => {
+    if (offsetMode === 'dynamic' && staticOffset === 4 && initialData) {
+      setData(initialData)
+      setLoading(false)
+      return
+    }
     async function fetchData() {
       try {
         setLoading(true)
@@ -106,7 +116,7 @@ export default function GDHModule() {
       }
     }
     fetchData()
-  }, [offsetMode, staticOffset])
+  }, [offsetMode, staticOffset, initialData])
 
   const sections = data?.sections || []
   const forecast = data?.forecast

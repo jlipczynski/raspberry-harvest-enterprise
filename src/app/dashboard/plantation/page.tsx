@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp, Thermometer, Loader2, TrendingUp } from 'lucide-react'
-import GDHModule from './gdh-module'
+import GDHModule, { type ApiResponse as GdhApiResponse } from './gdh-module'
 import GDHMatrix from './gdh-matrix'
 
 interface Variety { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number }
@@ -37,8 +37,25 @@ export default function PlantationPage() {
   const [tempPage, setTempPage] = useState<Record<string, number>>({})
   const [tempTotalPages, setTempTotalPages] = useState<Record<string, number>>({})
   const [showGDH, setShowGDH] = useState(true)
+  const [gdhData, setGdhData] = useState<GdhApiResponse | null>(null)
+  const [gdhLoading, setGdhLoading] = useState(true)
 
   useEffect(() => { fetchData() }, [])
+
+  useEffect(() => {
+    async function fetchGdh() {
+      try {
+        const res = await fetch('/api/gdh')
+        const json = await res.json()
+        setGdhData(json)
+      } catch (e) {
+        console.error('Error fetching GDH:', e)
+      } finally {
+        setGdhLoading(false)
+      }
+    }
+    fetchGdh()
+  }, [])
 
   const fetchData = async () => {
     try {
@@ -170,7 +187,7 @@ export default function PlantationPage() {
         </button>
         {showGDH && (
           <div className="mt-3">
-            <GDHModule />
+            <GDHModule initialData={gdhData} initialLoading={gdhLoading} />
           </div>
         )}
       </div>
@@ -178,7 +195,7 @@ export default function PlantationPage() {
       {/* GDH Matrix - plantation overview */}
       {showGDH && (
         <div className="mt-3">
-          <GDHMatrix />
+          <GDHMatrix initialData={gdhData} initialLoading={gdhLoading} />
         </div>
       )}
 

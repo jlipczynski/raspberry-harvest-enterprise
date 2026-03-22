@@ -65,10 +65,6 @@ type Scenario = typeof ALL_SCENARIOS[number]
 const SCENARIO_LABELS: Record<Scenario, string> = { p90: 'P90 — ciepły rok', p50: 'P50 — typowy rok', p10: 'P10 — zimny rok', best: 'ECMWF' }
 const SCENARIO_SHORT: Record<Scenario, string> = { p90: 'P90', p50: 'P50', p10: 'P10', best: 'ECMWF' }
 
-// Flat distribution fallback — used ONLY when variety has no curves in DB
-// This produces a uniform spread; real curves should always come from DB (Variety or Section)
-const FLAT_CURVE_10W = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10] // 10 weeks, 10% each
-
 // ==================== TEMPLATE SCORING ====================
 const scoreTemplate = (t: AvailableTemplate, section: PlantationSection): number => {
   let score = 0
@@ -275,7 +271,7 @@ export default function PlanningPage() {
       totalKg: number
       totalSummerKg: number
       totalAutumnKg: number
-      curveSource: 'assignment' | 'section' | 'variety' | 'flat'
+      curveSource: 'assignment' | 'section' | 'variety' | 'none'
       summerAssignment: TemplateAssignment | null
       autumnAssignment: TemplateAssignment | null
       weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }>
@@ -308,7 +304,7 @@ export default function PlanningPage() {
       const summerWeeklyCurve = (assignmentSummerWeeklyCurve?.length ? assignmentSummerWeeklyCurve : null)
         ?? (sectionSummerCurve?.length ? sectionSummerCurve : null)
         ?? (varietySummerCurve?.length ? varietySummerCurve : null)
-        ?? FLAT_CURVE_10W
+        ?? null
       // Daily curves from template assignment (% per day)
       const summerDailyCurve = summerAssignment?.template?.dailyCurveSummer
       const summerStartDate = summerAssignment?.template?.startDateSummer
@@ -322,7 +318,7 @@ export default function PlanningPage() {
       const autumnWeeklyCurve = (assignmentAutumnWeeklyCurve?.length ? assignmentAutumnWeeklyCurve : null)
         ?? (sectionAutumnCurve?.length ? sectionAutumnCurve : null)
         ?? (varietyAutumnCurve?.length ? varietyAutumnCurve : null)
-        ?? FLAT_CURVE_10W
+        ?? null
       const autumnDailyCurve = autumnAssignment?.template?.dailyCurveAutumn
       const autumnStartDate = autumnAssignment?.template?.startDateAutumn
 
@@ -337,7 +333,7 @@ export default function PlanningPage() {
       const dailyKgMap = new Map<string, { summerKg: number; autumnKg: number }>()
 
       // --- SUMMER daily distribution ---
-      if (summerKg > 0 && fruitDate) {
+      if (summerKg > 0 && fruitDate && summerWeeklyCurve) {
         if (summerDailyCurve?.length && summerStartDate) {
           // Use daily curve from template — real per-day distribution
           summerDailyCurve.forEach((pct, i) => {
@@ -367,7 +363,7 @@ export default function PlanningPage() {
       }
 
       // --- AUTUMN daily distribution ---
-      if (autumnKg > 0 && autumnStartWeek) {
+      if (autumnKg > 0 && autumnStartWeek && autumnWeeklyCurve) {
         if (autumnDailyCurve?.length && autumnStartDate) {
           // Use daily curve from template
           autumnDailyCurve.forEach((pct, i) => {
@@ -430,7 +426,7 @@ export default function PlanningPage() {
       const curveSource = hasSummerAssignment || hasAutumnAssignment ? 'assignment' as const
         : (sectionSummerCurve?.length || sectionAutumnCurve?.length) ? 'section' as const
         : (varietySummerCurve?.length || varietyAutumnCurve?.length) ? 'variety' as const
-        : 'flat' as const
+        : 'none' as const
       sectionDetails.push({ section, fruitStartDate: fruitDate ?? null, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg, dailyKg: dailyKgArr, eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null })
     }
 
@@ -771,12 +767,12 @@ export default function PlanningPage() {
       )}
 
       {/* Curve assignment warnings */}
-      {weeklyPlan.sectionDetails.some(d => d.curveSource === 'flat') && (
+      {weeklyPlan.sectionDetails.some(d => d.curveSource === 'none') && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-amber-600" /><h3 className="font-semibold text-amber-800">Wybierz szablon zbiorów</h3></div>
-          <p className="text-sm text-amber-600 mb-3">Poniższe sekcje używają płaskiego rozkładu (10% × 10 tyg.) — wyniki będą niedokładne. Przypisz szablon.</p>
+          <p className="text-sm text-amber-600 mb-3">Poniższe sekcje nie mają krzywej zbiorów — nie są uwzględnione w prognozach. Przypisz szablon lub dodaj krzywą do odmiany.</p>
           <div className="flex flex-wrap gap-2">
-            {weeklyPlan.sectionDetails.filter(d => d.curveSource === 'flat').map(d => (
+            {weeklyPlan.sectionDetails.filter(d => d.curveSource === 'none').map(d => (
               <span key={d.section.id} className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm">
                 {d.section.blockName}/{d.section.name}
               </span>
@@ -799,7 +795,7 @@ export default function PlanningPage() {
                 ).sort((a, b) => scoreTemplate(b, d.section) - scoreTemplate(a, d.section))
                 const isOpen = curveDropdownOpen === d.section.id
                 return (
-                  <div key={d.section.id} className={`border rounded-lg p-3 ${d.curveSource === 'flat' ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200'}`}>
+                  <div key={d.section.id} className={`border rounded-lg p-3 ${d.curveSource === 'none' ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200'}`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <span className="text-sm font-medium"><span className="text-gray-400">{d.section.blockName}/</span>{d.section.name}</span>
@@ -812,7 +808,7 @@ export default function PlanningPage() {
                         }`}>
                           {d.curveSource === 'assignment' ? 'Szablon' :
                            d.curveSource === 'section' ? 'Sekcja' :
-                           d.curveSource === 'variety' ? 'Odmiana' : 'Brak krzywej'}
+                           d.curveSource === 'variety' ? 'Odmiana' : 'Brak krzywej zbiorów'}
                         </span>
                         {d.summerAssignment && <span className="text-xs text-green-600">{d.summerAssignment.template.name}</span>}
                         {d.autumnAssignment && <span className="text-xs text-amber-600">{d.autumnAssignment.template.name}</span>}
@@ -831,7 +827,7 @@ export default function PlanningPage() {
                         <button
                           onClick={() => unassignCurve(d.section.id)}
                           className={`w-full text-left px-3 py-2 rounded-lg text-sm border transition-colors ${
-                            d.curveSource === 'variety' || d.curveSource === 'flat'
+                            d.curveSource === 'variety' || d.curveSource === 'none'
                               ? 'border-purple-400 bg-purple-50 text-purple-700'
                               : 'border-gray-200 hover:bg-purple-50 text-gray-700'
                           }`}

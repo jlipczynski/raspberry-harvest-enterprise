@@ -473,7 +473,7 @@ export default function PlanningPage() {
     return { weeks, sectionDetails }
   }, [allPlantationSections, sectionFruitDates, hoursPerDay, staffingTiers])
 
-  const peakPickers = Math.max(...weeklyPlan.weeks.map(w => w.pickers), 0)
+  const peakPickers = Math.max(...weeklyPlan.sectionDetails.flatMap(d => d.dailyKg.map(day => { const tier = matchStaffingTier(day.kg, staffingTiers); const hrs = Math.round(day.kg / (d.eff || 5)); const pickers = Math.ceil(hrs / (hoursPerDay || 8)); return pickers; })), 0)
   const peakTotalStaff = Math.max(...weeklyPlan.weeks.map(w => w.totalStaff), 0)
   const totalKgAll = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalKg, 0)
   const totalSummerKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalSummerKg, 0)

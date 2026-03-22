@@ -15,6 +15,9 @@ export async function GET() {
             sections: {
               include: {
                 variety: true,
+                _count: {
+                  select: { temperatureReadings: true }
+                },
                 templateAssignments: {
                   where: { isActive: true },
                   include: { template: { select: { id: true, name: true, weeklyCurveSummer: true, dailyCurveSummer: true, startWeekSummer: true, startDateSummer: true, totalKgSummer: true, weeklyCurveAutumn: true, dailyCurveAutumn: true, startWeekAutumn: true, startDateAutumn: true, totalKgAutumn: true } } },

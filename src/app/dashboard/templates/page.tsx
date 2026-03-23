@@ -31,7 +31,7 @@ interface Template {
   tenantName?: string
   id: string; name: string; description?: string; productionYear: number; productionCycle: number
   season: string; plantingDate?: string; winteredInTunnel: boolean; plantSource?: string
-  dailyCurve: number[]; weeklyCurve: number[]; startDate?: string; endDate?: string; startWeek?: number
+  dailyCurve: number[]; weeklyCurve: number[]; startDate?: string; endDate?: string; startWeek?: number; totalKgSummer: number; totalKgAutumn: number; dailyCurveSummer: number[]; dailyCurveAutumn: number[]; weeklyCurveSummer: number[]; weeklyCurveAutumn: number[]; startWeekSummer?: number; startWeekAutumn?: number; startDateSummer?: string; startDateAutumn?: string
   totalKg: number; outsideTemps?: TempPoint[]; insideTunnelTemps?: TempPoint[]; tempAdjustmentFactor?: number
   gdhData?: GdhPoint[]; gdhToFlowering?: number; gdhToFirstFruit?: number; tempSources: string[]
   sourceFile?: string; notes?: string; summerEndWeek?: number
@@ -128,7 +128,9 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
   // Build unified timeline from planting/first harvest
   const plantDate = t.plantingDate || ''
   const firstHarvest = t.startDate || ''
-  const lastHarvest = t.endDate || (t.dailyCurve && t.startDate ? (() => { const d = new Date(t.startDate!); d.setDate(d.getDate() + t.dailyCurve.length); return d.toISOString().split('T')[0] })() : '')
+  const lastHarvestSummer = t.endDate || (t.dailyCurveSummer?.length && t.startDateSummer ? (() => { const d = new Date(t.startDateSummer!); d.setDate(d.getDate() + t.dailyCurveSummer.length); return d.toISOString().split('T')[0] })() : '')
+  const lastHarvestAutumn = t.dailyCurveAutumn?.length && t.startDateAutumn ? (() => { const d = new Date(t.startDateAutumn!); d.setDate(d.getDate() + t.dailyCurveAutumn.length); return d.toISOString().split('T')[0] })() : ''
+  const lastHarvest = lastHarvestSummer && lastHarvestAutumn ? (lastHarvestSummer > lastHarvestAutumn ? lastHarvestSummer : lastHarvestAutumn) : lastHarvestSummer || lastHarvestAutumn
 
   // Timeline start = planting or 60 days before harvest
   const timeStart = plantDate || (firstHarvest ? (() => { const d = new Date(firstHarvest); d.setDate(d.getDate() - 60); return d.toISOString().split('T')[0] })() : '')
@@ -189,26 +191,47 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
 
   const dateToX = (date: string) => PAD.left + ((daysBetween(timeStart, date) - visibleStart) / visibleDays) * chartW
 
-  // Build daily harvest map
+  // Build daily harvest map — convert percentages to real kg
   const dailyHarvest: Record<string, number> = {}
-  if (t.dailyCurve && t.startDate) {
-    t.dailyCurve.forEach((kg, i) => {
-      const d = new Date(t.startDate!); d.setDate(d.getDate() + i)
-      dailyHarvest[d.toISOString().split('T')[0]] = kg
+  if (t.dailyCurveSummer?.length && t.startDateSummer) {
+    const totalKg = t.totalKgSummer || 0
+    t.dailyCurveSummer.forEach((pct, i) => {
+      const d = new Date(t.startDateSummer!); d.setDate(d.getDate() + i)
+      dailyHarvest[d.toISOString().split('T')[0]] = (pct / 100) * totalKg
+    })
+  }
+  if (t.dailyCurveAutumn?.length && t.startDateAutumn) {
+    const totalKg = t.totalKgAutumn || 0
+    t.dailyCurveAutumn.forEach((pct, i) => {
+      const d = new Date(t.startDateAutumn!); d.setDate(d.getDate() + i)
+      dailyHarvest[d.toISOString().split('T')[0]] = (dailyHarvest[d.toISOString().split('T')[0]] || 0) + (pct / 100) * totalKg
     })
   }
 
-  // Build weekly harvest data
+  // Build weekly harvest data — convert percentages to real kg
   const weeklyHarvest: { weekStart: string; weekEnd: string; kg: number; week: number }[] = []
-  if (t.dailyCurve && t.startDate) {
+  {
     const weekMap: Record<number, { kg: number; dates: string[] }> = {}
-    t.dailyCurve.forEach((kg, i) => {
-      const d = new Date(t.startDate!); d.setDate(d.getDate() + i)
-      const wk = getWeekNumber(d)
-      if (!weekMap[wk]) weekMap[wk] = { kg: 0, dates: [] }
-      weekMap[wk].kg += kg
-      weekMap[wk].dates.push(d.toISOString().split('T')[0])
-    })
+    if (t.dailyCurveSummer?.length && t.startDateSummer) {
+      const totalKg = t.totalKgSummer || 0
+      t.dailyCurveSummer.forEach((pct, i) => {
+        const d = new Date(t.startDateSummer!); d.setDate(d.getDate() + i)
+        const wk = getWeekNumber(d)
+        if (!weekMap[wk]) weekMap[wk] = { kg: 0, dates: [] }
+        weekMap[wk].kg += (pct / 100) * totalKg
+        weekMap[wk].dates.push(d.toISOString().split('T')[0])
+      })
+    }
+    if (t.dailyCurveAutumn?.length && t.startDateAutumn) {
+      const totalKg = t.totalKgAutumn || 0
+      t.dailyCurveAutumn.forEach((pct, i) => {
+        const d = new Date(t.startDateAutumn!); d.setDate(d.getDate() + i)
+        const wk = getWeekNumber(d)
+        if (!weekMap[wk]) weekMap[wk] = { kg: 0, dates: [] }
+        weekMap[wk].kg += (pct / 100) * totalKg
+        weekMap[wk].dates.push(d.toISOString().split('T')[0])
+      })
+    }
     Object.entries(weekMap).sort(([a],[b]) => Number(a)-Number(b)).forEach(([wk, data]) => {
       weeklyHarvest.push({ week: Number(wk), weekStart: data.dates[0], weekEnd: data.dates[data.dates.length-1], kg: data.kg })
     })
@@ -595,12 +618,13 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
   const gdhFileRef = useRef<HTMLInputElement>(null)
   const [showCurveTable, setShowCurveTable] = useState(false)
 
-  // Summer/autumn boundary
-  const weeklyData = useMemo(() => {
-    if (!t.dailyCurve || !t.startDate) return []
+  // Build weekly data separately for summer and autumn
+  // dailyCurveSummer/Autumn contains daily percentages (0-100) — convert to real kg using totalKg
+  const buildWeeklyFromCurve = (dailyCurve: number[], startDate: string, totalKg: number) => {
     const weekMap: Record<number, { kg: number; days: { date: string; kg: number }[] }> = {}
-    t.dailyCurve.forEach((kg, i) => {
-      const d = new Date(t.startDate!); d.setDate(d.getDate() + i)
+    dailyCurve.forEach((pct, i) => {
+      const kg = (pct / 100) * totalKg
+      const d = new Date(startDate); d.setDate(d.getDate() + i)
       const ds = d.toISOString().split('T')[0]
       const wk = getWeekNumber(d)
       if (!weekMap[wk]) weekMap[wk] = { kg: 0, days: [] }
@@ -609,7 +633,23 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
     })
     return Object.entries(weekMap).sort(([a],[b]) => Number(a) - Number(b))
       .map(([wk, data]) => ({ week: Number(wk), kg: data.kg, days: data.days }))
-  }, [t.dailyCurve, t.startDate])
+  }
+
+  const weeklyDataSummer = useMemo(() => {
+    if (!t.dailyCurveSummer?.length || !t.startDateSummer) return []
+    return buildWeeklyFromCurve(t.dailyCurveSummer, t.startDateSummer, t.totalKgSummer || 0)
+  }, [t.dailyCurveSummer, t.startDateSummer, t.totalKgSummer])
+
+  const weeklyDataAutumn = useMemo(() => {
+    if (!t.dailyCurveAutumn?.length || !t.startDateAutumn) return []
+    return buildWeeklyFromCurve(t.dailyCurveAutumn, t.startDateAutumn, t.totalKgAutumn || 0)
+  }, [t.dailyCurveAutumn, t.startDateAutumn, t.totalKgAutumn])
+
+  // Combined weeklyData for chart and boundary selector (backward compat)
+  const weeklyData = useMemo(() => {
+    return [...weeklyDataSummer, ...weeklyDataAutumn]
+      .sort((a, b) => a.week - b.week)
+  }, [weeklyDataSummer, weeklyDataAutumn])
 
   // Determine summer end week - auto-detect or use saved value
   const defaultSummerEnd = useMemo(() => {
@@ -619,10 +659,10 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
 
   const [summerEndWeek, setSummerEndWeek] = useState(defaultSummerEnd)
 
-  const summerWeeks = weeklyData.filter(w => w.week <= summerEndWeek)
-  const autumnWeeks = weeklyData.filter(w => w.week > summerEndWeek)
-  const summerTotalKg = summerWeeks.reduce((s, w) => s + w.kg, 0)
-  const autumnTotalKg = autumnWeeks.reduce((s, w) => s + w.kg, 0)
+  const summerWeeks = weeklyDataSummer.length > 0 ? weeklyDataSummer : weeklyData.filter(w => w.week <= summerEndWeek)
+  const autumnWeeks = weeklyDataAutumn.length > 0 ? weeklyDataAutumn : weeklyData.filter(w => w.week > summerEndWeek)
+  const summerTotalKg = summerWeeks.reduce((s, w) => s + w.kg, 0) || t.totalKgSummer || 0
+  const autumnTotalKg = autumnWeeks.reduce((s, w) => s + w.kg, 0) || t.totalKgAutumn || 0
   const summerDays = summerWeeks.flatMap(w => w.days)
 
   const saveSummerEnd = async (week: number) => {
@@ -748,11 +788,25 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
     setEditForm({ name: t.name, description: t.description, productionCycle: t.productionCycle,
       plantingDate: t.plantingDate, winteredInTunnel: t.winteredInTunnel, plantSource: t.plantSource,
       notes: t.notes, gdhToFlowering: t.gdhToFlowering, gdhToFirstFruit: t.gdhToFirstFruit, varietyId: t.variety?.id || '',
-      sourceSectionId: t.sourceSectionId || '' })
+      })
   }
   const saveEdit = async () => {
-    await fetch('/api/templates/' + t.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editForm) })
-    setEditing(false); onSave()
+    try {
+      const res = await fetch('/api/templates/' + t.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        ...editForm,
+        plantingDate: editForm.plantingDate || null,
+        plantSource: editForm.plantSource || null,
+        notes: editForm.notes || null,
+      }) })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Nieznany błąd' }))
+        alert('Błąd zapisu: ' + (err.error || 'Nieznany błąd'))
+        return
+      }
+      setEditing(false); onSave()
+    } catch (e) {
+      alert('Błąd zapisu: ' + e)
+    }
   }
 
   if (editing) return (
@@ -764,9 +818,7 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
             <option value="">—</option>{varieties.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
           </select></div>
         <div><label className="text-xs font-medium text-gray-500">Sekcja źródłowa</label>
-          <select value={String(editForm.sourceSectionId||'')} onChange={e=>setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p,sourceSectionId:e.target.value||null}))} className="w-full border rounded-lg px-3 py-2 mt-1">
-            <option value="">— brak —</option>{sections.map(s=><option key={s.id} value={s.id}>{s.blockName}/{s.name} ({s.varietyName})</option>)}
-          </select></div>
+          <div className="w-full border rounded-lg px-3 py-2 mt-1 bg-gray-100 text-gray-600">{t.sourceSection ? t.sourceSection.name : '— brak —'}</div></div>
         <div><label className="text-xs font-medium text-gray-500">Cykl produkcji</label><select value={String(editForm.productionCycle||1)} onChange={e=>setEditForm((p: Record<string, string | number | boolean | null | undefined>)=>({...p,productionCycle:parseInt(e.target.value)}))} className="w-full border rounded-lg px-3 py-2 mt-1"><option value={1}>1. rok</option><option value={2}>2. rok</option><option value={3}>3. rok</option></select></div>
         <div><label className="text-xs font-medium text-gray-500">Data sadzenia</label><input type="date" value={String(editForm.plantingDate||'')} onChange={e=>{
               const val = e.target.value
@@ -829,7 +881,12 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
         )}
         <div className="bg-white rounded-lg px-4 py-3 border flex items-center gap-3">
           <BarChart3 className="w-5 h-5 text-gray-400"/>
-          <div><div className="text-xs text-gray-400">Suma zbiorów</div><div className="font-bold text-green-700">{(t.totalKg/1000).toFixed(1)}t</div></div>
+          <div>
+            <div className="text-xs text-gray-400">Lato</div>
+            <div className="font-bold text-purple-700">{summerTotalKg > 0 ? `${(summerTotalKg/1000).toFixed(1)}t` : '—'}</div>
+            <div className="text-xs text-gray-400 mt-1">Jesień</div>
+            <div className="font-bold text-red-600">{autumnTotalKg > 0 ? `${(autumnTotalKg/1000).toFixed(1)}t` : '—'}</div>
+          </div>
         </div>
         <div className="bg-white rounded-lg px-4 py-3 border">
           <div className="text-xs text-gray-400">Odmiana</div><div className="font-bold">{t.variety?.name || '—'}</div>
@@ -1190,7 +1247,7 @@ export default function TemplatesPage() {
 
   const filtered = templates.filter(t => {
     if (filter.varietyId && t.variety?.id !== filter.varietyId) return false
-    if (filter.season && t.season !== filter.season) return false
+
     if (filter.cycle && t.productionCycle !== parseInt(filter.cycle)) return false
     if (filter.tunnel && String(t.winteredInTunnel) !== filter.tunnel) return false
     if (filter.search && !t.name.toLowerCase().includes(filter.search.toLowerCase())) return false
@@ -1234,9 +1291,6 @@ export default function TemplatesPage() {
           <select value={filter.varietyId} onChange={e=>setFilter(p=>({...p,varietyId:e.target.value}))} className="border rounded-lg px-3 py-2 text-sm">
             <option value="">Wszystkie odmiany</option>{varieties.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
           </select>
-          <select value={filter.season} onChange={e=>setFilter(p=>({...p,season:e.target.value}))} className="border rounded-lg px-3 py-2 text-sm">
-            <option value="">Oba sezony</option><option value="summer">☀️ Lato</option><option value="autumn">🍂 Jesień</option>
-          </select>
           <select value={filter.cycle} onChange={e=>setFilter(p=>({...p,cycle:e.target.value}))} className="border rounded-lg px-3 py-2 text-sm">
             <option value="">Cykle</option><option value="1">1.</option><option value="2">2.</option><option value="3">3.</option>
           </select>
@@ -1264,8 +1318,8 @@ export default function TemplatesPage() {
             return (
               <div key={t.id} className="bg-white rounded-xl border overflow-hidden">
                 <div className="flex items-center gap-4 p-4 cursor-pointer hover:bg-gray-50" onClick={()=>setExpandedId(isExp?null:t.id)}>
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-lg ${t.season==='summer'?'bg-orange-500':'bg-red-500'}`}>
-                    {t.season==='summer'?'☀️':'🍂'}
+                  <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-lg bg-green-100">
+                    {t.totalKgSummer > 0 && t.totalKgAutumn > 0 ? '☀️🍂' : t.totalKgAutumn > 0 ? '🍂' : '☀️'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold truncate flex items-center gap-2">{t.name}{t.tenantName && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-normal">{t.tenantName}</span>}</div>
@@ -1280,11 +1334,12 @@ export default function TemplatesPage() {
                   </div>
                   <div className="flex items-end gap-px h-8 w-28">
                     {(t.weeklyCurve||[]).map((v,i)=>(
-                      <div key={i} className="flex-1 rounded-t" style={{height:(v/Math.max(...(t.weeklyCurve||[1])))*28+'px',minHeight:'1px',background:t.season==='summer'?'#fb923c':'#f87171'}}/>
+                      <div key={i} className="flex-1 rounded-t" style={{height:(v/Math.max(...(t.weeklyCurve||[1])))*28+'px',minHeight:'1px',background:'#22c55e'}}/>
                     ))}
                   </div>
                   <div className="text-right w-20">
-                    <div className="font-bold text-green-700">{(t.totalKg/1000).toFixed(1)}t</div>
+                    <div className="font-bold text-purple-700 text-xs">{t.totalKgSummer > 0 ? `L: ${(t.totalKgSummer/1000).toFixed(1)}t` : 'L: —'}</div>
+                    <div className="font-bold text-red-600 text-xs">{t.totalKgAutumn > 0 ? `J: ${(t.totalKgAutumn/1000).toFixed(1)}t` : 'J: —'}</div>
                     <div className="text-xs text-gray-400">{t.dailyCurve?.length||0}d</div>
                   </div>
                   <div className="flex items-center gap-1">

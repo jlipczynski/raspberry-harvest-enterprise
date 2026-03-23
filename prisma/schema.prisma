@@ -54,7 +54,8 @@ model Farm {
   blocks          Block[]
   workers         Worker[]
   weatherData     WeatherData[]
-  
+  forecastCache   ForecastCache?
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   
@@ -190,7 +191,7 @@ model Section {
 model HarvestCurve {
   id            String   @id @default(cuid())
   year          Int                          // rok danych (2023, 2024, 2025)
-  season        String                       // 'summer' | 'autumn'
+  season        String?                      // 'summer' | 'autumn' | null (combined)
   curve         Float[]                      // % na tydzień [5, 12, 18, 22, 20, 13, 7, 3]
   dailyCurve    Float[]                      // kg na dzień
   startDate     String?                      // data startu zbioru
@@ -207,6 +208,9 @@ model HarvestCurve {
   name          String?                      // opcjonalna nazwa (wymagana dla merged)
   isArchived    Boolean  @default(false)
   mergedFromIds String[]                     // ID krzywych źródłowych
+
+  commercialStartDate       DateTime?
+  commercialStartDateAutumn DateTime?
 
   winteredInTunnel  Boolean?
   plantingDate      DateTime?
@@ -366,19 +370,25 @@ model ProductionCurveTemplate {
   
   productionYear      Int                          // year of data (2024, 2025)
   productionCycle     Int      @default(1)          // 1st/2nd/3rd year of production
-  season              String                        // 'summer' | 'autumn'
-  
   plantingDate        String?                       // when planted
   winteredInTunnel    Boolean  @default(false)
   plantSource         String?                       // 'long_canes' | 'tray_plants' | 'nursery'
   
-  // Production curve data
-  dailyCurve          Float[]                       // kg per day from MaxCrop
-  weeklyCurve         Float[]                       // % per week (aggregated)
-  startDate           String?                       // first harvest day
-  endDate             String?                       // last harvest day
-  startWeek           Int?
-  totalKg             Float    @default(0)
+  // Production curve data - Summer
+  dailyCurveSummer    Float[]
+  weeklyCurveSummer   Float[]
+  startDateSummer     String?
+  endDateSummer       String?
+  startWeekSummer     Int?
+  totalKgSummer       Float    @default(0)
+  
+  // Production curve data - Autumn
+  dailyCurveAutumn    Float[]
+  weeklyCurveAutumn   Float[]
+  startDateAutumn     String?
+  endDateAutumn       String?
+  startWeekAutumn     Int?
+  totalKgAutumn       Float    @default(0)
   
   // Historical temperature data
   outsideTemps        Json?                         // [{date, min, max, avg}]
@@ -396,9 +406,11 @@ model ProductionCurveTemplate {
   sourceSectionId     String?
   sourceSection       Section?  @relation("TemplateSource", fields: [sourceSectionId], references: [id], onDelete: SetNull)
 
+  summerEndWeek       Int?
   sourceFile          String?
   notes               String?
   sourceHarvestCurveIds String[]                    // IDs of HarvestCurve records used to create this template
+  sourceAreaNames     String[]                      // Names of source areas used to create this template
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -466,4 +478,20 @@ model Feedback {
   userEmail String?
   tenantName String?
   createdAt DateTime @default(now())
+}
+
+// ==================== FORECAST CACHE ====================
+model ForecastCache {
+  id              String   @id @default(cuid())
+  farmId          String   @unique
+  meteoDays       Json
+  scenarios       Json
+  seasonalAnomaly Json?
+  lastForecastDate String
+  historicalYears Int
+  cachedAt        DateTime @default(now())
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@map("forecast_cache")
 }

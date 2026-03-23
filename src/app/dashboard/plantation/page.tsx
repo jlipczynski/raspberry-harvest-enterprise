@@ -1,19 +1,18 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp, Upload, FileText, Thermometer, Loader2, TrendingUp } from 'lucide-react'
-import GDHModule from './gdh-module'
+import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp, Thermometer, Loader2, TrendingUp } from 'lucide-react'
+import GDHModule, { type ApiResponse as GdhApiResponse } from './gdh-module'
 import GDHMatrix from './gdh-matrix'
 
 interface Variety { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number }
-interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; potsOverride?: number | null; plantingYear?: number; productionYear?: number; plantMaterialType?: string; plantSource?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string; _tempCount?: number }
+interface Section { id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number; potsOverride?: number | null; plantingYear?: number; productionYear?: number; plantMaterialType?: string; plantSource?: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; gdhSummer?: number; gdhAutumn?: number; varietyId: string; variety?: Variety; winteredInTunnel?: boolean; plantingDate?: string; winterShootsDate?: string; _tempCount?: number; _count?: { temperatureReadings: number } }
 interface Block { id: string; name: string; sections: Section[] }
 interface Farm { id: string; name: string }
 interface TempReading { id: string; timestamp: string; temperature: number; sourceFile?: string }
-interface UploadResult { success?: boolean; error?: string; blockName?: string; totalReadings?: number; sections?: Array<{ sectionId: string; sectionName: string | null; inserted: number }>; debug?: { format?: string; contentPreview?: string; lineCount?: number; tokenCount?: number; testoReadingsFound?: number; parsedBlockName?: string | null } }
 
 const PLANT_TYPES = [{ value: 'SMALL_POT', label: 'Doniczka' }, { value: 'ROOT', label: 'Korzeń' }, { value: 'LONGCANE', label: 'Longcane' }, { value: 'PLUG', label: 'Plug' }]
 const PLANT_SOURCES = [{ value: '', label: 'Nie określono' }, { value: 'OWN', label: 'Własne plugi' }, { value: 'NURSERY', label: 'Zewnętrzna szkółka' }]
@@ -29,13 +28,7 @@ export default function PlantationPage() {
   const [showSectionForm, setShowSectionForm] = useState<string | null>(null)
   const [editingSection, setEditingSection] = useState<Section | null>(null)
   const [expandedBlock, setExpandedBlock] = useState<string | null>(null)
-  const [sectionForm, setSectionForm] = useState({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '' as string | number, plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', plantSource: '', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' })
-
-  // PDF upload state
-  const [isDragging, setIsDragging] = useState(false)
-  const [uploadingPdfs, setUploadingPdfs] = useState(false)
-  const [uploadResults, setUploadResults] = useState<UploadResult[]>([])
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [sectionForm, setSectionForm] = useState({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '' as string | number, plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', plantSource: '', varietyId: '', yieldSummerPerShoot: '' as string | number, yieldAutumnPerShoot: '' as string | number, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' })
 
   // Temperature readings state (per section)
   const [tempReadings, setTempReadings] = useState<Record<string, TempReading[]>>({})
@@ -44,14 +37,37 @@ export default function PlantationPage() {
   const [tempPage, setTempPage] = useState<Record<string, number>>({})
   const [tempTotalPages, setTempTotalPages] = useState<Record<string, number>>({})
   const [showGDH, setShowGDH] = useState(true)
+  const [gdhData, setGdhData] = useState<GdhApiResponse | null>(null)
+  const [gdhLoading, setGdhLoading] = useState(true)
 
   useEffect(() => { fetchData() }, [])
+
+  useEffect(() => {
+    async function fetchGdh() {
+      try {
+        const res = await fetch('/api/gdh')
+        const json = await res.json()
+        setGdhData(json)
+      } catch (e) {
+        console.error('Error fetching GDH:', e)
+      } finally {
+        setGdhLoading(false)
+      }
+    }
+    fetchGdh()
+  }, [])
 
   const fetchData = async () => {
     try {
       const res = await fetch('/api/plantation')
       const data = await res.json()
-      setBlocks(data.blocks || []); setVarieties(data.varieties || []); setFarm(data.farm)
+      const bs = data.blocks || []
+      setBlocks(bs); setVarieties(data.varieties || []); setFarm(data.farm)
+      const counts: Record<string, number> = {}
+      bs.forEach((b: Block) => b.sections.forEach((s: Section) => {
+        counts[s.id] = s._count?.temperatureReadings ?? 0
+      }))
+      setTempCounts(counts)
     } catch (e) { console.error(e) } finally { setLoading(false) }
   }
 
@@ -70,52 +86,7 @@ export default function PlantationPage() {
     setTempCounts(counts)
   }, [blocks])
 
-  useEffect(() => { fetchTempCounts() }, [blocks, fetchTempCounts])
 
-  // File upload handlers (PDF + CSV)
-  const handleFileUpload = useCallback(async (files: FileList | File[]) => {
-    if (!farm) return
-    setUploadingPdfs(true)
-    setUploadResults([])
-    const results: UploadResult[] = []
-    const allowedExts = ['.pdf', '.csv', '.txt']
-
-    for (const file of Array.from(files)) {
-      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
-      if (!allowedExts.includes(ext)) {
-        results.push({ error: `${file.name}: nieobsługiwany format (akceptowane: PDF, CSV, TXT)` })
-        continue
-      }
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('farmId', farm.id)
-      try {
-        const res = await fetch('/api/plantation/temperature-upload', { method: 'POST', body: formData })
-        let data: Record<string, unknown>
-        try {
-          data = await res.json()
-        } catch {
-          const text = await res.text().catch(() => '')
-          results.push({ error: `${file.name}: serwer zwrócił błąd ${res.status}${text ? ` - ${text.slice(0, 200)}` : ''}` })
-          continue
-        }
-        if (!res.ok) results.push({ error: `${file.name}: ${data.error || `błąd ${res.status}`}` })
-        else results.push({ ...data, success: true })
-      } catch (err) {
-        results.push({ error: `${file.name}: ${err instanceof Error ? err.message : 'błąd połączenia'}` })
-      }
-    }
-    setUploadResults(results)
-    setUploadingPdfs(false)
-    fetchTempCounts()
-  }, [farm, fetchTempCounts])
-
-  const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }, [])
-  const onDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false) }, [])
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault(); setIsDragging(false)
-    if (e.dataTransfer.files.length > 0) handleFileUpload(e.dataTransfer.files)
-  }, [handleFileUpload])
 
   // Fetch temp readings for a specific section
   const fetchTempReadings = async (sectionId: string, page = 1) => {
@@ -155,12 +126,12 @@ export default function PlantationPage() {
   }
   const delBlock = async (id: string) => { if (confirm('Usunąć blok?')) { await fetch(`/api/plantation/block/${id}`, { method: 'DELETE' }); fetchData() } }
 
-  const resetSection = () => { setSectionForm({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '', plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', plantSource: '', varietyId: '', yieldSummerPerShoot: 0, yieldAutumnPerShoot: 0, gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' }); setEditingSection(null); setShowSectionForm(null) }
+  const resetSection = () => { setSectionForm({ name: '', metersLength: 100, potsPerMeter: 2, shootsPerPot: 2, potsOverride: '', plantingYear: new Date().getFullYear(), productionYear: 1, plantMaterialType: 'SMALL_POT', plantSource: '', varietyId: '', yieldSummerPerShoot: '', yieldAutumnPerShoot: '', gdhSummer: 20000, gdhAutumn: 25000, winteredInTunnel: false, plantingDate: '', winterShootsDate: '' }); setEditingSection(null); setShowSectionForm(null) }
   const startAddSection = (bid: string) => { resetSection(); setShowSectionForm(bid) }
   const startEditSection = (bid: string, s: Section) => {
     setEditingSection(s)
     const v = varieties.find(x => x.id === s.varietyId)
-    setSectionForm({ name: s.name || '', metersLength: s.metersLength, potsPerMeter: s.potsPerMeter, shootsPerPot: s.shootsPerPot, potsOverride: s.potsOverride ?? '', plantingYear: s.plantingYear || new Date().getFullYear(), productionYear: s.productionYear || 1, plantMaterialType: s.plantMaterialType || 'SMALL_POT', plantSource: s.plantSource || '', varietyId: s.varietyId, yieldSummerPerShoot: s.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0, yieldAutumnPerShoot: s.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0, gdhSummer: s.gdhSummer || v?.gdhSummer || 20000, gdhAutumn: s.gdhAutumn || v?.gdhAutumn || 25000, winteredInTunnel: s.winteredInTunnel || false, plantingDate: s.plantingDate ? s.plantingDate.slice(0, 10) : '', winterShootsDate: s.winterShootsDate ? s.winterShootsDate.slice(0, 10) : '' })
+    setSectionForm({ name: s.name || '', metersLength: s.metersLength, potsPerMeter: s.potsPerMeter, shootsPerPot: s.shootsPerPot, potsOverride: s.potsOverride ?? '', plantingYear: s.plantingYear || new Date().getFullYear(), productionYear: s.productionYear || 1, plantMaterialType: s.plantMaterialType || 'SMALL_POT', plantSource: s.plantSource || '', varietyId: s.varietyId, yieldSummerPerShoot: s.yieldSummerPerShoot ?? '', yieldAutumnPerShoot: s.yieldAutumnPerShoot ?? '', gdhSummer: s.gdhSummer || v?.gdhSummer || 20000, gdhAutumn: s.gdhAutumn || v?.gdhAutumn || 25000, winteredInTunnel: s.winteredInTunnel || false, plantingDate: s.plantingDate ? s.plantingDate.slice(0, 10) : '', winterShootsDate: s.winterShootsDate ? s.winterShootsDate.slice(0, 10) : '' })
     setShowSectionForm(bid)
   }
   const onVarChange = (vid: string) => {
@@ -169,13 +140,19 @@ export default function PlantationPage() {
   }
   const saveSection = async (bid: string) => {
     if (!sectionForm.name || !sectionForm.varietyId) return
-    if (editingSection) await fetch(`/api/plantation/section/${editingSection.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...sectionForm, blockId: bid }) })
-    else await fetch('/api/plantation/section', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ section: { ...sectionForm, blockId: bid } }) })
+    const payload = {
+      ...sectionForm,
+      blockId: bid,
+      yieldSummerPerShoot: sectionForm.yieldSummerPerShoot !== '' ? Number(sectionForm.yieldSummerPerShoot) : null,
+      yieldAutumnPerShoot: sectionForm.yieldAutumnPerShoot !== '' ? Number(sectionForm.yieldAutumnPerShoot) : null,
+    }
+    if (editingSection) await fetch(`/api/plantation/section/${editingSection.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    else await fetch('/api/plantation/section', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ section: payload }) })
     resetSection(); fetchData()
   }
   const delSection = async (id: string) => { if (confirm('Usunąć sekcję?')) { await fetch(`/api/plantation/section/${id}`, { method: 'DELETE' }); fetchData() } }
 
-  const pv = (() => { const potsCalc = sectionForm.metersLength * sectionForm.potsPerMeter; const potsOvr = sectionForm.potsOverride !== '' && sectionForm.potsOverride !== null && Number(sectionForm.potsOverride) > 0 ? Number(sectionForm.potsOverride) : null; const pots = potsOvr ?? potsCalc; const shoots = pots * sectionForm.shootsPerPot; const fs = shoots * (sectionForm.yieldSummerPerShoot || 0); const fa = shoots * (sectionForm.yieldAutumnPerShoot || 0); return { pots, shoots, fs, fa, total: fs + fa, potsOvr } })()
+  const pv = (() => { const potsCalc = sectionForm.metersLength * sectionForm.potsPerMeter; const potsOvr = sectionForm.potsOverride !== '' && sectionForm.potsOverride !== null && Number(sectionForm.potsOverride) > 0 ? Number(sectionForm.potsOverride) : null; const pots = potsOvr ?? potsCalc; const shoots = pots * sectionForm.shootsPerPot; const fs = shoots * (Number(sectionForm.yieldSummerPerShoot) || 0); const fa = shoots * (Number(sectionForm.yieldAutumnPerShoot) || 0); return { pots, shoots, fs, fa, total: fs + fa, potsOvr } })()
   const totals = blocks.reduce((a, b) => { b.sections.forEach(s => { const st = calcStats(s); a.fs += st.fs; a.fa += st.fa; a.pots += st.pots; a.sections++ }); return a }, { fs: 0, fa: 0, pots: 0, sections: 0 })
 
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">Ładowanie...</div>
@@ -210,7 +187,7 @@ export default function PlantationPage() {
         </button>
         {showGDH && (
           <div className="mt-3">
-            <GDHModule />
+            <GDHModule initialData={gdhData} initialLoading={gdhLoading} />
           </div>
         )}
       </div>
@@ -218,68 +195,7 @@ export default function PlantationPage() {
       {/* GDH Matrix - plantation overview */}
       {showGDH && (
         <div className="mt-3">
-          <GDHMatrix />
-        </div>
-      )}
-
-      {/* PDF Drag & Drop Zone */}
-      <div
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className={`relative rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'}`}
-      >
-        <input ref={fileInputRef} type="file" accept=".pdf,.csv,.txt" multiple className="hidden" onChange={e => { if (e.target.files) handleFileUpload(e.target.files); e.target.value = '' }} />
-        {uploadingPdfs ? (
-          <div className="flex items-center justify-center gap-3">
-            <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-            <span className="text-blue-600 font-medium">Przetwarzanie plików...</span>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-3">
-            <Upload className="w-6 h-6 text-gray-400" />
-            <div className="text-sm">
-              <span className="font-medium text-gray-700">Przeciągnij pliki PDF lub CSV z pomiarami temperatury</span>
-              <span className="text-gray-400 ml-1">lub kliknij, aby wybrać</span>
-            </div>
-            <FileText className="w-5 h-5 text-gray-300" />
-          </div>
-        )}
-      </div>
-
-      {/* Upload results */}
-      {uploadResults.length > 0 && (
-        <div className="space-y-2">
-          {uploadResults.map((r, i) => (
-            <div key={i} className={`rounded-lg px-4 py-3 text-sm ${r.success ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
-              {r.success ? (
-                <div className="flex items-center gap-2">
-                  <Thermometer className="w-4 h-4" />
-                  <span>Blok <strong>{r.blockName}</strong>: {r.totalReadings} pomiarów zaimportowano do {r.sections?.length} sekcji ({r.sections?.map(s => s.sectionName).join(', ')})</span>
-                </div>
-              ) : (
-                <div>
-                  <span>{r.error}</span>
-                  {r.debug && (
-                    <details className="mt-2 text-xs text-red-600">
-                      <summary className="cursor-pointer">Diagnostyka</summary>
-                      <pre className="mt-1 p-2 bg-red-100 rounded overflow-x-auto whitespace-pre-wrap break-all">
-{`Format: ${r.debug.format || '?'}
-Blok (parsed): ${r.debug.parsedBlockName || '(nie znaleziono)'}
-Linii: ${r.debug.lineCount || '?'}
-Tokenów: ${r.debug.tokenCount || '-'}
-Odczytów Testo: ${r.debug.testoReadingsFound ?? '-'}
-Preview (500 znaków):
-${r.debug.contentPreview || '(brak)'}`}
-                      </pre>
-                    </details>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-          <Button variant="ghost" size="sm" className="text-gray-400" onClick={() => setUploadResults([])}>Zamknij</Button>
+          <GDHMatrix initialData={gdhData} initialLoading={gdhLoading} />
         </div>
       )}
 

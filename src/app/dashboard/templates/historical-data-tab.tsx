@@ -11,13 +11,14 @@ import * as XLSX from 'xlsx'
 interface Variety { id: string; name: string }
 interface Section { id: string; name: string; variety?: Variety; blockName?: string }
 interface HarvestCurveRecord {
-  id: string; year: number; season: string; curve: number[]; totalKg: number
+  id: string; year: number; season?: string | null; curve: number[]; totalKg: number
   startWeek: number; sectionId?: string; varietyId?: string; sourceFile?: string
   importedAt: string; section?: { id: string; name: string }; variety?: { id: string; name: string }
   dailyCurve?: number[]; startDate?: string
   winteredInTunnel?: boolean | null; plantingDate?: string | null; plantSource?: string | null
   plantingYear?: number | null; autumnShootDate?: string | null
   name?: string | null; isArchived?: boolean; mergedFromIds?: string[]
+  commercialStartDate?: string | null; commercialStartDateAutumn?: string | null
 }
 
 interface CreateTemplateForm {
@@ -30,14 +31,16 @@ interface CreateTemplateForm {
 }
 
 interface RawRow { date: string; area: string; weightReal: number }
-interface WeekRow { week: number; kg: number; dates: string; season: 'summer' | 'autumn' }
-interface DayData { date: string; kg: number; dayOfWeek: number; isPreHarvest: boolean }
+interface WeekRow { week: number; kg: number; dates: string; season: 'summer' | 'autumn' | 'preharvest' }
+interface DayData { date: string; kg: number; dayOfWeek: number; isPreHarvest: boolean; isPreHarvestAutumn: boolean }
 interface AreaImport {
+  id?: string
   area: string
   totalKg: number
   weeks: WeekRow[]
   days: DayData[]
-  commercialStartDate: string | null  // data zakotwiczenia — raz ustawione, nie zmieniamy
+  commercialStartDate: string | null  // data zakotwiczenia lata
+  commercialStartDateAutumn: string | null  // data zakotwiczenia jesieni
 }
 
 interface ForecastData {
@@ -131,19 +134,44 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
 
     setCreatingTemplate(true)
     try {
+      // Build summer/autumn objects from selected curves
+      // Combined curves (season=null) are treated as summer
+      const summerCurves = selected.filter(c => c.season === 'summer' || !c.season)
+      const autumnCurves = selected.filter(c => c.season === 'autumn')
+      const buildFromCurves = (curves: HarvestCurveRecord[]) => {
+        if (curves.length === 0) return null
+        // Use first curve's data (for single selection) or merge
+        const c = curves[0]
+        return {
+          dailyCurve: c.dailyCurve
+            ? c.dailyCurve.map(kg => c.totalKg > 0 ? (kg / c.totalKg) * 100 : 0)
+            : c.curve.flatMap(pct => {
+                // weeklyCurve has one % per week — distribute evenly across 7 days
+                const dailyPct = pct / 7
+                return Array(7).fill(dailyPct)
+              }),
+          weeklyCurve: c.curve,
+          totalKg: c.totalKg,
+          startWeek: c.startWeek,
+          startDate: c.startDate || null,
+          endDate: c.dailyCurve && c.startDate ? (() => { const d = new Date(c.startDate!); d.setDate(d.getDate() + c.dailyCurve.length - 1); return d.toISOString().split('T')[0] })() : null,
+        }
+      }
+      const summer = buildFromCurves(summerCurves)
+      const autumn = buildFromCurves(autumnCurves)
       const res = await fetch('/api/harvest-curves/to-template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          curveIds: selectedCurveIds,
           name: createForm.name,
           varietyId: createForm.varietyId || null,
-          season: selected[0].season,
           winteredInTunnel: createForm.winteredInTunnel,
           plantSource: createForm.plantSource || null,
           productionCycle: 1,
           productionYear: createForm.productionYear,
-          plantingDate: createForm.plantingDate || null,
+          sourceSectionId: selected[0]?.sectionId || null,
+          summer,
+          autumn,
         }),
       })
       if (!res.ok) {
@@ -206,11 +234,10 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   const [fileName, setFileName] = useState('')
   const [importYear, setImportYear] = useState(new Date().getFullYear())
   const [areas, setAreas] = useState<AreaImport[]>([])
-  const [selectedAreaIdx, setSelectedAreaIdx] = useState(0)
   const [selectedAreaIdxs, setSelectedAreaIdxs] = useState<Set<number>>(new Set())
-  const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set())
   const [mergedExpandedWeeks, setMergedExpandedWeeks] = useState<Set<number>>(new Set())
   const [mergedCommercialStartDate, setMergedCommercialStartDate] = useState<string | null>(null)
+  const [mergedCommercialStartDateAutumn, setMergedCommercialStartDateAutumn] = useState<string | null>(null)
   const [templateName, setTemplateName] = useState('')
 
   const toggleMergedWeek = (weekNum: number) => {
@@ -230,25 +257,84 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       return next
     })
     setMergedCommercialStartDate(null)
+    setMergedCommercialStartDateAutumn(null)
     setMergedExpandedWeeks(new Set())
   }
 
-  const markMergedCommercialStart = (date: string) => {
-    setMergedCommercialStartDate(date)
-    setAreas(prev => prev.map((area, i) => {
-      if (!selectedAreaIdxs.has(i)) return area
-      const newDays = area.days.map(d => ({ ...d, isPreHarvest: d.date < date }))
-      return { ...area, days: newDays, commercialStartDate: date }
-    }))
+  const markMergedCommercialStart = (date: string, season: 'summer' | 'autumn') => {
+    if (season === 'summer') {
+      setMergedCommercialStartDate(date)
+      setAreas(prev => prev.map((area, i) => {
+        if (!selectedAreaIdxs.has(i)) return area
+        const newDays = area.days.map(d => ({ ...d, isPreHarvest: d.date < date ? true : d.isPreHarvest }))
+        return { ...area, days: newDays, commercialStartDate: date }
+      }))
+      selectedAreaIdxs.forEach(areaIdx => {
+        const curve = areas[areaIdx]
+        if (curve?.id) {
+          fetch(`/api/harvest-curves/${curve.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commercialStartDate: date })
+          })
+        }
+      })
+    } else {
+      setMergedCommercialStartDateAutumn(date)
+      setAreas(prev => prev.map((area, i) => {
+        if (!selectedAreaIdxs.has(i)) return area
+        const newDays = area.days.map(d => ({ ...d, isPreHarvestAutumn: d.date < date ? true : d.isPreHarvestAutumn }))
+        return { ...area, days: newDays, commercialStartDateAutumn: date }
+      }))
+      selectedAreaIdxs.forEach(areaIdx => {
+        const curve = areas[areaIdx]
+        if (curve?.id) {
+          fetch(`/api/harvest-curves/${curve.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commercialStartDateAutumn: date })
+          })
+        }
+      })
+    }
   }
 
-  const resetMergedCommercialStart = () => {
-    setMergedCommercialStartDate(null)
-    setAreas(prev => prev.map((area, i) => {
-      if (!selectedAreaIdxs.has(i)) return area
-      const newDays = area.days.map(d => ({ ...d, isPreHarvest: false }))
-      return { ...area, days: newDays, commercialStartDate: null }
-    }))
+  const resetMergedCommercialStart = (season: 'summer' | 'autumn') => {
+    if (season === 'summer') {
+      setMergedCommercialStartDate(null)
+      setAreas(prev => prev.map((area, i) => {
+        if (!selectedAreaIdxs.has(i)) return area
+        const newDays = area.days.map(d => ({ ...d, isPreHarvest: false }))
+        return { ...area, days: newDays, commercialStartDate: null }
+      }))
+      selectedAreaIdxs.forEach(areaIdx => {
+        const curve = areas[areaIdx]
+        if (curve?.id) {
+          fetch(`/api/harvest-curves/${curve.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commercialStartDate: null })
+          })
+        }
+      })
+    } else {
+      setMergedCommercialStartDateAutumn(null)
+      setAreas(prev => prev.map((area, i) => {
+        if (!selectedAreaIdxs.has(i)) return area
+        const newDays = area.days.map(d => ({ ...d, isPreHarvestAutumn: false }))
+        return { ...area, days: newDays, commercialStartDateAutumn: null }
+      }))
+      selectedAreaIdxs.forEach(areaIdx => {
+        const curve = areas[areaIdx]
+        if (curve?.id) {
+          fetch(`/api/harvest-curves/${curve.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commercialStartDateAutumn: null })
+          })
+        }
+      })
+    }
   }
 
   // History
@@ -258,7 +344,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
 
   // Edit
   const [editingCurve, setEditingCurve] = useState<HarvestCurveRecord | null>(null)
-  const [editForm, setEditForm] = useState({ varietyId: '', sectionId: '', year: 2025, season: 'summer', winteredInTunnel: false, plantingDate: '', plantSource: '', plantingYear: '' as string | number, autumnShootDate: '' })
+  const [editForm, setEditForm] = useState({ varietyId: '', sectionId: '', year: 2025, winteredInTunnel: false, plantingDate: '', plantSource: '', plantingYear: '' as string | number, autumnShootDate: '' })
 
   // Forecast (Prognoza)
   const [forecastSection, setForecastSection] = useState('')
@@ -287,7 +373,17 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
       if (showArchived) params.set('includeArchived', 'true')
       const res = await fetch(`/api/harvest-curves?${params}`)
       const data = await res.json()
-      setSavedCurves(data.curves || [])
+      const curves: HarvestCurveRecord[] = data.curves || []
+      setSavedCurves(curves)
+      // Populate areas with commercialStartDate/Autumn from DB
+      setAreas(prev => prev.map(area => {
+        const matchingCurve = curves.find(c => c.name === area.area)
+        if (!matchingCurve) return area
+        const commercialStartDate = matchingCurve.commercialStartDate || area.commercialStartDate
+        const commercialStartDateAutumn = matchingCurve.commercialStartDateAutumn || area.commercialStartDateAutumn
+        const id = matchingCurve.id || area.id
+        return { ...area, id, commercialStartDate, commercialStartDateAutumn }
+      }))
     } catch (e) { console.error(e) }
   }, [filterVariety, showArchived])
 
@@ -357,36 +453,84 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
           }))
           const days: DayData[] = Object.entries(areaDailyMap[area] || {})
             .sort(([a], [b]) => a.localeCompare(b))
-            .map(([date, kg]) => ({ date, kg, dayOfWeek: new Date(date).getDay(), isPreHarvest: false }))
-          return { area, totalKg: weeks.reduce((s, w) => s + w.kg, 0), weeks, days, commercialStartDate: null }
+            .map(([date, kg]) => ({ date, kg, dayOfWeek: new Date(date).getDay(), isPreHarvest: false, isPreHarvestAutumn: false }))
+          return { area, totalKg: weeks.reduce((s, w) => s + w.kg, 0), weeks, days, commercialStartDate: null, commercialStartDateAutumn: null }
         }).sort((a, b) => b.totalKg - a.totalKg)
 
         setAreas(parsed)
-        setSelectedAreaIdx(0)
+        setSelectedAreaIdxs(new Set())
+
+        // Zapisz krzywe do DB natychmiast po imporcie — JEDEN rekord per obszar per rok
+        const curvesToSave = parsed.map(a => {
+          const totalKg = a.weeks.reduce((s, w) => s + w.kg, 0)
+          return {
+            name: a.area,
+            year: yr,
+            season: null,
+            curve: a.weeks.map(w => totalKg > 0 ? (w.kg / totalKg) * 100 : 0),
+            dailyCurve: (() => {
+              // Build dense dailyCurve: one entry per calendar day from first to last
+              if (a.days.length === 0) return []
+              const dayMap: Record<string, number> = {}
+              for (const d of a.days) dayMap[d.date] = d.kg
+              const result: number[] = []
+              const cur = new Date(a.days[0].date)
+              const end = new Date(a.days[a.days.length - 1].date)
+              while (cur <= end) {
+                const key = cur.toISOString().split('T')[0]
+                result.push(dayMap[key] || 0)
+                cur.setDate(cur.getDate() + 1)
+              }
+              return result
+            })(),
+            totalKg,
+            startWeek: a.weeks[0]?.week || 1,
+            startDate: a.days[0]?.date || null,
+            sourceFile: file.name,
+          }
+        })
+        if (curvesToSave.length > 0) {
+          fetch('/api/harvest-curves', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ curves: curvesToSave }),
+          }).then(async (res) => {
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}))
+              throw new Error(err.error || `HTTP ${res.status}`)
+            }
+            await fetchCurves()
+            alert(`Zapisano ${curvesToSave.length} krzywych do bazy danych`)
+          }).catch(e => {
+            console.error('Błąd zapisu krzywych:', e)
+            alert(`Błąd zapisu krzywych do bazy: ${e.message}`)
+          })
+        }
       } catch (err) { console.error(err); alert('Błąd parsowania pliku') }
     }
     reader.readAsArrayBuffer(file)
   }
 
-  // ==================== SEASON TOGGLE ====================
-  const toggleWeekSeason = (areaIdx: number, weekIdx: number) => {
+  // ==================== SEASON TOGGLE (3-state cycle) ====================
+  const cycleWeekSeason = (weekIdx: number) => {
+    const areaIdxs = [...selectedAreaIdxs]
+    if (areaIdxs.length === 0) return
     setAreas(prev => prev.map((a, ai) => {
-      if (ai !== areaIdx) return a
+      if (!selectedAreaIdxs.has(ai)) return a
       const newWeeks = [...a.weeks]
-      const clickedWeek = newWeeks[weekIdx]
-      const newSeason = clickedWeek.season === 'summer' ? 'autumn' : 'summer'
+      const current = newWeeks[weekIdx]?.season
+      if (!current) return a
+      // Cycle: preharvest → summer → autumn → preharvest
+      const next = current === 'preharvest' ? 'summer' : current === 'summer' ? 'autumn' : 'preharvest'
+      newWeeks[weekIdx] = { ...newWeeks[weekIdx], season: next as 'summer' | 'autumn' | 'preharvest' }
+      return { ...a, weeks: newWeeks }
+    }))
+  }
 
-      // If switching to autumn: set this and all following to autumn
-      // If switching to summer: set this and all preceding to summer
-      if (newSeason === 'autumn') {
-        for (let i = weekIdx; i < newWeeks.length; i++) {
-          newWeeks[i] = { ...newWeeks[i], season: 'autumn' }
-        }
-      } else {
-        for (let i = 0; i <= weekIdx; i++) {
-          newWeeks[i] = { ...newWeeks[i], season: 'summer' }
-        }
-      }
+  const resetAllWeeksToSummer = () => {
+    setAreas(prev => prev.map((a, ai) => {
+      if (!selectedAreaIdxs.has(ai)) return a
+      const newWeeks = a.weeks.map(w => ({ ...w, season: 'summer' as const }))
       return { ...a, weeks: newWeeks }
     }))
   }
@@ -398,9 +542,17 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     fetchCurves()
   }
 
+  const deleteSelectedCurves = async () => {
+    if (selectedCurveIds.length === 0) return
+    if (!confirm(`Usunąć ${selectedCurveIds.length} zaznaczonych krzywych?`)) return
+    await Promise.all(selectedCurveIds.map(id => fetch(`/api/harvest-curves/${id}`, { method: 'DELETE' })))
+    setSelectedCurveIds([])
+    fetchCurves()
+  }
+
   const startEdit = (c: HarvestCurveRecord) => {
     setEditingCurve(c)
-    setEditForm({ varietyId: c.varietyId || '', sectionId: c.sectionId || '', year: c.year, season: c.season, winteredInTunnel: c.winteredInTunnel || false, plantingDate: c.plantingDate ? c.plantingDate.slice(0, 10) : '', plantSource: c.plantSource || '', plantingYear: c.plantingYear ?? '', autumnShootDate: c.autumnShootDate ? c.autumnShootDate.slice(0, 10) : '' })
+    setEditForm({ varietyId: c.varietyId || '', sectionId: c.sectionId || '', year: c.year, winteredInTunnel: c.winteredInTunnel || false, plantingDate: c.plantingDate ? c.plantingDate.slice(0, 10) : '', plantSource: c.plantSource || '', plantingYear: c.plantingYear ?? '', autumnShootDate: c.autumnShootDate ? c.autumnShootDate.slice(0, 10) : '' })
   }
 
   const saveEdit = async () => {
@@ -414,29 +566,35 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   }
 
   // ==================== POŚPIECH / START TOGGLE ====================
-  const markCommercialStart = (areaIdx: number, dayIdx: number) => {
+  const markCommercialStart = (areaIdx: number, dayIdx: number, season: 'summer' | 'autumn') => {
     setAreas(prev => prev.map((a, ai) => {
       if (ai !== areaIdx) return a
-      if (a.commercialStartDate) return a // Już zakotwiczone
-
-      const newDays = [...a.days]
-      // Wszystkie dni przed dayIdx = pośpiech
-      for (let i = 0; i < dayIdx; i++) {
-        newDays[i] = { ...newDays[i], isPreHarvest: true }
+      if (season === 'summer') {
+        if (a.commercialStartDate) return a
+        const newDays = [...a.days]
+        for (let i = 0; i < dayIdx; i++) newDays[i] = { ...newDays[i], isPreHarvest: true }
+        for (let i = dayIdx; i < newDays.length; i++) newDays[i] = { ...newDays[i], isPreHarvest: false }
+        return { ...a, days: newDays, commercialStartDate: newDays[dayIdx].date }
+      } else {
+        if (a.commercialStartDateAutumn) return a
+        const newDays = [...a.days]
+        for (let i = 0; i < dayIdx; i++) newDays[i] = { ...newDays[i], isPreHarvestAutumn: true }
+        for (let i = dayIdx; i < newDays.length; i++) newDays[i] = { ...newDays[i], isPreHarvestAutumn: false }
+        return { ...a, days: newDays, commercialStartDateAutumn: newDays[dayIdx].date }
       }
-      // Dzień dayIdx i kolejne = komercyjne
-      for (let i = dayIdx; i < newDays.length; i++) {
-        newDays[i] = { ...newDays[i], isPreHarvest: false }
-      }
-      return { ...a, days: newDays, commercialStartDate: newDays[dayIdx].date }
     }))
   }
 
-  const resetCommercialStart = (areaIdx: number) => {
+  const resetCommercialStart = (areaIdx: number, season: 'summer' | 'autumn') => {
     setAreas(prev => prev.map((a, ai) => {
       if (ai !== areaIdx) return a
-      const newDays = a.days.map(d => ({ ...d, isPreHarvest: false }))
-      return { ...a, days: newDays, commercialStartDate: null }
+      if (season === 'summer') {
+        const newDays = a.days.map(d => ({ ...d, isPreHarvest: false }))
+        return { ...a, days: newDays, commercialStartDate: null }
+      } else {
+        const newDays = a.days.map(d => ({ ...d, isPreHarvestAutumn: false }))
+        return { ...a, days: newDays, commercialStartDateAutumn: null }
+      }
     }))
   }
 
@@ -460,18 +618,16 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   }, [selectedAreaIdxs, areas])
 
   const mergedTotalKg = mergedWeeks.reduce((s, w) => s + w.kg, 0)
-  const mergedSummerKg = mergedWeeks.filter(w => w.season === 'summer').reduce((s, w) => s + w.kg, 0)
-  const mergedAutumnKg = mergedWeeks.filter(w => w.season === 'autumn').reduce((s, w) => s + w.kg, 0)
 
   const mergedDaysByWeek = useMemo(() => {
-    const result: Record<number, Array<{ date: string; kg: number; isPreHarvest: boolean }>> = {}
+    const result: Record<number, Array<{ date: string; kg: number; isPreHarvest: boolean; isPreHarvestAutumn: boolean }>> = {}
     for (const area of selectedAreas) {
       for (const day of area.days) {
         const weekNum = getWeekNumber(new Date(day.date))
         if (!result[weekNum]) result[weekNum] = []
         const existing = result[weekNum].find(d => d.date === day.date)
         if (existing) existing.kg += day.kg
-        else result[weekNum].push({ date: day.date, kg: day.kg, isPreHarvest: day.isPreHarvest })
+        else result[weekNum].push({ date: day.date, kg: day.kg, isPreHarvest: day.isPreHarvest, isPreHarvestAutumn: day.isPreHarvestAutumn })
       }
     }
     Object.keys(result).forEach(week => {
@@ -481,66 +637,114 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAreaIdxs, areas])
 
+  // Compute season for a week based on commercial start dates
+  const getWeekComputedSeason = (weekNum: number): 'preharvest' | 'summer' | 'autumn' => {
+    const summerStartWeek = mergedCommercialStartDate ? getWeekNumber(new Date(mergedCommercialStartDate)) : null
+    const autumnStartWeek = mergedCommercialStartDateAutumn ? getWeekNumber(new Date(mergedCommercialStartDateAutumn)) : null
+    if (autumnStartWeek !== null && weekNum >= autumnStartWeek) return 'autumn'
+    if (summerStartWeek !== null && weekNum < summerStartWeek) return 'preharvest'
+    return 'summer'
+  }
+
+  const mergedSummerKg = mergedWeeks.filter(w => getWeekComputedSeason(w.week) === 'summer').reduce((s, w) => s + w.kg, 0)
+  const mergedAutumnKg = mergedWeeks.filter(w => getWeekComputedSeason(w.week) === 'autumn').reduce((s, w) => s + w.kg, 0)
+
+  const setAutumnStartWeek = (weekNum: number) => {
+    if (!mergedCommercialStartDate) return
+    const days = mergedDaysByWeek[weekNum]
+    const firstDay = days?.[0]?.date
+    if (!firstDay) return
+    markMergedCommercialStart(firstDay, 'autumn')
+    // Update underlying week seasons for save logic
+    setAreas(prev => prev.map((a, ai) => {
+      if (!selectedAreaIdxs.has(ai)) return a
+      const newWeeks = a.weeks.map(w => ({
+        ...w,
+        season: (w.week >= weekNum ? 'autumn' : 'summer') as 'summer' | 'autumn' | 'preharvest'
+      }))
+      return { ...a, weeks: newWeeks }
+    }))
+  }
+
   const handleSaveMergedTemplate = async () => {
     if (!templateName.trim()) return
     setSavingTemplate(true)
     try {
-      const allDays: { date: string; kg: number }[] = []
+      const summerDays: { date: string; kg: number }[] = []
+      const autumnDays: { date: string; kg: number }[] = []
+      const effectiveSummerStart = mergedCommercialStartDate
+      const effectiveAutumnStart = mergedCommercialStartDateAutumn
       for (const area of selectedAreas) {
         for (const day of area.days) {
-          if (!day.isPreHarvest) {
-            const existing = allDays.find(d => d.date === day.date)
+          // Skip preharvest days (before commercial summer start)
+          if (effectiveSummerStart && day.date < effectiveSummerStart) continue
+          // If no summer start set, include all days as summer
+          if (effectiveAutumnStart && day.date >= effectiveAutumnStart) {
+            const existing = autumnDays.find(d => d.date === day.date)
             if (existing) existing.kg += day.kg
-            else allDays.push({ date: day.date, kg: day.kg })
+            else autumnDays.push({ date: day.date, kg: day.kg })
+          } else {
+            const existing = summerDays.find(d => d.date === day.date)
+            if (existing) existing.kg += day.kg
+            else summerDays.push({ date: day.date, kg: day.kg })
           }
         }
       }
-      allDays.sort((a, b) => a.date.localeCompare(b.date))
-
-      const totalKg = allDays.reduce((s, d) => s + d.kg, 0)
-      const dailyCurvePercent = allDays.map(d => totalKg > 0 ? (d.kg / totalKg) * 100 : 0)
-
+      summerDays.sort((a, b) => a.date.localeCompare(b.date))
+      autumnDays.sort((a, b) => a.date.localeCompare(b.date))
+      const buildCurve = (days: { date: string; kg: number }[]) => {
+        const total = days.reduce((s, d) => s + d.kg, 0)
+        const startDate = days.length > 0 ? days[0].date : null
+        const endDate = days.length > 0 ? days[days.length - 1].date : null
+        // Build dense dailyCurve: one entry per calendar day from startDate to endDate
+        const dayMap: Record<string, number> = {}
+        for (const d of days) dayMap[d.date] = (dayMap[d.date] || 0) + d.kg
+        const dailyCurve: number[] = []
+        if (startDate && endDate) {
+          const cur = new Date(startDate)
+          const end = new Date(endDate)
+          while (cur <= end) {
+            const key = cur.toISOString().split('T')[0]
+            const kg = dayMap[key] || 0
+            dailyCurve.push(total > 0 ? (kg / total) * 100 : 0)
+            cur.setDate(cur.getDate() + 1)
+          }
+        }
+        // Build weeklyCurve from the actual days in this season
+        const weekMap: Record<number, number> = {}
+        for (const d of days) {
+          const wk = getWeekNumber(new Date(d.date))
+          weekMap[wk] = (weekMap[wk] || 0) + d.kg
+        }
+        const sortedWeekEntries = Object.entries(weekMap).sort(([a], [b]) => Number(a) - Number(b))
+        const weeklyCurve = sortedWeekEntries.map(([, kg]) => total > 0 ? (kg / total) * 100 : 0)
+        const startWeek = sortedWeekEntries.length > 0 ? Number(sortedWeekEntries[0][0]) : null
+        return { dailyCurve, weeklyCurve, totalKg: total, startWeek, startDate, endDate }
+      }
+      const summer = summerDays.length > 0 ? buildCurve(summerDays) : null
+      const autumn = autumnDays.length > 0 ? buildCurve(autumnDays) : null
       const res = await fetch('/api/harvest-curves/to-template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: templateName,
-          season: mergedSummerKg >= mergedAutumnKg ? 'summer' : 'autumn',
-          dailyCurve: dailyCurvePercent,
-          weeklyCurve: mergedWeeks.map(w => {
-            const seasonTotal = w.season === 'summer' ? mergedSummerKg : mergedAutumnKg
-            return seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0
-          }),
-          totalKg,
-          productionYear: importYear,
-          startWeek: mergedWeeks[0]?.week || 23,
-          sourceAreaNames: selectedAreas.map(a => a.area),
-        })
+        body: JSON.stringify({ name: templateName, summer, autumn, productionYear: importYear })
       })
       if (res.ok) {
-        alert(`Szablon "${templateName}" zapisany!`)
-        setTemplateName('')
+        alert("Szablon zapisany!")
+        setTemplateName("")
         setSelectedAreaIdxs(new Set())
         onTemplateCreated()
       } else {
-        alert('Błąd zapisu szablonu')
+        const err = await res.json()
+        alert("Blad zapisu: " + (err.error || "nieznany blad"))
       }
     } catch (e) {
       console.error(e)
-      alert('Błąd zapisu')
+      alert("Blad zapisu")
     } finally {
       setSavingTemplate(false)
     }
   }
 
-  const toggleWeek = (weekNum: number) => {
-    setExpandedWeeks(prev => {
-      const next = new Set(prev)
-      if (next.has(weekNum)) next.delete(weekNum)
-      else next.add(weekNum)
-      return next
-    })
-  }
 
   // ==================== FORECAST ====================
   const fetchForecast = async () => {
@@ -554,17 +758,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
     finally { setForecastLoading(false) }
   }
 
-  // Group curves: by variety → by season
-  const groupCurves = () => {
-    const groups: Record<string, { summer: HarvestCurveRecord[]; autumn: HarvestCurveRecord[] }> = {}
-    savedCurves.forEach(c => {
-      const vName = c.variety?.name || 'Bez odmiany'
-      if (!groups[vName]) groups[vName] = { summer: [], autumn: [] }
-      if (c.season === 'summer') groups[vName].summer.push(c)
-      else groups[vName].autumn.push(c)
-    })
-    return groups
-  }
 
   const renderChart = (curves: HarvestCurveRecord[]) => {
     if (curves.length === 0) return null
@@ -628,13 +821,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
 
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">Ładowanie...</div>
 
-  const currentArea = areas[selectedAreaIdx]
-  const summerWeeks = currentArea?.weeks.filter(w => w.season === 'summer') || []
-  const autumnWeeks = currentArea?.weeks.filter(w => w.season === 'autumn') || []
-  const summerTotal = summerWeeks.reduce((s, w) => s + w.kg, 0)
-  const autumnTotal = autumnWeeks.reduce((s, w) => s + w.kg, 0)
-  const curveGroups = groupCurves()
-
   return (
     <div className="space-y-6">
       <div>
@@ -693,7 +879,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
               {areas.map((a, i) => (
                 <button
                   key={i}
-                  onClick={() => { toggleAreaSelection(i); setSelectedAreaIdx(i); setExpandedWeeks(new Set()) }}
+                  onClick={() => toggleAreaSelection(i)}
                   className={`px-3 py-2 rounded-lg text-sm border transition-colors flex items-center gap-2 ${
                     selectedAreaIdxs.has(i)
                       ? 'bg-green-600 text-white border-green-600 font-medium'
@@ -728,27 +914,82 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className={`flex items-center justify-between p-3 rounded-lg border mb-4 ${
-                  mergedCommercialStartDate ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'
-                }`}>
-                  <div>
-                    <p className="text-sm font-medium">
-                      {mergedCommercialStartDate
-                        ? `⚓ Start lata: ${new Date(mergedCommercialStartDate).toLocaleDateString('pl-PL')}`
-                        : '⚓ Oznacz start lata'}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {mergedCommercialStartDate
-                        ? 'Dni przed startem = pośpiech — dotyczy wszystkich zaznaczonych obszarów'
-                        : 'Rozwiń tydzień i kliknij "Oznacz jako start" przy dniu'}
-                    </p>
-                  </div>
-                  {mergedCommercialStartDate && (
-                    <Button size="sm" variant="outline" onClick={resetMergedCommercialStart}>
-                      <X className="w-3 h-3 mr-1" />Resetuj
-                    </Button>
-                  )}
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm text-gray-500">Kliknij sezon w wierszu → cykl: Pośpiech → Lato → Jesień</p>
+                  <Button size="sm" variant="outline" onClick={resetAllWeeksToSummer}>
+                    Resetuj sezony
+                  </Button>
                 </div>
+                <div className="flex flex-col gap-2 mb-4">
+                  <div className={`flex items-center justify-between p-3 rounded-lg border ${
+                    mergedCommercialStartDate ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'
+                  }`}>
+                    <div>
+                      <p className="text-sm font-medium">
+                        {mergedCommercialStartDate
+                          ? `⚓ Start lata: ${new Date(mergedCommercialStartDate).toLocaleDateString('pl-PL')}`
+                          : '⚓ Start lata: kliknij dzień w tabeli'}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {mergedCommercialStartDate
+                          ? 'Dni przed startem = pośpiech'
+                          : 'Rozwiń tydzień i kliknij "Oznacz jako start"'}
+                      </p>
+                    </div>
+                    {mergedCommercialStartDate && (
+                      <Button size="sm" variant="outline" onClick={() => resetMergedCommercialStart('summer')}>
+                        <X className="w-3 h-3 mr-1" />Resetuj
+                      </Button>
+                    )}
+                  </div>
+                  <div className={`flex items-center justify-between p-3 rounded-lg border ${
+                    mergedCommercialStartDateAutumn ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
+                  }`}>
+                    <div>
+                      <p className="text-sm font-medium">
+                        {mergedCommercialStartDateAutumn
+                          ? `🍂 Start jesieni: ${new Date(mergedCommercialStartDateAutumn).toLocaleDateString('pl-PL')}`
+                          : '🍂 Start jesieni: kliknij badge "Lato" w tabeli'}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {mergedCommercialStartDateAutumn
+                          ? 'Tygodnie od tego miejsca = jesień'
+                          : mergedCommercialStartDate ? 'Kliknij badge ☀️ Lato przy tygodniu, aby ustawić start jesieni' : 'Najpierw oznacz start lata'}
+                      </p>
+                    </div>
+                    {mergedCommercialStartDateAutumn && (
+                      <Button size="sm" variant="outline" onClick={() => resetMergedCommercialStart('autumn')}>
+                        <X className="w-3 h-3 mr-1" />Resetuj
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bar chart */}
+                {(() => {
+                  const maxKg = Math.max(...mergedWeeks.map(w => w.kg), 1)
+                  return (
+                    <div className="flex items-end gap-px h-20 mb-4">
+                      {mergedWeeks.map(w => {
+                        const cs = getWeekComputedSeason(w.week)
+                        const heightPct = (w.kg / maxKg) * 100
+                        return (
+                          <div key={w.week} className="flex-1 flex flex-col items-center gap-0.5">
+                            <div
+                              className="w-full rounded-t"
+                              style={{
+                                height: `${heightPct}%`,
+                                minHeight: w.kg > 0 ? '2px' : '0',
+                                backgroundColor: cs === 'preharvest' ? '#d1d5db' : cs === 'summer' ? '#fb923c' : '#f87171'
+                              }}
+                            />
+                            <span className="text-[9px] text-gray-400">T{w.week}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
 
                 <table className="w-full text-sm">
                   <thead>
@@ -762,79 +1003,124 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                     </tr>
                   </thead>
                   <tbody>
-                    {mergedWeeks.map((w, i) => {
-                      const seasonTotal = w.season === 'summer' ? mergedSummerKg : mergedAutumnKg
-                      const pct = seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0
-                      const sameSeasonWeeks = mergedWeeks.filter(x => x.season === w.season)
-                      const idxInSeason = sameSeasonWeeks.indexOf(w)
-                      const cumPct = sameSeasonWeeks.slice(0, idxInSeason + 1).reduce((s, x) => {
-                        const st = w.season === 'summer' ? mergedSummerKg : mergedAutumnKg
-                        return s + (st > 0 ? (x.kg / st) * 100 : 0)
-                      }, 0)
-                      const isBoundary = i > 0 && mergedWeeks[i-1].season !== w.season
-                      return (
-                        <React.Fragment key={`merged-week-${w.week}`}>
-                          <tr
-                            className={`border-b hover:bg-gray-50 cursor-pointer ${isBoundary ? 'border-t-4 border-t-gray-300' : ''}`}
-                            onClick={() => toggleMergedWeek(w.week)}
-                          >
-                            <td className="py-2 px-3 font-medium">T{w.week}</td>
-                            <td className="py-2 px-3 text-right">{w.kg.toLocaleString('pl-PL', { maximumFractionDigits: 0 })}</td>
-                            <td className="py-2 px-3 text-right">
-                              <span className={pct > 15 ? 'text-green-600 font-medium' : ''}>{pct.toFixed(1)}%</span>
-                            </td>
-                            <td className="py-2 px-3 text-right text-gray-400">{cumPct.toFixed(1)}%</td>
-                            <td className="py-2 px-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-xs ${w.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
-                                {w.season === 'summer' ? '☀️ Lato' : '🍂 Jesień'}
-                              </span>
-                            </td>
-                            <td className="py-2 px-3 text-center text-gray-400 w-8">
-                              {mergedExpandedWeeks.has(w.week) ? '▼' : '▶'}
-                            </td>
-                          </tr>
-                          {mergedExpandedWeeks.has(w.week) && (mergedDaysByWeek[w.week] || []).map(d => (
-                            <tr key={`merged-day-${d.date}`} className={`border-b ${d.date === mergedCommercialStartDate ? 'bg-green-50' : d.isPreHarvest ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
-                              <td className="py-1 px-3 pl-8 text-xs text-gray-500" colSpan={2}>
-                                {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
-                                {d.date === mergedCommercialStartDate && <span className="ml-2 text-green-600 font-medium">← start lata</span>}
+                    {(() => {
+                      const computedSeasons = mergedWeeks.map(w => getWeekComputedSeason(w.week))
+                      const cSummerKg = mergedWeeks.filter((_, i) => computedSeasons[i] === 'summer').reduce((s, w) => s + w.kg, 0)
+                      const cAutumnKg = mergedWeeks.filter((_, i) => computedSeasons[i] === 'autumn').reduce((s, w) => s + w.kg, 0)
+                      return mergedWeeks.map((w, i) => {
+                        const cs = computedSeasons[i]
+                        const seasonTotal = cs === 'summer' ? cSummerKg : cs === 'autumn' ? cAutumnKg : 0
+                        const pct = seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0
+                        const sameSeasonWeeks = mergedWeeks.filter((_, j) => computedSeasons[j] === cs)
+                        const idxInSeason = sameSeasonWeeks.indexOf(w)
+                        const cumPct = sameSeasonWeeks.slice(0, idxInSeason + 1).reduce((s, x) => {
+                          return s + (seasonTotal > 0 ? (x.kg / seasonTotal) * 100 : 0)
+                        }, 0)
+                        const isBoundary = i > 0 && computedSeasons[i-1] !== cs
+                        return (
+                          <React.Fragment key={`merged-week-${w.week}`}>
+                            <tr
+                              className={`border-b hover:bg-gray-50 cursor-pointer ${isBoundary ? 'border-t-4 border-t-gray-300' : ''}`}
+                              onClick={() => toggleMergedWeek(w.week)}
+                            >
+                              <td className="py-2 px-3 font-medium">T{w.week}</td>
+                              <td className="py-2 px-3 text-right">{w.kg.toLocaleString('pl-PL', { maximumFractionDigits: 0 })}</td>
+                              <td className="py-2 px-3 text-right">
+                                <span className={pct > 15 ? 'text-green-600 font-medium' : ''}>{cs === 'preharvest' ? '—' : `${pct.toFixed(1)}%`}</span>
                               </td>
-                              <td className="py-1 px-3 text-right text-xs font-medium">{d.kg.toFixed(1)}</td>
-                              <td className="py-1 px-3 text-center" colSpan={2}>
-                                {mergedCommercialStartDate ? (
-                                  <span className={`px-2 py-0.5 rounded-full text-xs ${
-                                    d.isPreHarvest
+                              <td className="py-2 px-3 text-right text-gray-400">{cs === 'preharvest' ? '—' : `${cumPct.toFixed(1)}%`}</td>
+                              <td className="py-2 px-3 text-center">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (cs === 'summer' && mergedCommercialStartDate) {
+                                      setAutumnStartWeek(w.week)
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                                    cs === 'preharvest'
                                       ? 'bg-gray-200 text-gray-600'
-                                      : d.date === mergedCommercialStartDate
-                                        ? 'bg-green-200 text-green-800 font-medium'
-                                        : w.season === 'summer' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'
-                                  }`}>
-                                    {d.isPreHarvest ? 'Pośpiech' : d.date === mergedCommercialStartDate ? '← start lata' : w.season === 'summer' ? 'Lato' : 'Jesień'}
-                                  </span>
-                                ) : (
-                                  <button
-                                    onClick={() => markMergedCommercialStart(d.date)}
-                                    className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                  >
-                                    Oznacz jako start
-                                  </button>
-                                )}
+                                      : cs === 'summer'
+                                        ? `bg-orange-100 text-orange-700 ${mergedCommercialStartDate ? 'hover:bg-red-100 hover:text-red-700 cursor-pointer' : ''}`
+                                        : 'bg-red-100 text-red-700'
+                                  }`}
+                                >
+                                  {cs === 'preharvest' ? 'Pośpiech' : cs === 'summer' ? <><Sun className="w-3 h-3" />Lato</> : <><Leaf className="w-3 h-3" />Jesień</>}
+                                </button>
                               </td>
-                              <td />
+                              <td className="py-2 px-3 text-center text-gray-400 w-8">
+                                {mergedExpandedWeeks.has(w.week) ? '▼' : '▶'}
+                              </td>
                             </tr>
-                          ))}
-                        </React.Fragment>
-                      )
-                    })}
+                            {mergedExpandedWeeks.has(w.week) && (mergedDaysByWeek[w.week] || []).map(d => {
+                              const isSummerStart = d.date === mergedCommercialStartDate
+                              const isAutumnStart = d.date === mergedCommercialStartDateAutumn
+                              const isBeforeSummerStart = mergedCommercialStartDate && d.date < mergedCommercialStartDate
+                              const isInAutumn = mergedCommercialStartDateAutumn && d.date >= mergedCommercialStartDateAutumn
+                              const daySeason = isBeforeSummerStart ? 'preharvest' : isInAutumn ? 'autumn' : 'summer'
+                              return (
+                              <tr key={`merged-day-${d.date}`} className={`border-b ${isSummerStart || isAutumnStart ? 'bg-green-50' : daySeason === 'preharvest' ? 'bg-gray-50 text-gray-400' : daySeason === 'autumn' ? 'bg-red-50/30' : 'bg-orange-50/30'}`}>
+                                <td className="py-1 px-3 pl-8 text-xs text-gray-500" colSpan={2}>
+                                  {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                  {isSummerStart && <span className="ml-2 text-green-600 font-medium">⚓ start lata</span>}
+                                  {isAutumnStart && <span className="ml-2 text-red-600 font-medium">🍂 start jesieni</span>}
+                                </td>
+                                <td className="py-1 px-3 text-right text-xs font-medium">{d.kg.toFixed(1)}</td>
+                                <td className="py-1 px-3 text-center" colSpan={2}>
+                                  {cs === 'summer' && !mergedCommercialStartDate ? (
+                                    <button
+                                      onClick={() => markMergedCommercialStart(d.date, 'summer')}
+                                      className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                    >
+                                      Oznacz jako start lata
+                                    </button>
+                                  ) : isSummerStart ? (
+                                    <button
+                                      onClick={() => resetMergedCommercialStart('summer')}
+                                      className="px-2 py-0.5 rounded-full text-xs bg-green-200 text-green-800 font-medium hover:bg-red-200 hover:text-red-800 cursor-pointer"
+                                    >
+                                      ← start lata
+                                    </button>
+                                  ) : isAutumnStart ? (
+                                    <button
+                                      onClick={() => resetMergedCommercialStart('autumn')}
+                                      className="px-2 py-0.5 rounded-full text-xs bg-red-200 text-red-800 font-medium hover:bg-gray-200 hover:text-gray-800 cursor-pointer"
+                                    >
+                                      ← start jesieni
+                                    </button>
+                                  ) : (
+                                    <span className={`px-2 py-0.5 rounded-full text-xs ${
+                                      daySeason === 'preharvest' ? 'bg-gray-200 text-gray-600'
+                                        : daySeason === 'autumn' ? 'bg-red-100 text-red-700'
+                                        : 'bg-orange-100 text-orange-700'
+                                    }`}>
+                                      {daySeason === 'preharvest' ? 'Pośpiech' : daySeason === 'autumn' ? 'Jesień' : 'Lato'}
+                                    </span>
+                                  )}
+                                </td>
+                                <td />
+                              </tr>
+                              )
+                            })}
+                          </React.Fragment>
+                        )
+                      })
+                    })()}
                     <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
                       <td className="py-2 px-3">Razem</td>
                       <td className="py-2 px-3 text-right">{mergedTotalKg.toLocaleString('pl-PL', { maximumFractionDigits: 0 })} kg</td>
                       <td className="py-2 px-3 text-right">100%</td>
                       <td className="py-2 px-3 text-right text-gray-400"></td>
                       <td className="py-2 px-3 text-center text-xs text-gray-500">
-                        {mergedSummerKg > 0 && <span className="text-orange-600">☀️ {(mergedSummerKg/1000).toFixed(1)}t</span>}
-                        {mergedSummerKg > 0 && mergedAutumnKg > 0 && ' · '}
-                        {mergedAutumnKg > 0 && <span className="text-red-600">🍂 {(mergedAutumnKg/1000).toFixed(1)}t</span>}
+                        {(() => {
+                          const cSumKg = mergedWeeks.filter(w => getWeekComputedSeason(w.week) === 'summer').reduce((s, w) => s + w.kg, 0)
+                          const cAutKg = mergedWeeks.filter(w => getWeekComputedSeason(w.week) === 'autumn').reduce((s, w) => s + w.kg, 0)
+                          return <>
+                            {cSumKg > 0 && <span className="text-orange-600">☀️ {(cSumKg/1000).toFixed(1)}t</span>}
+                            {cSumKg > 0 && cAutKg > 0 && ' · '}
+                            {cAutKg > 0 && <span className="text-red-600">🍂 {(cAutKg/1000).toFixed(1)}t</span>}
+                          </>
+                        })()}
                       </td>
                       <td />
                     </tr>
@@ -865,177 +1151,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
             </div>
           )}
 
-          {/* Week table for selected area */}
-          {currentArea && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span>{currentArea.area}</span>
-                    <span className="text-sm font-normal text-gray-500">{(currentArea.totalKg / 1000).toFixed(1)}t łącznie</span>
-                  </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    {summerTotal > 0 && (
-                      <span className="flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-700 rounded">
-                        <Sun className="w-4 h-4" /> Lato: {(summerTotal / 1000).toFixed(1)}t ({summerWeeks.length} tyg.)
-                      </span>
-                    )}
-                    {autumnTotal > 0 && (
-                      <span className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded">
-                        <Leaf className="w-4 h-4" /> Jesień: {(autumnTotal / 1000).toFixed(1)}t ({autumnWeeks.length} tyg.)
-                      </span>
-                    )}
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-500 mb-3">Kliknij na sezon w wierszu, aby oznaczyć od którego tygodnia zaczyna się jesień.</p>
-
-                {/* Start lata — compact info bar */}
-                <div className={`flex items-center justify-between p-3 rounded-lg border mb-4 ${currentArea.commercialStartDate ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'}`}>
-                  <div className="flex items-center gap-2">
-                    <Anchor className="w-4 h-4" />
-                    <span className="font-semibold text-sm">
-                      {currentArea.commercialStartDate
-                        ? `Start lata: ${new Date(currentArea.commercialStartDate).toLocaleDateString('pl-PL')}`
-                        : 'Rozwiń tydzień i oznacz start lata'}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {currentArea.commercialStartDate
-                        ? '· Dni przed startem = pośpiech'
-                        : '· Kliknij ▶ przy tygodniu, potem "Oznacz jako start"'}
-                    </span>
-                  </div>
-                  {currentArea.commercialStartDate && (
-                    <Button size="sm" variant="outline" onClick={() => resetCommercialStart(selectedAreaIdx)}>
-                      <X className="w-3 h-3 mr-1" />Resetuj
-                    </Button>
-                  )}
-                </div>
-
-                {/* Bar chart */}
-                <div style={{ height: '200px' }} className="flex items-end gap-1 mb-4">
-                  {currentArea.weeks.map((w, i) => {
-                    const maxKg = Math.max(...currentArea.weeks.map(x => x.kg))
-                    const heightPx = maxKg > 0 ? Math.round((w.kg / maxKg) * 180) : 0
-                    return (
-                      <div key={i} className="flex-1 flex flex-col items-center justify-end group relative" style={{ height: '100%' }}>
-                        <div
-                          className={`w-full rounded-t transition-colors ${w.season === 'summer' ? 'bg-orange-400' : 'bg-red-400'}`}
-                          style={{ height: heightPx + 'px', minHeight: w.kg > 0 ? '4px' : '0' }}
-                        />
-                        <div className="absolute bottom-full mb-1 hidden group-hover:block bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10">
-                          T{w.week}: {w.kg.toFixed(0)} kg ({w.season === 'summer' ? 'lato' : 'jesień'})
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-                <div className="flex gap-1 mb-4">
-                  {currentArea.weeks.map((w, i) => (
-                    <div key={i} className="flex-1 text-center text-xs text-gray-500">T{w.week}</div>
-                  ))}
-                </div>
-
-                {/* Week table with expandable day rows */}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-gray-50">
-                        <th className="text-left py-2 px-3 w-20">Tydzień</th>
-                        <th className="text-left py-2 px-3">Daty</th>
-                        <th className="text-right py-2 px-3">kg</th>
-                        <th className="text-right py-2 px-3 w-16">%</th>
-                        <th className="text-right py-2 px-3 w-16">Σ%</th>
-                        <th className="text-center py-2 px-3 w-32">Sezon</th>
-                        <th className="text-center py-2 px-3 w-8"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {currentArea.weeks.map((w, i) => {
-                        const seasonTotal = w.season === 'summer' ? summerTotal : autumnTotal
-                        const pct = seasonTotal > 0 ? (w.kg / seasonTotal) * 100 : 0
-                        const isBoundary = i > 0 && currentArea.weeks[i - 1].season !== w.season
-                        const sameSeasonWeeks = currentArea.weeks.filter(x => x.season === w.season)
-                        const idxInSeason = sameSeasonWeeks.indexOf(w)
-                        const cumPct = sameSeasonWeeks.slice(0, idxInSeason + 1).reduce((s, x) => s + (seasonTotal > 0 ? (x.kg / seasonTotal) * 100 : 0), 0)
-                        const weekDays = currentArea.days.filter(d => getWeekNumber(new Date(d.date)) === w.week)
-                        const allPreHarvest = currentArea.commercialStartDate && weekDays.length > 0 && weekDays.every(d => d.isPreHarvest)
-                        const isExpanded = expandedWeeks.has(w.week)
-                        return (
-                          <React.Fragment key={`week-${i}`}>
-                            <tr
-                              className={`border-b hover:bg-gray-50 cursor-pointer ${isBoundary ? 'border-t-4 border-t-gray-300' : ''}`}
-                              onClick={() => toggleWeek(w.week)}
-                            >
-                              <td className="py-2 px-3 font-medium">T{w.week}</td>
-                              <td className="py-2 px-3 text-gray-500">{w.dates}</td>
-                              <td className="py-2 px-3 text-right font-medium">{w.kg.toLocaleString('pl-PL', { maximumFractionDigits: 0 })}</td>
-                              <td className="py-2 px-3 text-right">
-                                <span className={pct > 15 ? 'text-green-600 font-medium' : ''}>{pct.toFixed(1)}%</span>
-                              </td>
-                              <td className="py-2 px-3 text-right">
-                                <span className={cumPct >= 99.5 ? 'text-green-700 font-bold' : 'text-gray-500'}>{cumPct.toFixed(1)}%</span>
-                              </td>
-                              <td className="py-2 px-3 text-center">
-                                {allPreHarvest ? (
-                                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-600">
-                                    Pośpiech
-                                  </span>
-                                ) : (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); toggleWeekSeason(selectedAreaIdx, i) }}
-                                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-                                    w.season === 'summer'
-                                      ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                                      : 'bg-red-100 text-red-700 hover:bg-red-200'
-                                  }`}
-                                >
-                                  {w.season === 'summer' ? <><Sun className="w-3 h-3" />Lato</> : <><Leaf className="w-3 h-3" />Jesień</>}
-                                </button>
-                                )}
-                              </td>
-                              <td className="py-2 px-3 text-center text-gray-400">
-                                {isExpanded ? '▼' : '▶'}
-                              </td>
-                            </tr>
-                            {isExpanded && weekDays.map((d) => {
-                              const globalDi = currentArea.days.indexOf(d)
-                              const isStart = d.date === currentArea.commercialStartDate
-                              return (
-                                <tr key={`day-${d.date}`} className={`border-b ${isStart ? 'bg-green-50' : d.isPreHarvest ? 'bg-gray-50 text-gray-400' : 'bg-orange-50/30'}`}>
-                                  <td className="py-1.5 px-3 pl-8 text-xs text-gray-500" colSpan={2}>
-                                    {new Date(d.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
-                                    {isStart && <span className="ml-2 text-green-600 font-medium">← start lata</span>}
-                                  </td>
-                                  <td className="py-1.5 px-3 text-right text-xs font-medium">{d.kg.toFixed(1)}</td>
-                                  <td colSpan={2} />
-                                  <td className="py-1.5 px-3 text-center" colSpan={2}>
-                                    {currentArea.commercialStartDate ? (
-                                      <span className={`px-2 py-0.5 rounded-full text-xs ${d.isPreHarvest ? 'bg-gray-200 text-gray-600' : w.season === 'summer' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                        {d.isPreHarvest ? 'Pośpiech' : (w.season === 'summer' ? 'Lato' : 'Jesień')}
-                                      </span>
-                                    ) : (
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); markCommercialStart(selectedAreaIdx, globalDi) }}
-                                        className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                      >
-                                        Oznacz jako start
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </React.Fragment>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </>
       )}
 
@@ -1065,6 +1180,14 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                   >
                     <Merge className="w-3.5 h-3.5" />Połącz krzywe
                   </button>
+                  {selectedCurveIds.length > 0 && (
+                    <button
+                      onClick={deleteSelectedCurves}
+                      className="flex items-center gap-1 px-3 py-1 text-sm rounded-md border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />Usuń zaznaczone ({selectedCurveIds.length})
+                    </button>
+                  )}
                   <Label className="text-xs text-gray-500">Oś Y:</Label>
                   <div className="flex bg-gray-100 rounded-lg p-0.5">
                     <button onClick={() => setYAxis('kg')} className={`px-3 py-1 text-sm rounded-md ${yAxis === 'kg' ? 'bg-white shadow font-medium' : 'text-gray-500'}`}>kg</button>
@@ -1086,7 +1209,6 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div><Label className="text-xs">Rok</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.year} onChange={e => setEditForm({ ...editForm, year: parseInt(e.target.value) })}>{[2022,2023,2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}</select></div>
-                  <div><Label className="text-xs">Sezon</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.season} onChange={e => setEditForm({ ...editForm, season: e.target.value })}><option value="summer">☀️ Lato</option><option value="autumn">🍂 Jesień</option></select></div>
                   <div><Label className="text-xs">Odmiana</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.varietyId} onChange={e => setEditForm({ ...editForm, varietyId: e.target.value })}><option value="">—</option>{varieties.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
                   <div><Label className="text-xs">Sekcja</Label><select className="w-full h-9 border rounded-md px-3 text-sm" value={editForm.sectionId} onChange={e => setEditForm({ ...editForm, sectionId: e.target.value })}><option value="">—</option>{sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
                 </div>
@@ -1105,62 +1227,29 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
             </Card>
           )}
 
-          {/* Grouped by variety, split summer/autumn */}
-          {Object.entries(curveGroups).map(([varName, { summer, autumn }]) => (
-            <div key={varName} className="space-y-4">
-              <h2 className="text-lg font-bold">{varName}</h2>
-
-              {summer.length > 0 && (
-                <Card className="border-orange-200">
-                  <CardHeader className="bg-orange-50 py-3">
-                    <CardTitle className="text-base flex items-center gap-2"><Sun className="w-4 h-4 text-orange-500" />Lato ({summer.length})</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-4 space-y-3">
-                    {renderChart(summer)}
-                    <table className="w-full text-sm">
-                      <thead><tr className="border-b bg-gray-50">{mergeMode && <th className="w-10 py-2 px-3"></th>}<th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
-                      <tbody>{summer.map(c => (
-                        <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''} ${mergeCurveIds.includes(c.id) ? 'bg-blue-50' : ''} ${c.isArchived ? 'opacity-50 bg-gray-50' : ''}`}>
-                          {mergeMode && <td className="py-2 px-3">{!c.isArchived && <input type="checkbox" checked={mergeCurveIds.includes(c.id)} onChange={() => toggleMergeSelection(c.id)} className="w-4 h-4 accent-blue-600" />}</td>}
-                          <td className="py-2 px-3"><input type="checkbox" checked={selectedCurveIds.includes(c.id)} onChange={() => toggleCurveSelection(c.id)} className="w-4 h-4 accent-green-600" /></td>
-                          <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span>{c.isArchived && <Archive className="w-3 h-3 text-gray-400" />}{c.mergedFromIds && c.mergedFromIds.length > 0 && <Merge className="w-3 h-3 text-blue-400" />}</div></td>
-                          <td className="py-2 px-3 text-gray-600">{c.name || c.section?.name || '—'}</td>
-                          <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
-                          <td className="py-2 px-3 text-gray-500">T{c.startWeek}</td>
-                          <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1">{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button>}{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>}</div></td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-              )}
-
-              {autumn.length > 0 && (
-                <Card className="border-red-200">
-                  <CardHeader className="bg-red-50 py-3">
-                    <CardTitle className="text-base flex items-center gap-2"><Leaf className="w-4 h-4 text-red-500" />Jesień ({autumn.length})</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-4 space-y-3">
-                    {renderChart(autumn)}
-                    <table className="w-full text-sm">
-                      <thead><tr className="border-b bg-gray-50">{mergeMode && <th className="w-10 py-2 px-3"></th>}<th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
-                      <tbody>{autumn.map(c => (
-                        <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''} ${mergeCurveIds.includes(c.id) ? 'bg-blue-50' : ''} ${c.isArchived ? 'opacity-50 bg-gray-50' : ''}`}>
-                          {mergeMode && <td className="py-2 px-3">{!c.isArchived && <input type="checkbox" checked={mergeCurveIds.includes(c.id)} onChange={() => toggleMergeSelection(c.id)} className="w-4 h-4 accent-blue-600" />}</td>}
-                          <td className="py-2 px-3"><input type="checkbox" checked={selectedCurveIds.includes(c.id)} onChange={() => toggleCurveSelection(c.id)} className="w-4 h-4 accent-green-600" /></td>
-                          <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span>{c.isArchived && <Archive className="w-3 h-3 text-gray-400" />}{c.mergedFromIds && c.mergedFromIds.length > 0 && <Merge className="w-3 h-3 text-blue-400" />}</div></td>
-                          <td className="py-2 px-3 text-gray-600">{c.name || c.section?.name || '—'}</td>
-                          <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
-                          <td className="py-2 px-3 text-gray-500">T{c.startWeek}</td>
-                          <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1">{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button>}{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>}</div></td>
-                        </tr>
-                      ))}</tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          ))}
+          {/* All curves — flat table */}
+          {savedCurves.length > 0 && (
+            <Card>
+              <CardContent className="pt-4 space-y-3">
+                {renderChart(savedCurves)}
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b bg-gray-50">{mergeMode && <th className="w-10 py-2 px-3"></th>}<th className="w-10 py-2 px-3"></th><th className="text-left py-2 px-3">Rok</th><th className="text-left py-2 px-3">Nazwa/Sekcja</th><th className="text-right py-2 px-3">kg</th><th className="text-left py-2 px-3">Start</th><th className="text-center py-2 px-3">Sezon</th><th className="py-2 px-3 text-right">Akcje</th></tr></thead>
+                  <tbody>{savedCurves.map(c => (
+                    <tr key={c.id} className={`border-b hover:bg-gray-50 ${selectedCurveIds.includes(c.id) ? 'bg-green-50' : ''} ${mergeCurveIds.includes(c.id) ? 'bg-blue-50' : ''} ${c.isArchived ? 'opacity-50 bg-gray-50' : ''}`}>
+                      {mergeMode && <td className="py-2 px-3">{!c.isArchived && <input type="checkbox" checked={mergeCurveIds.includes(c.id)} onChange={() => toggleMergeSelection(c.id)} className="w-4 h-4 accent-blue-600" />}</td>}
+                      <td className="py-2 px-3"><input type="checkbox" checked={selectedCurveIds.includes(c.id)} onChange={() => toggleCurveSelection(c.id)} className="w-4 h-4 accent-green-600" /></td>
+                      <td className="py-2 px-3"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} /><span className="font-bold">{c.year}</span>{c.isArchived && <Archive className="w-3 h-3 text-gray-400" />}{c.mergedFromIds && c.mergedFromIds.length > 0 && <Merge className="w-3 h-3 text-blue-400" />}</div></td>
+                      <td className="py-2 px-3 text-gray-600">{c.name || c.section?.name || '—'}</td>
+                      <td className="py-2 px-3 text-right font-medium">{(c.totalKg / 1000).toFixed(1)}t</td>
+                      <td className="py-2 px-3 text-gray-500">T{c.startWeek}</td>
+                      <td className="py-2 px-3 text-center"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.season === 'summer' ? 'bg-orange-100 text-orange-700' : c.season === 'autumn' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{c.season === 'summer' ? '☀️ Lato' : c.season === 'autumn' ? '🍂 Jesień' : '📅 Cały rok'}</span></td>
+                      <td className="py-2 px-3 text-right"><div className="flex justify-end gap-1">{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => startEdit(c)}><Pencil className="w-4 h-4 text-blue-400" /></Button>}{!c.isArchived && <Button variant="ghost" size="icon" onClick={() => deleteCurve(c.id)}><Trash2 className="w-4 h-4 text-red-400" /></Button>}</div></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Merge bar */}
           {mergeMode && mergeCurveIds.length >= 2 && (
@@ -1168,7 +1257,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
               <span className="text-blue-800 font-medium">Zaznaczono {mergeCurveIds.length} krzywych do połączenia</span>
               <div className="flex gap-2">
                 {(() => {
-                  const selectedSeasons = new Set(savedCurves.filter(c => mergeCurveIds.includes(c.id)).map(c => c.season))
+                  const selectedSeasons = new Set(savedCurves.filter(c => mergeCurveIds.includes(c.id)).map(c => c.season).filter(Boolean))
                   if (selectedSeasons.size > 1) {
                     return <span className="text-red-600 text-sm flex items-center gap-1"><AlertCircle className="w-4 h-4" />Zaznaczone krzywe mają różne sezony!</span>
                   }
@@ -1207,7 +1296,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                       {savedCurves.filter(c => mergeCurveIds.includes(c.id)).map(c => (
                         <li key={c.id} className="text-sm text-gray-600 flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} />
-                          {c.section?.name || c.name || c.id} — {c.season === 'summer' ? 'Lato' : 'Jesień'} {c.year} ({(c.totalKg / 1000).toFixed(1)}t)
+                          {c.section?.name || c.name || c.id} — {c.season === 'summer' ? 'Lato' : c.season === 'autumn' ? 'Jesień' : 'Cały rok'} {c.year} ({(c.totalKg / 1000).toFixed(1)}t)
                         </li>
                       ))}
                     </ul>
@@ -1299,7 +1388,7 @@ export default function HistoricalDataTab({ onTemplateCreated }: { onTemplateCre
                     {savedCurves.filter(c => selectedCurveIds.includes(c.id)).map(c => (
                       <li key={c.id} className="text-sm text-gray-600 flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getYearColor(c.year) }} />
-                        {c.name || c.section?.name || c.id} — {c.season === 'summer' ? 'Lato' : 'Jesień'} {c.year} ({(c.totalKg / 1000).toFixed(1)}t)
+                        {c.name || c.section?.name || c.id} — {c.season === 'summer' ? 'Lato' : c.season === 'autumn' ? 'Jesień' : 'Cały rok'} {c.year} ({(c.totalKg / 1000).toFixed(1)}t)
                       </li>
                     ))}
                   </ul>

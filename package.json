@@ -8,11 +8,13 @@
   "scripts": {
     "dev": "next dev",
     "seed": "npx tsx prisma/seed.ts",
-    "build": "prisma generate && prisma db push --accept-data-loss && npx tsx prisma/migrate-maxcrop-data.ts && next build",
+    "build": "prisma generate && prisma db push --accept-data-loss && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "seed:test": "npx tsx prisma/seed-test-account.ts",
+    "merge-curves": "npx tsx prisma/merge-duplicate-curves.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

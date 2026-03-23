@@ -20,16 +20,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { id } = await params
     const body = await request.json()
     const data: Record<string, unknown> = {}
-    const fields = ['name','description','productionYear','productionCycle','season','plantingDate',
-      'winteredInTunnel','plantSource','dailyCurve','weeklyCurve','startDate','endDate','startWeek',
-      'totalKg','outsideTemps','insideTunnelTemps','tempAdjustmentFactor','gdhData','gdhToFlowering',
-      'gdhToFirstFruit','tempSources','sourceFile','notes']
+    const fields = ['name','description','productionYear','productionCycle','plantingDate',
+      'winteredInTunnel','plantSource',
+      'dailyCurveSummer','weeklyCurveSummer','startDateSummer','endDateSummer','startWeekSummer','totalKgSummer',
+      'dailyCurveAutumn','weeklyCurveAutumn','startDateAutumn','endDateAutumn','startWeekAutumn','totalKgAutumn',
+      'outsideTemps','insideTunnelTemps','tempAdjustmentFactor','gdhData','gdhToFlowering',
+      'gdhToFirstFruit','tempSources','sourceFile','notes','summerEndWeek']
     fields.forEach(f => { if (body[f] !== undefined) data[f] = body[f] })
     if (body.varietyId !== undefined) {
-      data.variety = body.varietyId ? { connect: { id: body.varietyId } } : { disconnect: true }
+      data.varietyId = body.varietyId || null
     }
     if (body.sourceSectionId !== undefined) {
-      data.sourceSection = body.sourceSectionId ? { connect: { id: body.sourceSectionId } } : { disconnect: true }
+      data.sourceSectionId = body.sourceSectionId || null
     }
     const template = await prisma.productionCurveTemplate.update({
       where: { id }, data, include: { variety: true, sourceSection: { select: { id: true, name: true } } },

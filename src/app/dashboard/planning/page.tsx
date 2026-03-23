@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Users, AlertTriangle, BarChart3, Target, Loader2, FileDown, Printer, Calendar, TrendingUp, Info, ChevronDown } from 'lucide-react'
+import { Users, AlertTriangle, BarChart3, Target, Loader2, FileDown, Printer, Calendar, Info, ChevronDown, ChevronUp } from 'lucide-react'
 
 // ==================== TYPES ====================
 interface SectionGdh {
@@ -34,12 +34,20 @@ interface GdhApiResponse {
 }
 
 interface TemplateAssignment {
-  id: string; templateId: string; targetYear: number; season: string; adjustmentPercent: number; isActive: boolean
-  template: { id: string; name: string; season: string; weeklyCurve: number[]; dailyCurve: number[]; startWeek?: number; totalKg: number }
+  id: string; templateId: string; targetYear: number; season: string; adjustmentPercent: number; isActive: boolean; createdAt: string
+  template: {
+    id: string; name: string
+    weeklyCurveSummer: number[]; dailyCurveSummer: number[]; startWeekSummer?: number; startDateSummer?: string; totalKgSummer: number
+    weeklyCurveAutumn: number[]; dailyCurveAutumn: number[]; startWeekAutumn?: number; startDateAutumn?: string; totalKgAutumn: number
+  }
 }
 interface AvailableTemplate {
   id: string; name: string; season: string; varietyId?: string; productionYear: number
-  weeklyCurve: number[]; winteredInTunnel: boolean; plantSource?: string; productionCycle: number; totalKg: number
+  weeklyCurve: number[]; weeklyCurveSummer: number[]; weeklyCurveAutumn: number[]
+  dailyCurveSummer: number[]; dailyCurveAutumn: number[]
+  startDateSummer?: string; startDateAutumn?: string
+  totalKgSummer: number; totalKgAutumn: number
+  winteredInTunnel: boolean; plantSource?: string; productionCycle: number; totalKg: number
 }
 interface PlantationSection {
   id: string; name: string; metersLength: number; potsPerMeter: number; shootsPerPot: number
@@ -56,10 +64,6 @@ const ALL_SCENARIOS = ['p90', 'p50', 'p10', 'best'] as const
 type Scenario = typeof ALL_SCENARIOS[number]
 const SCENARIO_LABELS: Record<Scenario, string> = { p90: 'P90 — ciepły rok', p50: 'P50 — typowy rok', p10: 'P10 — zimny rok', best: 'ECMWF' }
 const SCENARIO_SHORT: Record<Scenario, string> = { p90: 'P90', p50: 'P50', p10: 'P10', best: 'ECMWF' }
-
-// Flat distribution fallback — used ONLY when variety has no curves in DB
-// This produces a uniform spread; real curves should always come from DB (Variety or Section)
-const FLAT_CURVE_10W = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10] // 10 weeks, 10% each
 
 // ==================== TEMPLATE SCORING ====================
 const scoreTemplate = (t: AvailableTemplate, section: PlantationSection): number => {
@@ -140,10 +144,14 @@ export default function PlanningPage() {
   const [scenario, setScenario] = useState<Scenario>('p50')
   const [hoursPerDay, setHoursPerDay] = useState(8)
   const [staffingTiers, setStaffingTiers] = useState<StaffingTier[]>(DEFAULT_TIERS)
-  const [selectedWeek, setSelectedWeek] = useState<number | null>(null)
-  const [dailyViewSection, setDailyViewSection] = useState<string>('all')
   const [availableTemplates, setAvailableTemplates] = useState<AvailableTemplate[]>([])
   const [curveDropdownOpen, setCurveDropdownOpen] = useState<string | null>(null)
+  const [showCurveAssignment, setShowCurveAssignment] = useState(false)
+  const [planView, setPlanView] = useState<'weekly' | 'daily'>('weekly')
+  const [planSections, setPlanSections] = useState<string>('all')
+  const [planDateMode, setPlanDateMode] = useState<'season' | 'range'>('season')
+  const [planDateFrom, setPlanDateFrom] = useState<string>('')
+  const [planDateTo, setPlanDateTo] = useState<string>('')
   const tableRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -162,7 +170,11 @@ export default function PlanningPage() {
       setBlocks(plantation.blocks || [])
       setAvailableTemplates((templatesData.templates || []).map((t: Record<string, unknown>) => ({
         id: t.id, name: t.name, season: t.season, varietyId: t.varietyId,
-        productionYear: t.productionYear, weeklyCurve: t.weeklyCurve,
+        productionYear: t.productionYear, weeklyCurve: t.weeklyCurve as number[] ?? [],
+        weeklyCurveSummer: (t.weeklyCurveSummer as number[]) ?? [], weeklyCurveAutumn: (t.weeklyCurveAutumn as number[]) ?? [],
+        dailyCurveSummer: (t.dailyCurveSummer as number[]) ?? [], dailyCurveAutumn: (t.dailyCurveAutumn as number[]) ?? [],
+        startDateSummer: t.startDateSummer as string | undefined, startDateAutumn: t.startDateAutumn as string | undefined,
+        totalKgSummer: (t.totalKgSummer as number) ?? 0, totalKgAutumn: (t.totalKgAutumn as number) ?? 0,
         winteredInTunnel: t.winteredInTunnel, plantSource: t.plantSource, productionCycle: t.productionCycle, totalKg: (t.totalKg as number) ?? 0,
       })))
     }).catch(console.error).finally(() => setLoading(false))
@@ -263,90 +275,158 @@ export default function PlanningPage() {
       totalKg: number
       totalSummerKg: number
       totalAutumnKg: number
-      curveSource: 'assignment' | 'section' | 'variety' | 'flat'
+      curveSource: 'assignment' | 'section' | 'variety' | 'none'
       summerAssignment: TemplateAssignment | null
       autumnAssignment: TemplateAssignment | null
       weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }>
+      dailyKg: Array<{ date: string; kg: number; summerKg: number; autumnKg: number }>
       eff: number
     }> = []
 
     for (const section of allPlantationSections) {
       const v = section.variety
       const fruitDate = sectionFruitDates.get(section.id)
+      const autumnStartWeekFromVariety = v?.autumnStartWeek ?? null
 
-      if (!fruitDate) continue // no fruit date prediction → skip
+      // Skip sections that have neither a fruit date (summer) nor autumnStartWeek (autumn-only)
+      if (!fruitDate && !autumnStartWeekFromVariety) continue
 
-      const startWeek = getWeekNumber(new Date(fruitDate))
+      const startWeek = fruitDate ? getWeekNumber(new Date(fruitDate)) : null
       const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter
       const shoots = pots * section.shootsPerPot
       const eff = v?.pickingEfficiency ?? 6 // kg/h — from DB, fallback only if not set
-
-      // Gross multiplier — all from DB (Variety fields)
-      const secondCat = v?.secondCategoryPercent ?? 0
-      const waste = v?.wastePercent ?? 0
-      const grossMultiplier = (secondCat + waste) > 0 ? 100 / (100 - secondCat - waste) : 1
 
       // Yields from DB: section-level overrides variety-level
       // --- SUMMER ---
       const summerYield = section.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
       // Priority: 1. SectionTemplateAssignment curve  2. Section curve  3. Variety curve  4. Flat
-      const summerAssignment = (section.templateAssignments || []).find(a => a.season === 'summer' && a.isActive)
+      const summerAssignment = (section.templateAssignments || [])
+        .filter(a => a.season === 'summer' && a.isActive)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
       const sectionSummerCurve = (section.harvestCurveSummer as number[] | undefined)
       const varietySummerCurve = (v?.harvestCurveSummer as number[] | undefined)
-      const assignmentSummerCurve = summerAssignment?.template?.weeklyCurve
-      const summerCurve = (assignmentSummerCurve?.length ? assignmentSummerCurve : null)
+      // Weekly curves for fallback
+      const assignmentSummerWeeklyCurve = summerAssignment?.template?.weeklyCurveSummer
+      const summerWeeklyCurve = (assignmentSummerWeeklyCurve?.length ? assignmentSummerWeeklyCurve : null)
         ?? (sectionSummerCurve?.length ? sectionSummerCurve : null)
         ?? (varietySummerCurve?.length ? varietySummerCurve : null)
-        ?? FLAT_CURVE_10W
+        ?? null
+      // Daily curves from template assignment (% per day)
+      const summerDailyCurve = summerAssignment?.template?.dailyCurveSummer
+      const summerStartDate = summerAssignment?.template?.startDateSummer
 
       // --- AUTUMN ---
       const autumnYield = section.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
-      const autumnAssignment = (section.templateAssignments || []).find(a => a.season === 'autumn' && a.isActive)
+      const autumnAssignment = (section.templateAssignments || [])
+        .filter(a => a.season === 'autumn' && a.isActive)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
       const sectionAutumnCurve = (section.harvestCurveAutumn as number[] | undefined)
       const varietyAutumnCurve = (v?.harvestCurveAutumn as number[] | undefined)
-      const assignmentAutumnCurve = autumnAssignment?.template?.weeklyCurve
-      const autumnCurve = (assignmentAutumnCurve?.length ? assignmentAutumnCurve : null)
+      const assignmentAutumnWeeklyCurve = autumnAssignment?.template?.weeklyCurveAutumn
+      const autumnWeeklyCurve = (assignmentAutumnWeeklyCurve?.length ? assignmentAutumnWeeklyCurve : null)
         ?? (sectionAutumnCurve?.length ? sectionAutumnCurve : null)
         ?? (varietyAutumnCurve?.length ? varietyAutumnCurve : null)
-        ?? FLAT_CURVE_10W
+        ?? null
+      const autumnDailyCurve = autumnAssignment?.template?.dailyCurveAutumn
+      const autumnStartDate = autumnAssignment?.template?.startDateAutumn
 
       // Autumn start week — from DB (Variety.autumnStartWeek)
       const autumnStartWeek = v?.autumnStartWeek ?? null
 
-      // Gross kg = shoots × yield × grossMultiplier (everything to pick)
-      const summerKg = shoots * summerYield * grossMultiplier
-      const autumnKg = (autumnStartWeek && autumnYield > 0) ? shoots * autumnYield * grossMultiplier : 0
+      const summerKg = shoots * summerYield
+      const autumnKg = (autumnStartWeek && autumnYield > 0) ? shoots * autumnYield : 0
       const totalKg = summerKg + autumnKg
 
-      const weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }> = []
+      // Build dailyKg array — per-day kg values
+      const dailyKgMap = new Map<string, { summerKg: number; autumnKg: number }>()
 
-      // Summer weeks — start from GDH-predicted fruit date
-      if (summerKg > 0 && summerCurve.length > 0) {
-        summerCurve.forEach((pct, i) => {
-          const week = startWeek + i
-          const kg = Math.round(summerKg * pct / 100)
-          const hrs = Math.round(kg / eff)
-          weeklyKg.push({ week, kg, summerKg: kg, autumnKg: 0 })
-          if (!weekMap[week]) weekMap[week] = { kg: 0, hrs: 0, sections: [] }
-          weekMap[week].kg += kg
-          weekMap[week].hrs += hrs
-          if (!weekMap[week].sections.includes(section.name)) weekMap[week].sections.push(section.name)
-        })
+      // --- SUMMER daily distribution ---
+      if (summerKg > 0 && fruitDate && summerWeeklyCurve) {
+        if (summerDailyCurve?.length && fruitDate) {
+          // Use daily curve from template — real per-day distribution
+          summerDailyCurve.forEach((pct, i) => {
+            const d = new Date(fruitDate)
+            d.setDate(d.getDate() + i)
+            const dateStr = d.toISOString().slice(0, 10)
+            const kg = Math.round(summerKg * pct / 100)
+            const existing = dailyKgMap.get(dateStr)
+            if (existing) { existing.summerKg += kg } else { dailyKgMap.set(dateStr, { summerKg: kg, autumnKg: 0 }) }
+          })
+        } else {
+          // Fallback: weekly curve divided by 7
+          summerWeeklyCurve.forEach((pct, i) => {
+            const weekStart = new Date(fruitDate)
+            weekStart.setDate(weekStart.getDate() + i * 7)
+            const weekKg = Math.round(summerKg * pct / 100)
+            const dayKg = Math.round(weekKg / 7)
+            for (let d = 0; d < 7; d++) {
+              const day = new Date(weekStart)
+              day.setDate(day.getDate() + d)
+              const dateStr = day.toISOString().slice(0, 10)
+              const existing = dailyKgMap.get(dateStr)
+              if (existing) { existing.summerKg += dayKg } else { dailyKgMap.set(dateStr, { summerKg: dayKg, autumnKg: 0 }) }
+            }
+          })
+        }
       }
 
-      // Autumn weeks — start from variety's autumnStartWeek (from DB)
-      if (autumnKg > 0 && autumnCurve.length > 0 && autumnStartWeek) {
-        autumnCurve.forEach((pct, i) => {
-          const week = autumnStartWeek + i
-          const kg = Math.round(autumnKg * pct / 100)
-          const hrs = Math.round(kg / eff)
-          const existing = weeklyKg.find(w => w.week === week)
-          if (existing) { existing.kg += kg; existing.autumnKg += kg } else { weeklyKg.push({ week, kg, summerKg: 0, autumnKg: kg }) }
-          if (!weekMap[week]) weekMap[week] = { kg: 0, hrs: 0, sections: [] }
-          weekMap[week].kg += kg
-          weekMap[week].hrs += hrs
-          if (!weekMap[week].sections.includes(section.name)) weekMap[week].sections.push(section.name)
-        })
+      // --- AUTUMN daily distribution ---
+      if (autumnKg > 0 && autumnStartWeek && autumnWeeklyCurve) {
+        if (autumnDailyCurve?.length && autumnStartDate) {
+          // Use daily curve from template
+          autumnDailyCurve.forEach((pct, i) => {
+            const d = new Date(autumnStartDate)
+            d.setDate(d.getDate() + i)
+            const dateStr = d.toISOString().slice(0, 10)
+            const kg = Math.round(autumnKg * pct / 100)
+            const existing = dailyKgMap.get(dateStr)
+            if (existing) { existing.autumnKg += kg } else { dailyKgMap.set(dateStr, { summerKg: 0, autumnKg: kg }) }
+          })
+        } else {
+          // Fallback: weekly curve divided by 7
+          const autumnStartDate2 = new Date(year, 0, 1)
+          const daysToMon = (autumnStartDate2.getDay() + 6) % 7
+          autumnStartDate2.setDate(1 - daysToMon + (autumnStartWeek - 1) * 7)
+          autumnWeeklyCurve.forEach((pct, i) => {
+            const weekStart = new Date(autumnStartDate2)
+            weekStart.setDate(weekStart.getDate() + i * 7)
+            const weekKg = Math.round(autumnKg * pct / 100)
+            const dayKg = Math.round(weekKg / 7)
+            for (let d = 0; d < 7; d++) {
+              const day = new Date(weekStart)
+              day.setDate(day.getDate() + d)
+              const dateStr = day.toISOString().slice(0, 10)
+              const existing = dailyKgMap.get(dateStr)
+              if (existing) { existing.autumnKg += dayKg } else { dailyKgMap.set(dateStr, { summerKg: 0, autumnKg: dayKg }) }
+            }
+          })
+        }
+      }
+
+      // Convert dailyKgMap to sorted array
+      const dailyKgArr = [...dailyKgMap.entries()]
+        .map(([date, vals]) => ({ date, kg: vals.summerKg + vals.autumnKg, summerKg: vals.summerKg, autumnKg: vals.autumnKg }))
+        .sort((a, b) => a.date.localeCompare(b.date))
+
+      // Aggregate dailyKg → weeklyKg
+      const weeklyKgMap = new Map<number, { kg: number; summerKg: number; autumnKg: number }>()
+      for (const day of dailyKgArr) {
+        const wk = getWeekNumber(new Date(day.date))
+        const existing = weeklyKgMap.get(wk)
+        if (existing) { existing.kg += day.kg; existing.summerKg += day.summerKg; existing.autumnKg += day.autumnKg }
+        else { weeklyKgMap.set(wk, { kg: day.kg, summerKg: day.summerKg, autumnKg: day.autumnKg }) }
+      }
+      const weeklyKg = [...weeklyKgMap.entries()]
+        .map(([week, vals]) => ({ week, kg: vals.kg, summerKg: vals.summerKg, autumnKg: vals.autumnKg }))
+        .sort((a, b) => a.week - b.week)
+
+      // Update weekMap for global aggregation
+      for (const wk of weeklyKg) {
+        const hrs = Math.round(wk.kg / eff)
+        if (!weekMap[wk.week]) weekMap[wk.week] = { kg: 0, hrs: 0, sections: [] }
+        weekMap[wk.week].kg += wk.kg
+        weekMap[wk.week].hrs += hrs
+        if (!weekMap[wk.week].sections.includes(section.name)) weekMap[wk.week].sections.push(section.name)
       }
 
       const hasSummerAssignment = !!summerAssignment
@@ -354,8 +434,8 @@ export default function PlanningPage() {
       const curveSource = hasSummerAssignment || hasAutumnAssignment ? 'assignment' as const
         : (sectionSummerCurve?.length || sectionAutumnCurve?.length) ? 'section' as const
         : (varietySummerCurve?.length || varietyAutumnCurve?.length) ? 'variety' as const
-        : 'flat' as const
-      sectionDetails.push({ section, fruitStartDate: fruitDate, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg: weeklyKg.sort((a, b) => a.week - b.week), eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null })
+        : 'none' as const
+      sectionDetails.push({ section, fruitStartDate: fruitDate ?? null, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg, dailyKg: dailyKgArr, eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null })
     }
 
     const weeks = Object.entries(weekMap)
@@ -393,92 +473,128 @@ export default function PlanningPage() {
     return { weeks, sectionDetails }
   }, [allPlantationSections, sectionFruitDates, hoursPerDay, staffingTiers])
 
-  const peakPickers = Math.max(...weeklyPlan.weeks.map(w => w.pickers), 0)
-  const peakTotalStaff = Math.max(...weeklyPlan.weeks.map(w => w.totalStaff), 0)
   const totalKgAll = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalKg, 0)
   const totalSummerKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalSummerKg, 0)
   const totalAutumnKg = weeklyPlan.sectionDetails.reduce((s, d) => s + d.totalAutumnKg, 0)
-  const bottleneckThreshold = peakPickers * 0.8
-  const bottleneckWeeks = weeklyPlan.weeks.filter(w => w.pickers >= bottleneckThreshold)
 
-  // Auto-select peak week if none selected
-  useEffect(() => {
-    if (selectedWeek === null && weeklyPlan.weeks.length > 0) {
-      const peak = weeklyPlan.weeks.reduce((best, w) => w.kg > best.kg ? w : best, weeklyPlan.weeks[0])
-      setSelectedWeek(peak.week)
-    }
-  }, [weeklyPlan.weeks, selectedWeek])
-
-  // ==================== DAILY PLAN FOR SELECTED WEEK ====================
-  const dailyPlan = useMemo(() => {
-    if (!selectedWeek || !weeklyPlan.weeks.length) return null
+  // ==================== FILTERED PLAN DATA ====================
+  const filteredPlanData = useMemo(() => {
+    if (!weeklyPlan.sectionDetails.length) return { weeks: [], days: [] }
 
     const year = new Date().getFullYear()
-    const jan1 = new Date(year, 0, 1)
-    const daysToMonday = (jan1.getDay() + 6) % 7
-    const monday = new Date(year, 0, 1 - daysToMonday + (selectedWeek - 1) * 7)
+    const DAY_SHORT = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb']
 
-    const DAY_NAMES = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela']
-    const DAY_SHORT = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb', 'Nd']
+    // Filtruj sekcje
+    const activeSections = planSections === 'all'
+      ? weeklyPlan.sectionDetails
+      : weeklyPlan.sectionDetails.filter(d => d.section.id === planSections)
 
-    // Find which sections are active in this week
-    const activeSections = weeklyPlan.sectionDetails
-      .filter(d => {
-        const weekData = d.weeklyKg.find(w => w.week === selectedWeek)
-        return weekData && weekData.kg > 0
+    // Zakres dat
+    const fromDate = planDateMode === 'range' && planDateFrom ? planDateFrom : null
+    const toDate = planDateMode === 'range' && planDateTo ? planDateTo : null
+
+    // ── Widok TYGODNIOWY ──
+    const weeks = weeklyPlan.weeks
+      .map(w => {
+        // Przelicz kg tylko dla wybranych sekcji
+        const kg = activeSections.reduce((sum, d) => {
+          const wd = d.weeklyKg.find(x => x.week === w.week)
+          return sum + (wd?.kg ?? 0)
+        }, 0)
+        // Przelicz godziny z per-section eff
+        const hrs = activeSections.reduce((sum, d) => {
+          const wd = d.weeklyKg.find(x => x.week === w.week)
+          return sum + Math.round((wd?.kg ?? 0) / d.eff)
+        }, 0)
+        const dailyKg = Math.round(kg / 7)
+        const dailyHrs = Math.round(hrs / 7)
+        const pickers = Math.ceil(dailyHrs / hoursPerDay)
+        const tier = matchStaffingTier(dailyKg, staffingTiers)
+        const qc = tier?.qualityControl || 0
+        const weighing = tier?.weighingStaff || 0
+        const infra = tier?.infrastructure || 0
+        return {
+          ...w,
+          kg,
+          dailyKg,
+          hrs,
+          dailyHrs,
+          pickers,
+          qc,
+          weighing,
+          infra,
+          totalStaff: pickers + qc + weighing + infra,
+        }
       })
-      .filter(d => dailyViewSection === 'all' || d.section.id === dailyViewSection)
+      .filter(w => {
+        if (w.kg <= 0) return false
+        if (!fromDate && !toDate) return true
+        // Oblicz daty tygodnia
+        const jan1 = new Date(year, 0, 1)
+        const daysToMonday = (jan1.getDay() + 6) % 7
+        const monday = new Date(year, 0, 1 - daysToMonday + (w.week - 1) * 7)
+        const sunday = new Date(monday); sunday.setDate(sunday.getDate() + 6)
+        if (fromDate && sunday < new Date(fromDate)) return false
+        if (toDate && monday > new Date(toDate)) return false
+        return true
+      })
 
-    const days = Array.from({ length: 7 }, (_, i) => {
-      const date = new Date(monday)
-      date.setDate(monday.getDate() + i)
-
-      let totalKg = 0
-      let totalHrs = 0
-      const sectionBreakdown: Array<{
-        name: string; blockName: string; varietyName: string
-        kg: number; summerKg: number; autumnKg: number; hrs: number; eff: number
-      }> = []
-
-      for (const detail of activeSections) {
-        const weekData = detail.weeklyKg.find(w => w.week === selectedWeek)!
-        const dailyKg = Math.round(weekData.kg / 7)
-        const dailySummerKg = Math.round(weekData.summerKg / 7)
-        const dailyAutumnKg = Math.round(weekData.autumnKg / 7)
-        const hrs = Math.round(dailyKg / detail.eff)
-
-        sectionBreakdown.push({
-          name: detail.section.name,
-          blockName: detail.section.blockName,
-          varietyName: detail.section.variety?.name || '?',
-          kg: dailyKg, summerKg: dailySummerKg, autumnKg: dailyAutumnKg, hrs, eff: detail.eff,
-        })
-        totalKg += dailyKg
-        totalHrs += hrs
+    // ── Widok DZIENNY ──
+    // Zbierz wszystkie daty z dailyKg wszystkich aktywnych sekcji
+    const dayMap = new Map<string, { kg: number; summerKg: number; autumnKg: number; hrs: number; sectionKg: Record<string, number> }>()
+    for (const detail of activeSections) {
+      for (const d of detail.dailyKg) {
+        if (d.kg <= 0) continue
+        if (fromDate && d.date < fromDate) continue
+        if (toDate && d.date > toDate) continue
+        const existing = dayMap.get(d.date)
+        if (existing) {
+          existing.kg += d.kg
+          existing.summerKg += d.summerKg
+          existing.autumnKg += d.autumnKg
+          existing.hrs += Math.round(d.kg / detail.eff)
+          existing.sectionKg[detail.section.id] = (existing.sectionKg[detail.section.id] ?? 0) + d.kg
+        } else {
+          const sectionKg: Record<string, number> = {}
+          sectionKg[detail.section.id] = d.kg
+          dayMap.set(d.date, { kg: d.kg, summerKg: d.summerKg, autumnKg: d.autumnKg, hrs: Math.round(d.kg / detail.eff), sectionKg })
+        }
       }
+    }
 
-      const pickers = Math.ceil(totalHrs / hoursPerDay)
-      const tier = matchStaffingTier(totalKg, staffingTiers)
-      const qc = tier?.qualityControl || 0
-      const weighing = tier?.weighingStaff || 0
-      const infra = tier?.infrastructure || 0
+    const days = [...dayMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, data]) => {
+        const d = new Date(date)
+        const pickers = Math.ceil(data.hrs / hoursPerDay)
+        const tier = matchStaffingTier(data.kg, staffingTiers)
+        const qc = tier?.qualityControl || 0
+        const weighing = tier?.weighingStaff || 0
+        const infra = tier?.infrastructure || 0
+        return {
+          date,
+          dateDisplay: `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`,
+          dayName: DAY_SHORT[d.getDay()],
+          kg: data.kg,
+          summerKg: data.summerKg,
+          autumnKg: data.autumnKg,
+          hrs: data.hrs,
+          pickers,
+          qc,
+          weighing,
+          infra,
+          totalStaff: pickers + qc + weighing + infra,
+          sectionKg: data.sectionKg,
+        }
+      })
 
-      return {
-        dayIndex: i,
-        dayName: DAY_NAMES[i],
-        dayShort: DAY_SHORT[i],
-        date,
-        dateStr: `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}`,
-        sections: sectionBreakdown.sort((a, b) => b.kg - a.kg),
-        totalKg, totalHrs, pickers, qc, weighing, infra,
-        totalStaff: pickers + qc + weighing + infra,
-      }
-    })
+    return { weeks, days }
+  }, [weeklyPlan, planSections, planDateMode, planDateFrom, planDateTo, hoursPerDay, staffingTiers])
 
-    // Week summary
-    const weekData = weeklyPlan.weeks.find(w => w.week === selectedWeek)
-    return { days, weekData, activeSections }
-  }, [selectedWeek, dailyViewSection, weeklyPlan, hoursPerDay, staffingTiers])
+  const peakPickers = Math.max(...filteredPlanData.days.map(d => d.pickers), 0)
+  const peakTotalStaff = Math.max(...filteredPlanData.days.map(d => d.totalStaff), 0)
+  const bottleneckThreshold = peakPickers * 0.8
+  const bottleneckWeeks = filteredPlanData.weeks.filter(w => w.pickers >= bottleneckThreshold)
 
   // ==================== PDF EXPORT ====================
   const handleExportPdf = useCallback(async () => {
@@ -562,6 +678,19 @@ export default function PlanningPage() {
 
   const noFruitDates = weeklyPlan.sectionDetails.length === 0 && allPlantationSections.length > 0
 
+  // Sections missing from planning — distinguish "no planting date" vs "future planting"
+  const plannedSectionIds = new Set(weeklyPlan.sectionDetails.map(d => d.section.id))
+  const today = new Date().toISOString().slice(0, 10)
+  const missingSections = allPlantationSections
+    .filter(s => !plannedSectionIds.has(s.id))
+    .map(s => {
+      const gdhSection = gdhData?.sections?.find(g => g.id === s.id)
+      const gdhStartDate = gdhSection?.gdhStartDate || null
+      return { section: s, gdhStartDate }
+    })
+  const sectionsNoPlantingDate = missingSections.filter(m => !m.gdhStartDate)
+  const sectionsFuturePlanting = missingSections.filter(m => m.gdhStartDate && m.gdhStartDate > today)
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
@@ -589,6 +718,105 @@ export default function PlanningPage() {
           </button>
         </div>
       </div>
+
+      {/* KPI tiles + Bottleneck + Workers — moved to top */}
+      {weeklyPlan.weeks.length > 0 && (
+        <>
+          {/* KPI tiles */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <div className="bg-white rounded-xl p-4 border text-center">
+              <p className="text-3xl font-bold">{weeklyPlan.sectionDetails.length}</p>
+              <p className="text-xs text-gray-500">Sekcji zbiera</p>
+            </div>
+            <div className="bg-green-50 rounded-xl p-4 border border-green-200 text-center">
+              <p className="text-3xl font-bold text-green-700">{(totalKgAll / 1000).toFixed(1)}t</p>
+              <p className="text-xs text-green-600">Zbiór brutto (do zerwania)</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">
+                <span className="text-green-600">{(totalSummerKg / 1000).toFixed(1)}t lato</span>
+                {' + '}
+                <span className="text-amber-600">{(totalAutumnKg / 1000).toFixed(1)}t jesień</span>
+              </p>
+            </div>
+            <div className="bg-blue-50 rounded-xl p-4 border border-blue-200 text-center">
+              <p className="text-3xl font-bold text-blue-600">{peakPickers}</p>
+              <p className="text-xs text-blue-600">Zbieraczy max</p>
+            </div>
+            <div className="bg-orange-50 rounded-xl p-4 border border-orange-200 text-center">
+              <p className="text-3xl font-bold text-orange-600">{peakTotalStaff}</p>
+              <p className="text-xs text-orange-600">Łącznie osób max</p>
+            </div>
+            <div className="bg-purple-50 rounded-xl p-4 border border-purple-200 text-center">
+              <p className="text-3xl font-bold text-purple-600">{weeklyPlan.weeks.length}</p>
+              <p className="text-xs text-purple-600">Tygodni zbiorów</p>
+            </div>
+            <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-200 text-center">
+              <p className="text-3xl font-bold text-indigo-600">{SCENARIO_SHORT[scenario]}</p>
+              <p className="text-xs text-indigo-600">Scenariusz</p>
+            </div>
+          </div>
+
+          {/* Bottleneck warnings */}
+          {bottleneckWeeks.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-amber-600" /><h3 className="font-semibold text-amber-800">Wąskie gardła — wysokie zapotrzebowanie</h3></div>
+              <div className="flex flex-wrap gap-2">
+                {bottleneckWeeks.map(w => (
+                  <span key={w.week} className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm">
+                    T{w.week}: {w.totalStaff} os. ({w.pickers} zbieraczy + {w.qc + w.weighing + w.infra} wsparcie, {w.kg.toLocaleString('pl-PL')} kg)
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Workers bar chart — stacked */}
+          <div className="bg-white rounded-xl border p-6">
+            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-500" />Zapotrzebowanie na personel (osób/dzień zbioru)</h3>
+            <p className="text-xs text-gray-500 -mt-3 mb-4">Zbiór {7} dni/tydz. × {hoursPerDay}h/dzień — zbieracze + KJ + wagi + infrastruktura</p>
+            <div className="flex items-end gap-1 h-48 mb-2">
+              {weeklyPlan.weeks.map(w => {
+                const isBottleneck = w.pickers >= bottleneckThreshold
+                const maxH = peakTotalStaff > 0 ? peakTotalStaff : 1
+                const pickerH = (w.pickers / maxH) * 180
+                const qcH = (w.qc / maxH) * 180
+                const weighH = (w.weighing / maxH) * 180
+                const infraH = (w.infra / maxH) * 180
+                return (
+                  <div key={w.week} className="flex-1 flex flex-col items-end group relative">
+                    <div className="w-full flex flex-col-reverse">
+                      <div className={`w-full ${isBottleneck ? 'bg-red-500' : 'bg-blue-500'} transition-all`} style={{ height: `${pickerH}px`, minHeight: w.pickers > 0 ? '2px' : '0' }} />
+                      {w.qc > 0 && <div className="w-full bg-amber-500" style={{ height: `${qcH}px`, minHeight: '2px' }} />}
+                      {w.weighing > 0 && <div className="w-full bg-cyan-500" style={{ height: `${weighH}px`, minHeight: '2px' }} />}
+                      {w.infra > 0 && <div className="w-full bg-purple-500 rounded-t" style={{ height: `${infraH}px`, minHeight: '2px' }} />}
+                    </div>
+                    <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap z-10 shadow-lg">
+                      <div className="font-bold text-blue-400">T{w.week} ({w.dates})</div>
+                      <div>{w.dailyKg.toLocaleString('pl-PL')} kg/dzień</div>
+                      <div className="text-blue-300">{w.pickers} zbieraczy</div>
+                      <div className="text-amber-300">{w.qc} kontrola jakości</div>
+                      <div className="text-cyan-300">{w.weighing} wagi</div>
+                      <div className="text-purple-300">{w.infra} infrastruktura</div>
+                      <div className="font-bold border-t border-gray-700 mt-1 pt-1">{w.totalStaff} osób łącznie</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex gap-1">{weeklyPlan.weeks.map(w => (
+              <div key={w.week} className="flex-1 text-center text-xs text-gray-500">
+                <div>T{w.week}</div>
+                <div className="text-[10px] text-gray-400">{w.dates.split('-')[0]}</div>
+              </div>
+            ))}</div>
+            <div className="flex gap-4 mt-3 text-xs text-gray-500 justify-center flex-wrap">
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500 inline-block" /> Zbieracze</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Kontrola jakości</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-cyan-500 inline-block" /> Wagi</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-500 inline-block" /> Infrastruktura</span>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* MaxCrop data analysis — collapsible */}
       <details className="bg-slate-50 border border-slate-200 rounded-xl">
@@ -692,13 +920,41 @@ export default function PlanningPage() {
         </div>
       )}
 
-      {/* Curve assignment warnings */}
-      {weeklyPlan.sectionDetails.some(d => d.curveSource === 'flat') && (
+      {/* Missing sections warnings */}
+      {sectionsNoPlantingDate.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-amber-600" /><h3 className="font-semibold text-amber-800">Wybierz krzywą zbiorów</h3></div>
-          <p className="text-sm text-amber-600 mb-3">Poniższe sekcje używają płaskiego rozkładu (10% × 10 tyg.) — wyniki będą niedokładne. Przypisz krzywą z szablonu.</p>
+          <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-amber-600" /><h3 className="font-semibold text-amber-800">Uzupełnij datę wysadzenia</h3></div>
+          <p className="text-sm text-amber-600 mb-3">Poniższe sekcje nie mają daty wysadzenia — nie można obliczyć GDH i daty owocowania.</p>
           <div className="flex flex-wrap gap-2">
-            {weeklyPlan.sectionDetails.filter(d => d.curveSource === 'flat').map(d => (
+            {sectionsNoPlantingDate.map(m => (
+              <span key={m.section.id} className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm">
+                {m.section.blockName}/{m.section.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sectionsFuturePlanting.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2"><Calendar className="w-5 h-5 text-blue-600" /><h3 className="font-semibold text-blue-800">Planowane wysadzenie</h3></div>
+          <div className="flex flex-wrap gap-2">
+            {sectionsFuturePlanting.map(m => (
+              <span key={m.section.id} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                {m.section.blockName}/{m.section.name}: {new Date(m.gdhStartDate!).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Curve assignment warnings */}
+      {weeklyPlan.sectionDetails.some(d => d.curveSource === 'none') && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-amber-600" /><h3 className="font-semibold text-amber-800">Wybierz szablon zbiorów</h3></div>
+          <p className="text-sm text-amber-600 mb-3">Poniższe sekcje nie mają krzywej zbiorów — nie są uwzględnione w prognozach. Przypisz szablon lub dodaj krzywą do odmiany.</p>
+          <div className="flex flex-wrap gap-2">
+            {weeklyPlan.sectionDetails.filter(d => d.curveSource === 'none').map(d => (
               <span key={d.section.id} className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm">
                 {d.section.blockName}/{d.section.name}
               </span>
@@ -707,11 +963,17 @@ export default function PlanningPage() {
         </div>
       )}
 
-      {/* Curve assignment per section */}
+      {/* Curve assignment per section — collapsible */}
       {weeklyPlan.sectionDetails.length > 0 && (
         <div className="bg-white rounded-xl border p-6">
-          <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-purple-500" />Krzywe zbiorów per sekcja</h3>
-          <div className="space-y-2">
+          <button
+            onClick={() => setShowCurveAssignment(!showCurveAssignment)}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <h3 className="font-semibold text-lg flex items-center gap-2"><BarChart3 className="w-5 h-5 text-purple-500" />Krzywe zbiorów per sekcja</h3>
+            {showCurveAssignment ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+          </button>
+          {showCurveAssignment && <div className="space-y-2 mt-4">
             {weeklyPlan.sectionDetails
               .sort((a, b) => (a.section.blockName + a.section.name).localeCompare(b.section.blockName + b.section.name))
               .map(d => {
@@ -719,11 +981,9 @@ export default function PlanningPage() {
                   t.varietyId === d.section.varietyId ||
                   !t.varietyId
                 ).sort((a, b) => scoreTemplate(b, d.section) - scoreTemplate(a, d.section))
-                const summerTemplates = matchingTemplates.filter(t => t.season === 'summer')
-                const autumnTemplates = matchingTemplates.filter(t => t.season === 'autumn')
                 const isOpen = curveDropdownOpen === d.section.id
                 return (
-                  <div key={d.section.id} className={`border rounded-lg p-3 ${d.curveSource === 'flat' ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200'}`}>
+                  <div key={d.section.id} className={`border rounded-lg p-3 ${d.curveSource === 'none' ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200'}`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <span className="text-sm font-medium"><span className="text-gray-400">{d.section.blockName}/</span>{d.section.name}</span>
@@ -736,7 +996,7 @@ export default function PlanningPage() {
                         }`}>
                           {d.curveSource === 'assignment' ? 'Szablon' :
                            d.curveSource === 'section' ? 'Sekcja' :
-                           d.curveSource === 'variety' ? 'Odmiana' : 'Brak krzywej'}
+                           d.curveSource === 'variety' ? 'Odmiana' : 'Brak krzywej zbiorów'}
                         </span>
                         {d.summerAssignment && <span className="text-xs text-green-600">{d.summerAssignment.template.name}</span>}
                         {d.autumnAssignment && <span className="text-xs text-amber-600">{d.autumnAssignment.template.name}</span>}
@@ -746,7 +1006,7 @@ export default function PlanningPage() {
                         className="flex items-center gap-1 text-xs px-3 py-1.5 border rounded-lg hover:bg-gray-50 transition-colors"
                       >
                         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                        Wybierz krzywą
+                        Wybierz szablon
                       </button>
                     </div>
                     {isOpen && (
@@ -755,7 +1015,7 @@ export default function PlanningPage() {
                         <button
                           onClick={() => unassignCurve(d.section.id)}
                           className={`w-full text-left px-3 py-2 rounded-lg text-sm border transition-colors ${
-                            d.curveSource === 'variety' || d.curveSource === 'flat'
+                            d.curveSource === 'variety' || d.curveSource === 'none'
                               ? 'border-purple-400 bg-purple-50 text-purple-700'
                               : 'border-gray-200 hover:bg-purple-50 text-gray-700'
                           }`}
@@ -763,19 +1023,19 @@ export default function PlanningPage() {
                           <div className="font-medium">Użyj danych producenckich (odmiana)</div>
                           <div className="text-xs text-gray-400">Odepnij szablon — użyje krzywej z odmiany</div>
                         </button>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {/* Summer templates */}
-                          <div>
-                            <p className="text-xs font-medium text-orange-700 mb-2">☀️ Lato ({summerTemplates.length} szablonów)</p>
-                            {summerTemplates.length === 0 ? (
-                              <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
-                            ) : (
-                              <div className="space-y-1 max-h-48 overflow-y-auto">
-                                {summerTemplates.map((t, i) => (
+                        <div>
+                          <p className="text-xs font-medium text-gray-700 mb-2">Wybierz szablon ({matchingTemplates.length})</p>
+                          {matchingTemplates.length === 0 ? (
+                            <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
+                          ) : (
+                            <div className="space-y-1 max-h-60 overflow-y-auto">
+                              {matchingTemplates.map((t, i) => {
+                                const isAssigned = d.summerAssignment?.templateId === t.id || d.autumnAssignment?.templateId === t.id
+                                return (
                                   <button
                                     key={t.id}
                                     onClick={() => assignCurve(d.section.id, t.id, 'summer')}
-                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-orange-50 border transition-colors cursor-pointer ${d.summerAssignment?.templateId === t.id ? 'border-orange-400 bg-orange-50' : 'border-transparent'}`}
+                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-purple-50 border transition-colors cursor-pointer ${isAssigned ? 'border-purple-400 bg-purple-50' : 'border-transparent'}`}
                                   >
                                     <div className="flex items-center gap-1">
                                       <span className="font-medium">{t.name}</span>
@@ -784,250 +1044,86 @@ export default function PlanningPage() {
                                       )}
                                     </div>
                                     <div className="text-gray-400">{t.productionYear} | {t.weeklyCurve?.length || 0} tyg. | {(t.totalKg / 1000).toFixed(1)}t</div>
-                                    <CurveSparkline curve={t.weeklyCurve} color="#f97316" />
+                                    <CurveSparkline curve={t.weeklyCurve} color="#8b5cf6" />
                                   </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          {/* Autumn templates */}
-                          <div>
-                            <p className="text-xs font-medium text-red-700 mb-2">🍂 Jesień ({autumnTemplates.length} szablonów)</p>
-                            {autumnTemplates.length === 0 ? (
-                              <p className="text-xs text-gray-400">Brak pasujących szablonów</p>
-                            ) : (
-                              <div className="space-y-1 max-h-48 overflow-y-auto">
-                                {autumnTemplates.map((t, i) => (
-                                  <button
-                                    key={t.id}
-                                    onClick={() => assignCurve(d.section.id, t.id, 'autumn')}
-                                    className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-red-50 border transition-colors cursor-pointer ${d.autumnAssignment?.templateId === t.id ? 'border-red-400 bg-red-50' : 'border-transparent'}`}
-                                  >
-                                    <div className="flex items-center gap-1">
-                                      <span className="font-medium">{t.name}</span>
-                                      {i === 0 && scoreTemplate(t, d.section) >= 70 && (
-                                        <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">Sugerowany</span>
-                                      )}
-                                    </div>
-                                    <div className="text-gray-400">{t.productionYear} | {t.weeklyCurve?.length || 0} tyg. | {(t.totalKg / 1000).toFixed(1)}t</div>
-                                    <CurveSparkline curve={t.weeklyCurve} color="#ef4444" />
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
                   </div>
                 )
               })}
-          </div>
+          </div>}
         </div>
       )}
 
+
       {weeklyPlan.weeks.length > 0 && (
         <>
-          {/* KPI tiles */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-            <div className="bg-white rounded-xl p-4 border text-center">
-              <p className="text-3xl font-bold">{weeklyPlan.sectionDetails.length}</p>
-              <p className="text-xs text-gray-500">Sekcji zbiera</p>
-            </div>
-            <div className="bg-green-50 rounded-xl p-4 border border-green-200 text-center">
-              <p className="text-3xl font-bold text-green-700">{(totalKgAll / 1000).toFixed(1)}t</p>
-              <p className="text-xs text-green-600">Zbiór brutto (do zerwania)</p>
-              <p className="text-[10px] text-gray-500 mt-0.5">
-                <span className="text-green-600">{(totalSummerKg / 1000).toFixed(1)}t lato</span>
-                {' + '}
-                <span className="text-amber-600">{(totalAutumnKg / 1000).toFixed(1)}t jesień</span>
-              </p>
-            </div>
-            <div className="bg-blue-50 rounded-xl p-4 border border-blue-200 text-center">
-              <p className="text-3xl font-bold text-blue-600">{peakPickers}</p>
-              <p className="text-xs text-blue-600">Zbieraczy max</p>
-            </div>
-            <div className="bg-orange-50 rounded-xl p-4 border border-orange-200 text-center">
-              <p className="text-3xl font-bold text-orange-600">{peakTotalStaff}</p>
-              <p className="text-xs text-orange-600">Łącznie osób max</p>
-            </div>
-            <div className="bg-purple-50 rounded-xl p-4 border border-purple-200 text-center">
-              <p className="text-3xl font-bold text-purple-600">{weeklyPlan.weeks.length}</p>
-              <p className="text-xs text-purple-600">Tygodni zbiorów</p>
-            </div>
-            <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-200 text-center">
-              <p className="text-3xl font-bold text-indigo-600">{SCENARIO_SHORT[scenario]}</p>
-              <p className="text-xs text-indigo-600">Scenariusz</p>
-            </div>
-          </div>
-
-          {/* Bottleneck warnings */}
-          {bottleneckWeeks.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2"><AlertTriangle className="w-5 h-5 text-amber-600" /><h3 className="font-semibold text-amber-800">Wąskie gardła — wysokie zapotrzebowanie</h3></div>
-              <div className="flex flex-wrap gap-2">
-                {bottleneckWeeks.map(w => (
-                  <span key={w.week} className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm">
-                    T{w.week}: {w.totalStaff} os. ({w.pickers} zbieraczy + {w.qc + w.weighing + w.infra} wsparcie, {w.kg.toLocaleString('pl-PL')} kg)
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Workers bar chart — stacked */}
-          <div className="bg-white rounded-xl border p-6">
-            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-500" />Zapotrzebowanie na personel (osób/dzień zbioru)</h3>
-            <p className="text-xs text-gray-500 -mt-3 mb-4">Zbiór {7} dni/tydz. × {hoursPerDay}h/dzień — zbieracze + KJ + wagi + infrastruktura</p>
-            <div className="flex items-end gap-1 h-48 mb-2">
-              {weeklyPlan.weeks.map(w => {
-                const isBottleneck = w.pickers >= bottleneckThreshold
-                const maxH = peakTotalStaff > 0 ? peakTotalStaff : 1
-                const pickerH = (w.pickers / maxH) * 180
-                const qcH = (w.qc / maxH) * 180
-                const weighH = (w.weighing / maxH) * 180
-                const infraH = (w.infra / maxH) * 180
-                return (
-                  <div key={w.week} className="flex-1 flex flex-col items-end group relative">
-                    <div className="w-full flex flex-col-reverse">
-                      <div className={`w-full ${isBottleneck ? 'bg-red-500' : 'bg-blue-500'} transition-all`} style={{ height: `${pickerH}px`, minHeight: w.pickers > 0 ? '2px' : '0' }} />
-                      {w.qc > 0 && <div className="w-full bg-amber-500" style={{ height: `${qcH}px`, minHeight: '2px' }} />}
-                      {w.weighing > 0 && <div className="w-full bg-cyan-500" style={{ height: `${weighH}px`, minHeight: '2px' }} />}
-                      {w.infra > 0 && <div className="w-full bg-purple-500 rounded-t" style={{ height: `${infraH}px`, minHeight: '2px' }} />}
-                    </div>
-                    <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap z-10 shadow-lg">
-                      <div className="font-bold text-blue-400">T{w.week} ({w.dates})</div>
-                      <div>{w.dailyKg.toLocaleString('pl-PL')} kg/dzień</div>
-                      <div className="text-blue-300">{w.pickers} zbieraczy</div>
-                      <div className="text-amber-300">{w.qc} kontrola jakości</div>
-                      <div className="text-cyan-300">{w.weighing} wagi</div>
-                      <div className="text-purple-300">{w.infra} infrastruktura</div>
-                      <div className="font-bold border-t border-gray-700 mt-1 pt-1">{w.totalStaff} osób łącznie</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="flex gap-1">{weeklyPlan.weeks.map(w => (
-              <div key={w.week} className="flex-1 text-center text-xs text-gray-500">
-                <div>T{w.week}</div>
-                <div className="text-[10px] text-gray-400">{w.dates.split('-')[0]}</div>
-              </div>
-            ))}</div>
-            <div className="flex gap-4 mt-3 text-xs text-gray-500 justify-center flex-wrap">
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-500 inline-block" /> Zbieracze</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-500 inline-block" /> Kontrola jakości</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-cyan-500 inline-block" /> Wagi</span>
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-500 inline-block" /> Infrastruktura</span>
-            </div>
-          </div>
-
-          {/* Detailed table */}
+          {/* Unified harvest plan */}
           <div className="bg-white rounded-xl border p-6" ref={tableRef}>
-            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-green-500" />Tygodniowy plan zbiorów</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="text-gray-500 border-b-2 border-gray-300">
-                    <th className="text-left py-2 px-3">Tydzień</th>
-                    <th className="text-right py-2 px-3">kg/tydzień</th>
-                    <th className="text-right py-2 px-3 text-gray-500">% sezonu</th>
-                    <th className="text-right py-2 px-3">kg/dzień</th>
-                    <th className="text-right py-2 px-3">Kumulat.</th>
-                    <th className="text-right py-2 px-3">h/dzień</th>
-                    <th className="text-right py-2 px-3 text-blue-600">Zbieracze</th>
-                    <th className="text-right py-2 px-3 text-amber-600">KJ</th>
-                    <th className="text-right py-2 px-3 text-cyan-600">Wagi</th>
-                    <th className="text-right py-2 px-3 text-purple-600">Infra</th>
-                    <th className="text-right py-2 px-3 font-bold text-orange-700">Łącznie</th>
-                    <th className="text-right py-2 px-3">Sekcji</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {weeklyPlan.weeks.map((w, wi) => {
-                    const cum = weeklyPlan.weeks.slice(0, wi + 1).reduce((s, x) => s + x.kg, 0)
-                    const isBottleneck = w.pickers >= bottleneckThreshold
-                    return (
-                      <tr key={w.week} className={`border-b cursor-pointer transition-colors ${w.week === selectedWeek ? 'bg-indigo-50 ring-1 ring-indigo-300' : isBottleneck ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`} onClick={() => setSelectedWeek(w.week)}>
-                        <td className="py-2 px-3">
-                          {w.week === selectedWeek && <span className="text-indigo-500 mr-1">▶</span>}
-                          T{w.week} <span className="text-gray-400 text-xs">({w.dates})</span>
-                        </td>
-                        <td className="text-right px-3">{w.kg.toLocaleString('pl-PL')} kg</td>
-                        <td className="text-right px-3 text-gray-500 text-xs">
-                          {totalKgAll > 0 ? (w.kg / totalKgAll * 100).toFixed(1) + '%' : '—'}
-                        </td>
-                        <td className="text-right px-3 font-medium">{w.dailyKg.toLocaleString('pl-PL')} kg</td>
-                        <td className="text-right px-3 text-gray-500">{(cum / 1000).toFixed(2)}t</td>
-                        <td className="text-right px-3 text-gray-500">{w.dailyHrs}h</td>
-                        <td className="text-right px-3 font-semibold text-blue-600">{w.pickers}</td>
-                        <td className="text-right px-3 text-amber-600">{w.qc}</td>
-                        <td className="text-right px-3 text-cyan-600">{w.weighing}</td>
-                        <td className="text-right px-3 text-purple-600">{w.infra}</td>
-                        <td className="text-right px-3 font-bold text-orange-700">{w.totalStaff}</td>
-                        <td className="text-right px-3">{w.sectionCount}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-green-500" />Plan zbiorów</h3>
 
-          {/* ==================== DAILY PLAN ==================== */}
-          {dailyPlan && selectedWeek && (
-            <div className="bg-white rounded-xl border p-6">
-              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-                <h3 className="font-semibold text-lg flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-indigo-500" />
-                  Dzienny plan zbiorów — T{selectedWeek}
-                  <span className="text-sm font-normal text-gray-400">
-                    ({dailyPlan.days[0]?.dateStr}–{dailyPlan.days[6]?.dateStr})
-                  </span>
-                </h3>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-gray-500">Tydzień:</label>
-                    <select
-                      className="h-8 border rounded-md px-2 text-xs bg-white"
-                      value={selectedWeek}
-                      onChange={e => setSelectedWeek(+e.target.value)}
-                    >
-                      {weeklyPlan.weeks.map(w => (
-                        <option key={w.week} value={w.week}>T{w.week} ({w.dates}) — {w.kg.toLocaleString('pl-PL')} kg</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-gray-500">Sekcja:</label>
-                    <select
-                      className="h-8 border rounded-md px-2 text-xs bg-white"
-                      value={dailyViewSection}
-                      onChange={e => setDailyViewSection(e.target.value)}
-                    >
-                      <option value="all">Cała plantacja</option>
-                      {weeklyPlan.sectionDetails
-                        .filter(d => d.weeklyKg.some(w => w.week === selectedWeek && w.kg > 0))
-                        .sort((a, b) => (a.section.blockName + a.section.name).localeCompare(b.section.blockName + b.section.name))
-                        .map(d => (
-                          <option key={d.section.id} value={d.section.id}>
-                            {d.section.blockName}/{d.section.name} ({d.section.variety?.name})
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                </div>
+            {/* Filters */}
+            <div className="flex items-center gap-3 flex-wrap mb-4">
+              {/* Toggle weekly/daily */}
+              <div className="flex rounded-lg border overflow-hidden">
+                <button
+                  className={planView === 'weekly' ? 'bg-green-600 text-white px-3 py-1.5 text-sm' : 'px-3 py-1.5 text-sm'}
+                  onClick={() => setPlanView('weekly')}>Tygodniowo</button>
+                <button
+                  className={planView === 'daily' ? 'bg-green-600 text-white px-3 py-1.5 text-sm' : 'px-3 py-1.5 text-sm'}
+                  onClick={() => setPlanView('daily')}>Dziennie</button>
               </div>
 
-              {/* Daily table */}
-              <div className="overflow-x-auto mb-6">
+              {/* Section select */}
+              <select
+                className="border rounded-lg px-3 py-1.5 text-sm"
+                value={planSections}
+                onChange={e => setPlanSections(e.target.value)}>
+                <option value="all">Cała plantacja</option>
+                {weeklyPlan.sectionDetails.map(d => (
+                  <option key={d.section.id} value={d.section.id}>
+                    {d.section.blockName}/{d.section.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Date range */}
+              <div className="flex items-center gap-2">
+                <button
+                  className={planDateMode === 'season' ? 'bg-gray-200 px-3 py-1.5 text-sm rounded-lg' : 'px-3 py-1.5 text-sm border rounded-lg'}
+                  onClick={() => setPlanDateMode('season')}>Cały sezon</button>
+                <button
+                  className={planDateMode === 'range' ? 'bg-gray-200 px-3 py-1.5 text-sm rounded-lg' : 'px-3 py-1.5 text-sm border rounded-lg'}
+                  onClick={() => setPlanDateMode('range')}>Zakres dat</button>
+                {planDateMode === 'range' && (
+                  <>
+                    <input type="date" className="border rounded-lg px-2 py-1 text-sm"
+                      value={planDateFrom} onChange={e => setPlanDateFrom(e.target.value)} />
+                    <span className="text-gray-400">—</span>
+                    <input type="date" className="border rounded-lg px-2 py-1 text-sm"
+                      value={planDateTo} onChange={e => setPlanDateTo(e.target.value)} />
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Weekly view */}
+            {planView === 'weekly' && (
+              <div className="overflow-x-auto">
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr className="text-gray-500 border-b-2 border-gray-300">
-                      <th className="text-left py-2 px-3">Dzień</th>
-                      <th className="text-left py-2 px-3">Data</th>
+                      <th className="text-left py-2 px-3">Tydzień</th>
+                      <th className="text-right py-2 px-3">kg/tydzień</th>
+                      <th className="text-right py-2 px-3 text-gray-500">% sezonu</th>
                       <th className="text-right py-2 px-3">kg/dzień</th>
-                      <th className="text-right py-2 px-3">h pracy</th>
+                      <th className="text-right py-2 px-3">Kumulat.</th>
+                      <th className="text-right py-2 px-3">h/dzień</th>
                       <th className="text-right py-2 px-3 text-blue-600">Zbieracze</th>
                       <th className="text-right py-2 px-3 text-amber-600">KJ</th>
                       <th className="text-right py-2 px-3 text-cyan-600">Wagi</th>
@@ -1037,128 +1133,105 @@ export default function PlanningPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {dailyPlan.days.map(d => (
-                      <tr key={d.dayIndex} className={`border-b ${d.dayIndex >= 5 ? 'bg-gray-50' : ''}`}>
-                        <td className="py-2 px-3 font-medium">{d.dayShort}</td>
-                        <td className="py-2 px-3 text-gray-600">{d.dateStr}</td>
-                        <td className="text-right px-3 font-medium">{d.totalKg.toLocaleString('pl-PL')} kg</td>
-                        <td className="text-right px-3 text-gray-500">{d.totalHrs}h</td>
+                    {filteredPlanData.weeks.map((w, wi) => {
+                      const cum = filteredPlanData.weeks.slice(0, wi + 1).reduce((s, x) => s + x.kg, 0)
+                      const isBottleneck = w.pickers >= bottleneckThreshold
+                      return (
+                        <tr key={w.week} className={`border-b transition-colors ${isBottleneck ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}>
+                          <td className="py-2 px-3">
+                            T{w.week} <span className="text-gray-400 text-xs">({w.dates})</span>
+                          </td>
+                          <td className="text-right px-3">{w.kg.toLocaleString('pl-PL')} kg</td>
+                          <td className="text-right px-3 text-gray-500 text-xs">
+                            {totalKgAll > 0 ? (w.kg / totalKgAll * 100).toFixed(1) + '%' : '—'}
+                          </td>
+                          <td className="text-right px-3 font-medium">{w.dailyKg.toLocaleString('pl-PL')} kg</td>
+                          <td className="text-right px-3 text-gray-500">{(cum / 1000).toFixed(2)}t</td>
+                          <td className="text-right px-3 text-gray-500">{w.dailyHrs}h</td>
+                          <td className="text-right px-3 font-semibold text-blue-600">{w.pickers}</td>
+                          <td className="text-right px-3 text-amber-600">{w.qc}</td>
+                          <td className="text-right px-3 text-cyan-600">{w.weighing}</td>
+                          <td className="text-right px-3 text-purple-600">{w.infra}</td>
+                          <td className="text-right px-3 font-bold text-orange-700">{w.totalStaff}</td>
+                          <td className="text-right px-3">{w.sectionCount}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Daily view */}
+            {planView === 'daily' && (() => {
+              const dailySections = planSections === 'all'
+                ? weeklyPlan.sectionDetails
+                : weeklyPlan.sectionDetails.filter(d => d.section.id === planSections)
+              const sectionColSpan = dailySections.length
+              return (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="text-gray-500 border-b-2 border-gray-300">
+                      <th className="text-left py-2 px-3">Data</th>
+                      <th className="text-left py-2 px-3">Dzień</th>
+                      <th className="text-right py-2 px-3">kg/dzień</th>
+                      {dailySections.map(sec => (
+                        <th key={sec.section.id} className="text-right py-2 px-2 text-xs text-gray-400 max-w-[80px] whitespace-normal break-words text-center" title={`${sec.section.blockName}/${sec.section.name}`}>
+                          {sec.section.blockName}/{sec.section.name}
+                        </th>
+                      ))}
+                      <th className="text-right py-2 px-3">h pracy</th>
+                      <th className="text-right py-2 px-3 text-blue-600">Zbieracze</th>
+                      <th className="text-right py-2 px-3 text-amber-600">KJ</th>
+                      <th className="text-right py-2 px-3 text-cyan-600">Wagi</th>
+                      <th className="text-right py-2 px-3 text-purple-600">Infra</th>
+                      <th className="text-right py-2 px-3 font-bold text-orange-700">Łącznie</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPlanData.days.map(d => (
+                      <tr key={d.date} className={`border-b ${d.dayName === 'Sb' || d.dayName === 'Nd' ? 'bg-gray-50' : ''}`}>
+                        <td className="py-2 px-3 font-medium">{d.dateDisplay}</td>
+                        <td className="py-2 px-3 text-gray-600">{d.dayName}</td>
+                        <td className="text-right px-3 font-medium">{d.kg.toLocaleString('pl-PL')} kg</td>
+                        {dailySections.map(sec => {
+                          const secKg = d.sectionKg[sec.section.id] ?? 0
+                          return (
+                            <td key={sec.section.id} className="text-right px-2 text-xs text-gray-500">
+                              {secKg > 0 ? secKg.toLocaleString('pl-PL') : '—'}
+                            </td>
+                          )
+                        })}
+                        <td className="text-right px-3 text-gray-500">{d.hrs}h</td>
                         <td className="text-right px-3 font-semibold text-blue-600">{d.pickers}</td>
                         <td className="text-right px-3 text-amber-600">{d.qc}</td>
                         <td className="text-right px-3 text-cyan-600">{d.weighing}</td>
                         <td className="text-right px-3 text-purple-600">{d.infra}</td>
                         <td className="text-right px-3 font-bold text-orange-700">{d.totalStaff}</td>
-                        <td className="text-right px-3 text-gray-500">{d.sections.length}</td>
                       </tr>
                     ))}
                     {/* Summary row */}
                     <tr className="border-t-2 border-gray-300 font-bold">
-                      <td className="py-2 px-3" colSpan={2}>SUMA tygodnia</td>
-                      <td className="text-right px-3">{dailyPlan.days.reduce((s, d) => s + d.totalKg, 0).toLocaleString('pl-PL')} kg</td>
-                      <td className="text-right px-3 text-gray-500">{dailyPlan.days.reduce((s, d) => s + d.totalHrs, 0)}h</td>
-                      <td className="text-right px-3 text-blue-600">{Math.max(...dailyPlan.days.map(d => d.pickers))}</td>
+                      <td className="py-2 px-3" colSpan={2}>SUMA</td>
+                      <td className="text-right px-3">{filteredPlanData.days.reduce((s, d) => s + d.kg, 0).toLocaleString('pl-PL')} kg</td>
+                      {dailySections.map(sec => {
+                        const total = filteredPlanData.days.reduce((s, d) => s + (d.sectionKg[sec.section.id] ?? 0), 0)
+                        return (
+                          <td key={sec.section.id} className="text-right px-2 text-xs">{total > 0 ? total.toLocaleString('pl-PL') : '—'}</td>
+                        )
+                      })}
+                      <td className="text-right px-3 text-gray-500">{filteredPlanData.days.reduce((s, d) => s + d.hrs, 0)}h</td>
+                      <td className="text-right px-3 text-blue-600">{Math.max(...filteredPlanData.days.map(d => d.pickers), 0)}</td>
                       <td className="text-right px-3 text-amber-600" colSpan={3}></td>
-                      <td className="text-right px-3 text-orange-700">{Math.max(...dailyPlan.days.map(d => d.totalStaff))}</td>
-                      <td></td>
+                      <td className="text-right px-3 text-orange-700">{Math.max(...filteredPlanData.days.map(d => d.totalStaff), 0)}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-
-              {/* Section breakdown for selected week */}
-              {dailyViewSection === 'all' && dailyPlan.activeSections.length > 0 && (
-                <div>
-                  <h4 className="font-semibold text-sm mb-3 text-gray-700">Aktywne sekcje w T{selectedWeek} — dzienny rozkład</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {dailyPlan.activeSections
-                      .sort((a, b) => {
-                        const aKg = a.weeklyKg.find(w => w.week === selectedWeek)?.kg || 0
-                        const bKg = b.weeklyKg.find(w => w.week === selectedWeek)?.kg || 0
-                        return bKg - aKg
-                      })
-                      .map(d => {
-                        const weekData = d.weeklyKg.find(w => w.week === selectedWeek)!
-                        const dailyKg = Math.round(weekData.kg / 7)
-                        const isAutumn = weekData.autumnKg > weekData.summerKg
-                        return (
-                          <div
-                            key={d.section.id}
-                            className={`p-3 rounded-lg border cursor-pointer transition-colors ${dailyViewSection === d.section.id ? 'ring-2 ring-indigo-400 bg-indigo-50' : 'bg-gray-50 hover:bg-gray-100'}`}
-                            onClick={() => setDailyViewSection(d.section.id)}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="font-medium text-sm">
-                                <span className="text-gray-400">{d.section.blockName}/</span>{d.section.name}
-                              </span>
-                              <span className={`text-xs px-1.5 py-0.5 rounded ${isAutumn ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-                                {isAutumn ? 'jesień' : 'lato'}
-                              </span>
-                            </div>
-                            <div className="text-xs text-gray-500">{d.section.variety?.name}</div>
-                            <div className="flex items-center justify-between mt-1">
-                              <span className="font-bold text-sm">{dailyKg.toLocaleString('pl-PL')} kg/dzień</span>
-                              <span className="text-xs text-gray-400">{weekData.kg.toLocaleString('pl-PL')} kg/tydz.</span>
-                            </div>
-                            <div className="text-xs text-gray-500 mt-0.5">
-                              {Math.ceil(Math.round(dailyKg / d.eff) / hoursPerDay)} zbieraczy × {hoursPerDay}h ({d.eff} kg/h)
-                            </div>
-                          </div>
-                        )
-                      })}
-                  </div>
-                </div>
-              )}
-
-              {/* Single section detail view */}
-              {dailyViewSection !== 'all' && (() => {
-                const detail = weeklyPlan.sectionDetails.find(d => d.section.id === dailyViewSection)
-                if (!detail) return null
-                const weekData = detail.weeklyKg.find(w => w.week === selectedWeek)
-                if (!weekData) return null
-                const dailyKg = Math.round(weekData.kg / 7)
-                const dailyHrs = Math.round(dailyKg / detail.eff)
-                const pickers = Math.ceil(dailyHrs / hoursPerDay)
-                return (
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-semibold text-sm text-indigo-800">
-                        {detail.section.blockName}/{detail.section.name} — {detail.section.variety?.name}
-                      </h4>
-                      <button
-                        onClick={() => setDailyViewSection('all')}
-                        className="text-xs text-indigo-600 hover:text-indigo-800 underline"
-                      >
-                        ← Pokaż całą plantację
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                      <div>
-                        <div className="text-xs text-indigo-600">Tygodniowo</div>
-                        <div className="font-bold">{weekData.kg.toLocaleString('pl-PL')} kg</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-indigo-600">Dziennie</div>
-                        <div className="font-bold">{dailyKg.toLocaleString('pl-PL')} kg</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-indigo-600">Zbieracze/dzień</div>
-                        <div className="font-bold">{pickers}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-indigo-600">Wydajność</div>
-                        <div className="font-bold">{detail.eff} kg/h × {hoursPerDay}h</div>
-                      </div>
-                    </div>
-                    {weekData.summerKg > 0 && weekData.autumnKg > 0 && (
-                      <div className="mt-2 text-xs text-indigo-600">
-                        Lato: {Math.round(weekData.summerKg / 7).toLocaleString('pl-PL')} kg/dzień | Jesień: {Math.round(weekData.autumnKg / 7).toLocaleString('pl-PL')} kg/dzień
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-            </div>
-          )}
+              )
+            })()}
+          </div>
 
           {/* Per-section breakdown */}
           <div className="bg-white rounded-xl border p-6">
@@ -1198,7 +1271,7 @@ export default function PlanningPage() {
                               {d.fruitStartDate ? new Date(d.fruitStartDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : '—'}
                             </span>
                           </td>
-                          <td className="text-center px-3 font-medium">T{d.startWeek}</td>
+                          <td className="text-center px-3 font-medium">{d.startWeek ? `T${d.startWeek}` : '—'}</td>
                           <td className="text-right px-3 text-green-700">{d.totalSummerKg > 0 ? `${Math.round(d.totalSummerKg).toLocaleString('pl-PL')}` : '—'}</td>
                           <td className="text-right px-3 text-amber-700">{d.totalAutumnKg > 0 ? `${Math.round(d.totalAutumnKg).toLocaleString('pl-PL')}` : '—'}</td>
                           <td className="text-right px-3 font-medium">{d.totalKg.toLocaleString('pl-PL')}</td>
@@ -1300,55 +1373,6 @@ export default function PlanningPage() {
                 )
               })()}
             </div>
-          </div>
-
-          {/* Cumulative harvest chart */}
-          <div className="bg-white rounded-xl border p-6">
-            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-green-500" />Kumulatywny zbiór (narastająco)</h3>
-            {(() => {
-              let cum = 0
-              const cumData = weeklyPlan.weeks.map(w => { cum += w.kg; return { week: w.week, dates: w.dates, cum, kg: w.kg } })
-              const maxCum = cum
-              const pctTarget = totalKgAll > 0 ? totalKgAll : maxCum
-              return (
-                <div>
-                  <div className="flex items-end gap-1 h-48 mb-2 relative">
-                    {/* target line */}
-                    <div className="absolute left-0 right-0 border-t-2 border-dashed border-green-400 top-0 z-10" />
-                    <div className="absolute left-1 top-0.5 text-[10px] text-green-600 font-medium z-10">{(pctTarget / 1000).toFixed(1)}t plan</div>
-                    {cumData.map((d, i) => {
-                      const prevCum = i > 0 ? cumData[i - 1].cum : 0
-                      const barHeight = maxCum > 0 ? (d.cum / pctTarget) * 180 : 0
-                      const prevHeight = maxCum > 0 ? (prevCum / pctTarget) * 180 : 0
-                      const pct = pctTarget > 0 ? Math.round((d.cum / pctTarget) * 100) : 0
-                      return (
-                        <div key={d.week} className="flex-1 flex flex-col items-center group relative">
-                          <div className="w-full relative" style={{ height: '180px' }}>
-                            {/* cumulative bar */}
-                            <div className="absolute bottom-0 left-0 right-0 bg-green-200 rounded-t" style={{ height: `${Math.min(barHeight, 180)}px` }} />
-                            {/* weekly increment */}
-                            <div className="absolute bottom-0 left-0 right-0 bg-green-500 rounded-t" style={{ height: `${Math.min(barHeight - prevHeight, 180)}px`, bottom: `${Math.min(prevHeight, 180)}px` }} />
-                          </div>
-                          {/* tooltip */}
-                          <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-900 text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap z-10 shadow-lg">
-                            <div className="font-bold text-green-400">T{d.week} ({d.dates})</div>
-                            <div>+{d.kg.toLocaleString('pl-PL')} kg ten tydzień</div>
-                            <div className="font-bold">{(d.cum / 1000).toFixed(2)}t kumulatywnie ({pct}%)</div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <div className="flex gap-1">{cumData.map(d => (
-                    <div key={d.week} className="flex-1 text-center text-[10px] text-gray-500">T{d.week}</div>
-                  ))}</div>
-                  <div className="flex gap-3 mt-3 text-xs text-gray-500 justify-center">
-                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block" /> przyrost tygodniowy</span>
-                    <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-200 inline-block" /> kumulatywnie</span>
-                  </div>
-                </div>
-              )
-            })()}
           </div>
 
           {/* Heatmap: sections × weeks */}

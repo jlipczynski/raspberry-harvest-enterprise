@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npm install 2>&1 | tail -1 && npx prisma generate 2>&1 | tail -1 && echo '✅ Environment ready: deps installed, Prisma client generated'"
+            "command": "npm install 2>&1 | tail -1 && npx prisma generate 2>&1 | tail -1 && (which gh >/dev/null 2>&1 || apt-get install -y -qq gh 2>/dev/null) && echo '✅ Environment ready: deps installed, Prisma client generated, gh CLI available'"
           }
         ]
       }

@@ -177,7 +177,6 @@ model Section {
   sourceTemplates       ProductionCurveTemplate[] @relation("TemplateSource")
   harvestSeasons        HarvestSeason[]
   plantingDate          DateTime?
-  winterShootsDate      DateTime?
   autumnShootDate       DateTime?
   harvestCurveSummer    Float[]   @default([])
   harvestCurveAutumn    Float[]   @default([])

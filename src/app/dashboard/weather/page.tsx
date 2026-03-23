@@ -20,7 +20,7 @@ interface Section {
   name: string
   winteredInTunnel: boolean
   plantingDate: string | null
-  winterShootsDate: string | null
+  autumnShootDate: string | null
   variety?: { name: string; gdhSummer?: number; gdhAutumn?: number }
   gdhSummer?: number
   gdhAutumn?: number

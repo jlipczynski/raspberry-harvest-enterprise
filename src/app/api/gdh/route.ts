@@ -199,6 +199,7 @@ export async function GET(request: Request) {
           autumnGdhStartDate: autumnGdhStartDate?.toISOString().slice(0, 10) ?? null,
           autumnFruitDate,
           autumnCurrentGdh,
+          gdhAutumnFruit: section.gdhAutumnFruit ?? v?.gdhAutumnFruit ?? null,
           plantMaterialType: section.plantMaterialType,
           flowerThreshold,
           fruitThreshold,

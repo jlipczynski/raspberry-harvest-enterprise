@@ -105,7 +105,7 @@ async function main() {
           yieldAutumnPerShoot: section.yieldAutumnPerShoot,
           winteredInTunnel: section.winteredInTunnel,
           plantingDate: section.plantingDate,
-          winterShootsDate: section.winterShootsDate,
+          autumnShootDate: section.autumnShootDate,
           varietyId: section.varietyId,
           blockId: targetBlock.id,
         }

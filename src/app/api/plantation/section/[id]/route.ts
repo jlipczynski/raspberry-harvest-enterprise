@@ -43,6 +43,7 @@ export async function PATCH(
     if ('winteredInTunnel' in body) data.winteredInTunnel = body.winteredInTunnel || false
     if ('plantingDate' in body) data.plantingDate = body.plantingDate ? new Date(body.plantingDate) : null
     if ('winterShootsDate' in body) data.winterShootsDate = body.winterShootsDate ? new Date(body.winterShootsDate) : null
+    if ('autumnShootDate' in body) data.autumnShootDate = body.autumnShootDate ? new Date(body.autumnShootDate) : null
     if ('harvestCurveSummer' in body) data.harvestCurveSummer = body.harvestCurveSummer || []
     if ('harvestCurveAutumn' in body) data.harvestCurveAutumn = body.harvestCurveAutumn || []
 

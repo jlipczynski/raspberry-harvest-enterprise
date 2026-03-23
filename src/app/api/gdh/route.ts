@@ -158,6 +158,32 @@ export async function GET(request: Request) {
           thresholdType = section.gdhSummer ? 'summer_planted' : 'autumn'
         }
 
+        // Autumn fruit date from logger data (GDH od autumnShootDate)
+        let autumnFruitDate: string | null = null
+        let autumnCurrentGdh = 0
+        if (autumnGdhStartDate) {
+          const autumnDailyAgg: DailyAgg[] = await prisma.$queryRaw`
+            SELECT
+              DATE("timestamp") as date,
+              COUNT(*)::int as cnt,
+              COALESCE(SUM(GREATEST(0, LEAST("temperature", ${GDH_UPPER_TEMP}) - ${GDH_BASE_TEMP})), 0)::float as sum_gdh
+            FROM temperature_readings
+            WHERE "sectionId" = ${section.id}
+              AND "timestamp" >= ${autumnGdhStartDate}
+            GROUP BY DATE("timestamp")
+            ORDER BY date
+          `
+          const autumnThreshold = fruitThreshold ?? 23000
+          for (const d of autumnDailyAgg) {
+            const daily = d.cnt > 0 ? (Number(d.sum_gdh) * 24.0) / d.cnt : 0
+            autumnCurrentGdh += daily
+            if (autumnFruitDate === null && autumnCurrentGdh >= autumnThreshold) {
+              autumnFruitDate = String(d.date).slice(0, 10)
+            }
+          }
+          autumnCurrentGdh = Math.round(autumnCurrentGdh)
+        }
+
         return {
           id: section.id,
           name: section.name || 'Sekcja',
@@ -169,6 +195,8 @@ export async function GET(request: Request) {
           gdhStartDate: gdhStartDate?.toISOString().slice(0, 10) ?? null,
           autumnShootDate: section.autumnShootDate?.toISOString().slice(0, 10) ?? null,
           autumnGdhStartDate: autumnGdhStartDate?.toISOString().slice(0, 10) ?? null,
+          autumnFruitDate,
+          autumnCurrentGdh,
           plantMaterialType: section.plantMaterialType,
           flowerThreshold,
           fruitThreshold,

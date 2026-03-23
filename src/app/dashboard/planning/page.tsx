@@ -259,33 +259,8 @@ export default function PlanningPage() {
         if (gdh >= section.fruitThreshold) { fruitDate = date; break }
       }
 
-      // Autumn fruit date — z API (logi) lub z prognozy
-      let autumnFruitDate: string | null = section.autumnFruitDate ?? null
-      if (!autumnFruitDate && section.autumnGdhStartDate && section.fruitThreshold) {
-        const autumnStart = section.autumnGdhStartDate
-        const autumnThreshold = section.fruitThreshold
-        let cumAutumn = section.autumnCurrentGdh ?? 0
-
-        for (const day of forecast.meteoDays) {
-          if (day.date < autumnStart) continue
-          cumAutumn += day.gdhTunnel
-          if (cumAutumn >= autumnThreshold) { autumnFruitDate = day.date; break }
-        }
-
-        if (!autumnFruitDate) {
-          const scenarioData = scenario === 'best'
-            ? (forecast.scenarios.best || forecast.scenarios.p50)
-            : forecast.scenarios[scenario]
-          const lastMeteoDate = forecast.meteoDays.at(-1)?.date ?? ''
-          for (const day of scenarioData) {
-            if (day.date <= lastMeteoDate) continue
-            if (day.date < autumnStart) continue
-            cumAutumn += day.gdhTunnel
-            if (cumAutumn >= autumnThreshold) { autumnFruitDate = day.date; break }
-          }
-        }
-      }
-
+      // Autumn fruit date — tylko z API
+      const autumnFruitDate: string | null = section.autumnFruitDate ?? null
       result.set(section.id, { fruitDate, autumnFruitDate })
     }
 
@@ -321,7 +296,7 @@ export default function PlanningPage() {
       const autumnStartWeekFromVariety = v?.autumnStartWeek ?? null
 
       // Skip sections that have neither a fruit date (summer) nor autumnStartWeek (autumn-only)
-      if (!fruitDate && !autumnFruitDate && !autumnStartWeekFromVariety) continue
+      if (!fruitDate && !autumnFruitDate) continue
 
       const startWeek = fruitDate ? getWeekNumber(new Date(fruitDate)) : null
       const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter
@@ -366,7 +341,7 @@ export default function PlanningPage() {
       const autumnStartWeek = v?.autumnStartWeek ?? null
 
       const summerKg = shoots * summerYield
-      const autumnKg = ((autumnFruitDate || autumnStartWeek) && autumnYield > 0) ? shoots * autumnYield : 0
+      const autumnKg = (autumnFruitDate && autumnYield > 0) ? shoots * autumnYield : 0
       const totalKg = summerKg + autumnKg
 
       // Build dailyKg array — per-day kg values
@@ -416,14 +391,8 @@ export default function PlanningPage() {
           })
         } else {
           // Fallback: weekly curve divided by 7
-          const autumnStartDate2 = autumnFruitDate
-            ? new Date(autumnFruitDate)
-            : (() => {
-                const d = new Date(year, 0, 1)
-                const daysToMon = (d.getDay() + 6) % 7
-                d.setDate(1 - daysToMon + ((autumnStartWeek ?? 33) - 1) * 7)
-                return d
-              })()
+          if (!autumnFruitDate) break
+          const autumnStartDate2 = new Date(autumnFruitDate)
           autumnWeeklyCurve.forEach((pct, i) => {
             const weekStart = new Date(autumnStartDate2)
             weekStart.setDate(weekStart.getDate() + i * 7)

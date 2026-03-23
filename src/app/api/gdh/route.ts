@@ -97,6 +97,10 @@ export async function GET(request: Request) {
           ? new Date(section.plantingDate)
           : null
 
+        const autumnGdhStartDate = section.autumnShootDate
+          ? new Date(section.autumnShootDate)
+          : null
+
         const dailyAgg: DailyAgg[] = gdhStartDate
           ? await prisma.$queryRaw`
               SELECT
@@ -163,6 +167,8 @@ export async function GET(request: Request) {
           winteredInTunnel: section.winteredInTunnel,
           plantingDate: section.plantingDate,
           gdhStartDate: gdhStartDate?.toISOString().slice(0, 10) ?? null,
+          autumnShootDate: section.autumnShootDate?.toISOString().slice(0, 10) ?? null,
+          autumnGdhStartDate: autumnGdhStartDate?.toISOString().slice(0, 10) ?? null,
           plantMaterialType: section.plantMaterialType,
           flowerThreshold,
           fruitThreshold,

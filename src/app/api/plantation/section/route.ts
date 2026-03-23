@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
         winteredInTunnel: section.winteredInTunnel || false,
         plantingDate: section.plantingDate ? new Date(section.plantingDate) : null,
         winterShootsDate: section.winterShootsDate ? new Date(section.winterShootsDate) : null,
+        autumnShootDate: section.autumnShootDate ? new Date(section.autumnShootDate) : null,
       }
     })
 

@@ -16,6 +16,7 @@ interface SectionGdh {
   autumnGdhStartDate?: string | null
   autumnFruitDate?: string | null
   autumnCurrentGdh?: number
+  gdhAutumnFruit?: number | null
   flowerThreshold: number | null
   fruitThreshold: number | null
   dailyGdh: Array<{ date: string; cumulativeGdh: number }>

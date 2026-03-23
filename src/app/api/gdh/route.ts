@@ -173,7 +173,7 @@ export async function GET(request: Request) {
             GROUP BY DATE("timestamp")
             ORDER BY date
           `
-          const autumnThreshold = fruitThreshold ?? 23000
+          const autumnThreshold = section.gdhAutumnFruit ?? v?.gdhAutumnFruit ?? 23000
           for (const d of autumnDailyAgg) {
             const daily = d.cnt > 0 ? (Number(d.sum_gdh) * 24.0) / d.cnt : 0
             autumnCurrentGdh += daily

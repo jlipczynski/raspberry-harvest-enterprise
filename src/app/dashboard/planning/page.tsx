@@ -261,7 +261,29 @@ export default function PlanningPage() {
       }
 
       // Autumn fruit date — tylko z API
-      const autumnFruitDate: string | null = section.autumnFruitDate ?? null
+      let autumnFruitDate: string | null = section.autumnFruitDate ?? null
+      if (!autumnFruitDate && section.autumnGdhStartDate && section.gdhAutumnFruit) {
+        const autumnStart = section.autumnGdhStartDate
+        const autumnThreshold = section.gdhAutumnFruit
+        let cumAutumn = section.autumnCurrentGdh ?? 0
+        const lastMeteoDate = forecast.meteoDays.at(-1)?.date ?? ''
+        for (const day of forecast.meteoDays) {
+          if (day.date < autumnStart) continue
+          cumAutumn += day.gdhTunnel
+          if (cumAutumn >= autumnThreshold) { autumnFruitDate = day.date; break }
+        }
+        if (!autumnFruitDate) {
+          const scenarioData = scenario === 'best'
+            ? (forecast.scenarios.best || forecast.scenarios.p50)
+            : forecast.scenarios[scenario]
+          for (const day of scenarioData) {
+            if (day.date <= lastMeteoDate) continue
+            if (day.date < autumnStart) continue
+            cumAutumn += day.gdhTunnel
+            if (cumAutumn >= autumnThreshold) { autumnFruitDate = day.date; break }
+          }
+        }
+      }
       result.set(section.id, { fruitDate, autumnFruitDate })
     }
 

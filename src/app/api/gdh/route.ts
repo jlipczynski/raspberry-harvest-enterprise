@@ -173,15 +173,17 @@ export async function GET(request: Request) {
             GROUP BY DATE("timestamp")
             ORDER BY date
           `
-          const autumnThreshold = section.gdhAutumnFruit ?? v?.gdhAutumnFruit ?? 23000
-          for (const d of autumnDailyAgg) {
-            const daily = d.cnt > 0 ? (Number(d.sum_gdh) * 24.0) / d.cnt : 0
-            autumnCurrentGdh += daily
-            if (autumnFruitDate === null && autumnCurrentGdh >= autumnThreshold) {
-              autumnFruitDate = String(d.date).slice(0, 10)
+          const autumnThreshold = section.gdhAutumnFruit ?? v?.gdhAutumnFruit
+          if (autumnThreshold) {
+            for (const d of autumnDailyAgg) {
+              const daily = d.cnt > 0 ? (Number(d.sum_gdh) * 24.0) / d.cnt : 0
+              autumnCurrentGdh += daily
+              if (autumnFruitDate === null && autumnCurrentGdh >= autumnThreshold) {
+                autumnFruitDate = String(d.date).slice(0, 10)
+              }
             }
+            autumnCurrentGdh = Math.round(autumnCurrentGdh)
           }
-          autumnCurrentGdh = Math.round(autumnCurrentGdh)
         }
 
         return {

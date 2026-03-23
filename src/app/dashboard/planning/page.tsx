@@ -1120,7 +1120,9 @@ export default function PlanningPage() {
                     <tr className="text-gray-500 border-b-2 border-gray-300">
                       <th className="text-left py-2 px-3">Tydzień</th>
                       <th className="text-right py-2 px-3">kg/tydzień</th>
-                      <th className="text-right py-2 px-3 text-gray-500">% sezonu</th>
+                      {planSections !== 'all' && (
+                        <th className="text-right py-2 px-3 text-gray-500">% sezonu</th>
+                      )}
                       <th className="text-right py-2 px-3">kg/dzień</th>
                       <th className="text-right py-2 px-3">Kumulat.</th>
                       <th className="text-right py-2 px-3">h/dzień</th>
@@ -1142,9 +1144,25 @@ export default function PlanningPage() {
                             T{w.week} <span className="text-gray-400 text-xs">({w.dates})</span>
                           </td>
                           <td className="text-right px-3">{w.kg.toLocaleString('pl-PL')} kg</td>
-                          <td className="text-right px-3 text-gray-500 text-xs">
-                            {totalKgAll > 0 ? (w.kg / totalKgAll * 100).toFixed(1) + '%' : '—'}
-                          </td>
+                          {planSections !== 'all' && (() => {
+                            const sectionDetail = weeklyPlan.sectionDetails
+                              .find(d => d.section.id === planSections)
+                            if (!sectionDetail) return <td className="text-right px-3 text-gray-500 text-xs">—</td>
+                            
+                            // Określ czy tydzień jest letni czy jesienny
+                            // autumnStartWeek pobierz z variety sekcji
+                            const autumnStartWeek = sectionDetail.section.variety?.autumnStartWeek ?? 33
+                            const isSummer = w.week < autumnStartWeek
+                            
+                            const base = isSummer ? sectionDetail.totalSummerKg : sectionDetail.totalAutumnKg
+                            const pct = base > 0 ? (w.kg / base * 100).toFixed(1) + '%' : '—'
+                            
+                            return (
+                              <td className="text-right px-3 text-gray-500 text-xs">
+                                {pct}
+                              </td>
+                            )
+                          })()}
                           <td className="text-right px-3 font-medium">{w.dailyKg.toLocaleString('pl-PL')} kg</td>
                           <td className="text-right px-3 text-gray-500">{(cum / 1000).toFixed(2)}t</td>
                           <td className="text-right px-3 text-gray-500">{w.dailyHrs}h</td>

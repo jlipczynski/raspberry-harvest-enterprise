@@ -330,3 +330,24 @@ grep -n "FLAT_CURVE" src/app/dashboard/planning/page.tsx
 # 4. Build przechodzi
 npm run build
 ```
+
+### 7. autumnShootDate — start jesieni
+- `autumnShootDate` jest polem na modelu **Section** (nie Variety)
+- Od tej daty system akumuluje GDH (23 000) do obliczenia owocowania jesiennego
+- `autumnStartWeek` z odmiany NIE jest używany jako granica lato/jesień — do usunięcia
+- Każda sekcja ma własną datę wypuszczenia pędów jesiennych
+
+### 8. Dane testowe
+- **NIGDY** nie wpisuj fejkowych danych do bazy przez Prisma, curl ani agenta
+- Jeśli trzeba testować zapis — poproś Jana o wykonanie przez UI
+- Konto testowe: `testowanie@ai.com` (seed: `npm run seed:test`)
+
+### 9. Agent Chrome
+- **NIGDY** nie używaj agenta Claude in Chrome gdy Jan pracuje w swoim oknie Chrome
+- Agent Chrome tylko na koncie `testowanie@ai.com` i tylko za zgodą Jana
+
+### 10. Weryfikacja po każdym PR
+- `git pull origin main`
+- `grep` konkretnej funkcji/zmiennej
+- `npx tsc --noEmit`
+- Claude Code często kłamie że naprawił — zawsze weryfikuj kodem

@@ -59,7 +59,7 @@ export default function VarietiesPage() {
     pickingEfficiency: 8,
     wastePercent: 0,
     secondCategoryPercent: 0,
-    autumnStartWeek: 33,
+    autumnStartWeek: 0,
   })
 
   useEffect(() => {
@@ -91,7 +91,7 @@ export default function VarietiesPage() {
       pickingEfficiency: 8,
       wastePercent: 0,
       secondCategoryPercent: 0,
-      autumnStartWeek: 33,
+      autumnStartWeek: 0,
     })
     setEditingVariety(null)
     setShowForm(false)
@@ -111,7 +111,7 @@ export default function VarietiesPage() {
       pickingEfficiency: variety.pickingEfficiency ?? 8,
       wastePercent: variety.wastePercent ?? 0,
       secondCategoryPercent: variety.secondCategoryPercent ?? 0,
-      autumnStartWeek: variety.autumnStartWeek ?? 33,
+      autumnStartWeek: variety.autumnStartWeek ?? 0,
     })
     setShowForm(true)
   }

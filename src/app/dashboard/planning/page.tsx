@@ -324,7 +324,8 @@ export default function PlanningPage() {
       const startWeek = fruitDate ? getWeekNumber(new Date(fruitDate)) : null
       const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter
       const shoots = pots * section.shootsPerPot
-      const eff = v?.pickingEfficiency ?? 6 // kg/h — from DB, fallback only if not set
+      const eff = v?.pickingEfficiency ?? null
+      if (!eff) continue // brak wydajności = pomijamy sekcję
 
       // Yields from DB: section-level overrides variety-level
       // --- SUMMER ---
@@ -1180,9 +1181,9 @@ export default function PlanningPage() {
                             
                             // Określ czy tydzień jest letni czy jesienny
                             // autumnStartWeek pobierz z variety sekcji
-                            const autumnStartWeek = sectionDetail.section.variety?.autumnStartWeek ?? 33
-                            const isSummer = w.week < autumnStartWeek
-                            
+                            const autumnStartWeek = sectionDetail.section.variety?.autumnStartWeek ?? null
+                            const isSummer = autumnStartWeek !== null ? w.week < autumnStartWeek : true
+
                             const base = isSummer ? sectionDetail.totalSummerKg : sectionDetail.totalAutumnKg
                             const pct = base > 0 ? (w.kg / base * 100).toFixed(1) + '%' : '—'
                             

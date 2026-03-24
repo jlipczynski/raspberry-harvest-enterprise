@@ -21,8 +21,8 @@ describe("calculateDailyGDH", () => {
     expect(calculateDailyGDH(15, 4.5)).toBe(252);
   });
 
-  it("uses default base temp of 4.5", () => {
-    expect(calculateDailyGDH(10)).toBe((10 - 4.5) * 24);
+  it("calculates with explicit base temp of 4.5", () => {
+    expect(calculateDailyGDH(10, 4.5)).toBe((10 - 4.5) * 24);
   });
 
   it("handles negative temperatures", () => {
@@ -32,7 +32,7 @@ describe("calculateDailyGDH", () => {
 
 describe("calculateCumulativeGDH", () => {
   it("returns empty array for empty input", () => {
-    expect(calculateCumulativeGDH([])).toEqual([]);
+    expect(calculateCumulativeGDH([], 4.5)).toEqual([]);
   });
 
   it("calculates cumulative GDH correctly", () => {
@@ -57,7 +57,7 @@ describe("calculateCumulativeGDH", () => {
     const temps: TemperatureDay[] = [
       { date: "2025-07-15", min: 12, max: 25, avg: 18 },
     ];
-    const result = calculateCumulativeGDH(temps);
+    const result = calculateCumulativeGDH(temps, 4.5);
     expect(result[0].date).toBe("2025-07-15");
   });
 });

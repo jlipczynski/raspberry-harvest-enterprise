@@ -6,8 +6,8 @@ import { requireTenantId } from '@/lib/tenant'
 export const dynamic = 'force-dynamic'
 
 // GDH constants per Fall Creek Nursery methodology
-const GDH_BASE_TEMP = 4.5   // °C - below this, no growth
 const GDH_UPPER_TEMP = 26.0 // °C - above this, growth stops (heat stress)
+const FORECAST_BASE_TEMP = 4.5 // °C - used only for farm-level forecast (sections use per-section baseTemp)
 
 // Tunnel inertia model defaults
 const TUNNEL_ALPHA = 0.3     // how fast tunnel reacts to outside temp (0=no reaction, 1=instant)
@@ -26,9 +26,9 @@ interface DailyAgg {
 }
 
 /** GDH for a single temperature reading over a time interval */
-function gdhForTemp(temp: number, hours: number): number {
+function gdhForTemp(temp: number, hours: number, baseTemp: number): number {
   const effective = Math.min(temp, GDH_UPPER_TEMP)
-  return Math.max(0, effective - GDH_BASE_TEMP) * hours
+  return Math.max(0, effective - baseTemp) * hours
 }
 
 /** Dynamic offset: radiation-based greenhouse effect */
@@ -91,6 +91,10 @@ export async function GET(request: Request) {
       allSections.map(async (section) => {
         const v = section.variety
 
+        // Per-section baseTemp from DB — skip section if not set
+        const baseTemp = section.baseTemp ?? v?.baseTemp ?? null
+        if (baseTemp === null) return null
+
         // If NOT wintered and has plantingDate → only count GDH from that date
         // (logger runs before planting but tunnel is empty, readings don't count)
         const gdhStartDate = (!section.winteredInTunnel && section.plantingDate)
@@ -106,7 +110,7 @@ export async function GET(request: Request) {
               SELECT
                 DATE("timestamp") as date,
                 COUNT(*)::int as cnt,
-                COALESCE(SUM(GREATEST(0, LEAST("temperature", ${GDH_UPPER_TEMP}) - ${GDH_BASE_TEMP})), 0)::float as sum_gdh
+                COALESCE(SUM(GREATEST(0, LEAST("temperature", ${GDH_UPPER_TEMP}) - ${baseTemp})), 0)::float as sum_gdh
               FROM temperature_readings
               WHERE "sectionId" = ${section.id}
                 AND "timestamp" >= ${gdhStartDate}
@@ -117,7 +121,7 @@ export async function GET(request: Request) {
               SELECT
                 DATE("timestamp") as date,
                 COUNT(*)::int as cnt,
-                COALESCE(SUM(GREATEST(0, LEAST("temperature", ${GDH_UPPER_TEMP}) - ${GDH_BASE_TEMP})), 0)::float as sum_gdh
+                COALESCE(SUM(GREATEST(0, LEAST("temperature", ${GDH_UPPER_TEMP}) - ${baseTemp})), 0)::float as sum_gdh
               FROM temperature_readings
               WHERE "sectionId" = ${section.id}
               GROUP BY DATE("timestamp")
@@ -166,7 +170,7 @@ export async function GET(request: Request) {
             SELECT
               DATE("timestamp") as date,
               COUNT(*)::int as cnt,
-              COALESCE(SUM(GREATEST(0, LEAST("temperature", ${GDH_UPPER_TEMP}) - ${GDH_BASE_TEMP})), 0)::float as sum_gdh
+              COALESCE(SUM(GREATEST(0, LEAST("temperature", ${GDH_UPPER_TEMP}) - ${baseTemp})), 0)::float as sum_gdh
             FROM temperature_readings
             WHERE "sectionId" = ${section.id}
               AND "timestamp" >= ${autumnGdhStartDate}
@@ -210,6 +214,8 @@ export async function GET(request: Request) {
         }
       })
     )
+
+    const validSections = sectionResults.filter(s => s !== null)
 
     // ── Forecast: Meteo 16d + 3 climate scenarios ──
     let forecast = null
@@ -285,7 +291,7 @@ export async function GET(request: Request) {
 
         const meteoDays = [...meteoDailyMap.entries()].map(([date, tunnelTemps]) => {
           const hoursPerReading = 24 / tunnelTemps.length
-          const gdhTunnel = tunnelTemps.reduce((sum, t) => sum + gdhForTemp(t, hoursPerReading), 0)
+          const gdhTunnel = tunnelTemps.reduce((sum, t) => sum + gdhForTemp(t, hoursPerReading, FORECAST_BASE_TEMP), 0)
           // Also calculate outside GDH for reference
           return { date, gdhTunnel: Math.round(gdhTunnel * 10) / 10 }
         })
@@ -356,9 +362,9 @@ export async function GET(request: Request) {
           tunnelP90 = tunnelTemp(t90, tunnelP90, TUNNEL_ALPHA, avgDailyOffset)
 
           // Daily GDH for 24h at this tunnel temperature
-          const gdhP10 = gdhForTemp(tunnelP10, 24)
-          const gdhP50 = gdhForTemp(tunnelP50, 24)
-          const gdhP90 = gdhForTemp(tunnelP90, 24)
+          const gdhP10 = gdhForTemp(tunnelP10, 24, FORECAST_BASE_TEMP)
+          const gdhP50 = gdhForTemp(tunnelP50, 24, FORECAST_BASE_TEMP)
+          const gdhP90 = gdhForTemp(tunnelP90, 24, FORECAST_BASE_TEMP)
 
           scenarioP10.push({ date: dateStr, gdhTunnel: Math.round(gdhP10 * 10) / 10 })
           scenarioP50.push({ date: dateStr, gdhTunnel: Math.round(gdhP50 * 10) / 10 })
@@ -483,9 +489,9 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
-      sections: sectionResults,
+      sections: validSections,
       forecast,
-      gdhParams: { baseTemp: GDH_BASE_TEMP, upperTemp: GDH_UPPER_TEMP },
+      gdhParams: { upperTemp: GDH_UPPER_TEMP },
     })
   } catch (error) {
     console.error('Error calculating GDH:', error)

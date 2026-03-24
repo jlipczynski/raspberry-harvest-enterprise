@@ -121,7 +121,7 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
     const [dragStart, setDragStart] = useState(0)
   const [dragViewStart, setDragViewStart] = useState<[number, number]>([0, 1])
 
-  const baseTemp = t.variety?.baseTemp || 6.0
+  const baseTemp = t.variety?.baseTemp ?? null
   const W = 900, H = 380, PAD = { top: 30, right: 60, bottom: 50, left: 60 }
   const chartW = W - PAD.left - PAD.right, chartH = H - PAD.top - PAD.bottom
 
@@ -304,7 +304,7 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
         
         const maxCumGdh = gdhPoints[gdhPoints.length - 1]?.cumulativeGdh || 1
         // Use tunnel GDH if inside temps available, otherwise outside GDH
-        const gdhSource = insideTemps.length > 0 ? (() => {
+        const gdhSource = insideTemps.length > 0 && baseTemp !== null ? (() => {
           let cum = 0
           return insideTemps.map((tp) => {
             cum += Math.max(0, (tp.avg - baseTemp)) * 24
@@ -489,7 +489,7 @@ function UnifiedChart({ template: t, outsideTemps, insideTemps, gdhPoints, summe
         {layers.gdh && gdhPath && <path d={gdhPath} fill="none" stroke="#16a34a" strokeWidth={2} />}
 
         {/* GDH tunnel cumulative line */}
-        {layers.gdhTunnel && insideTemps.length > 0 && (() => {
+        {layers.gdhTunnel && insideTemps.length > 0 && baseTemp !== null && (() => {
           let cumGdh = 0
           const tunnelGdhPoints = insideTemps.map((tp) => {
             const gdh = Math.max(0, (tp.avg - baseTemp)) * 24
@@ -674,7 +674,7 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
     onSave()
   }
 
-  const baseTemp = t.variety?.baseTemp || 6.0
+  const baseTemp = t.variety?.baseTemp ?? null
   const outsideTemps: TempPoint[] = Array.isArray(t.outsideTemps) ? t.outsideTemps : []
   const insideTemps: TempPoint[] = Array.isArray(t.insideTunnelTemps) ? t.insideTunnelTemps : []
   const gdhPoints: GdhPoint[] = Array.isArray(t.gdhData) ? t.gdhData : []
@@ -694,6 +694,7 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
       if (!res.ok) throw new Error('API error')
       const data = await res.json()
       if (data.temperatures && data.temperatures.length > 0) {
+        if (baseTemp === null) { alert('Brak temperatury bazowej GDH — ustaw ją w ustawieniach odmiany'); return }
         let cumGdh = 0
         const plantDateStr = t.plantingDate || t.startDate || ''
         const gdhCalc = data.temperatures.map((tp: TempPoint) => {
@@ -757,18 +758,18 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
         const avg = d.temps.length > 0 ? d.temps.reduce((s,v) => s+v, 0) / d.temps.length : 0
         const min = d.temps.length > 0 ? Math.min(...d.temps) : avg - 3
         const max = d.temps.length > 0 ? Math.max(...d.temps) : avg + 3
-        const gdh = d.gdhs.length > 0 ? d.gdhs.reduce((s,v) => s+v, 0) : Math.max(0, (avg - baseTemp)) * 24
+        const gdh = d.gdhs.length > 0 ? d.gdhs.reduce((s,v) => s+v, 0) : (baseTemp !== null ? Math.max(0, (avg - baseTemp)) * 24 : 0)
         return { date, avg: Math.round(avg * 10) / 10, min: Math.round(min * 10) / 10, max: Math.round(max * 10) / 10, gdh: Math.round(gdh) }
       })
       
       // Build inside temps and GDH data
       const insideData = dailyData.filter(d => d.avg > 0).map(d => ({ date: d.date, avg: d.avg, min: d.min, max: d.max }))
       let cumGdh = 0
-      const gdhCalc = dailyData.map(d => {
+      const gdhCalc = baseTemp !== null ? dailyData.map(d => {
         const dg = Math.max(0, (d.avg - baseTemp)) * 24
         cumGdh += dg
         return { date: d.date, gdh: Math.round(dg), cumulativeGdh: Math.round(cumGdh) }
-      })
+      }) : []
       
       const updateData: Record<string, unknown> = {}
       if (insideData.length > 0) updateData.insideTunnelTemps = insideData
@@ -874,7 +875,7 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
           <div className="bg-green-50 rounded-lg px-4 py-3 border border-green-200 flex items-center gap-3">
             <TrendingUp className="w-5 h-5 text-green-600"/>
             <div>
-              <div className="text-xs text-green-600">GDH rzeczywiste do 1. zbioru (baza {baseTemp}°C)</div>
+              <div className="text-xs text-green-600">GDH rzeczywiste do 1. zbioru{baseTemp !== null ? ` (baza ${baseTemp}°C)` : ''}</div>
               <div className="font-bold text-green-800">{gdhAtFirstHarvest.toLocaleString('pl-PL')} GDH</div>
             </div>
           </div>
@@ -1127,7 +1128,7 @@ function TemplateDetail({ template: t, varieties, sections, onSave, onDelete }: 
           {insideTemps.length > 0 ? '✅' : '⚪'} Temp. wewn. (czujniki): {insideTemps.length} dni
         </span>
         <span className={gdhPoints.length > 0 ? 'text-green-600' : 'text-gray-400'}>
-          {gdhPoints.length > 0 ? '✅' : '⚪'} GDH: {gdhPoints.length} dni (baza: {baseTemp}°C)
+          {gdhPoints.length > 0 ? '✅' : '⚪'} GDH: {gdhPoints.length} dni{baseTemp !== null ? ` (baza: ${baseTemp}°C)` : ' (brak bazy temp.)'}
         </span>
       </div>
 

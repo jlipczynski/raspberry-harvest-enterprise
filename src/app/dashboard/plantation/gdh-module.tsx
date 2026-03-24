@@ -410,7 +410,7 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
           )}
         </CardTitle>
         <p className="text-sm text-gray-500">
-          T_baz = {data?.gdhParams?.baseTemp ?? 4.5}°C, T_opt = {data?.gdhParams?.upperTemp ?? 26}°C
+          T_baz = per sekcja (z odmiany), T_opt = {data?.gdhParams?.upperTemp ?? 26}°C
           {forecast && ` \u2022 Klimatologia: ${forecast.historicalYears} lat`}
           {forecast?.seasonalAnomaly && (
             <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
@@ -441,10 +441,10 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
                 <p className="font-semibold text-gray-800 mb-1">1. Formuła GDH (wg Fall Creek Nursery)</p>
                 <p>Dla każdego odczytu temperatury (co 15 min z loggera Testo):</p>
                 <p className="font-mono bg-gray-50 px-2 py-1 rounded mt-1">
-                  GDH = max(0, min(T, {data?.gdhParams?.upperTemp ?? 26}°C) - {data?.gdhParams?.baseTemp ?? 4.5}°C) &times; &Delta;t
+                  GDH = max(0, min(T, {data?.gdhParams?.upperTemp ?? 26}°C) - T_baz) &times; &Delta;t
                 </p>
                 <ul className="mt-1 ml-4 list-disc text-gray-600">
-                  <li><strong>T_baz = {data?.gdhParams?.baseTemp ?? 4.5}°C</strong> — poniżej tej temperatury roślina nie rośnie</li>
+                  <li><strong>T_baz</strong> — z ustawień odmiany (poniżej tej temperatury roślina nie rośnie)</li>
                   <li><strong>T_opt = {data?.gdhParams?.upperTemp ?? 26}°C</strong> — powyżej: stres cieplny, wzrost nie przyspiesza</li>
                   <li>Odczyt co 15 min &times; 0.25h = precyzyjne godziny wzrostu</li>
                   <li>Jeśli sekcja ma ustawioną <strong>datę wysadzenia</strong> (nie jest zimowana) — GDH naliczane dopiero od tej daty</li>

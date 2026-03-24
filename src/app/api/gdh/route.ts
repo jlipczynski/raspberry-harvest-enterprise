@@ -7,19 +7,18 @@ export const dynamic = 'force-dynamic'
 
 // GDH constants per Fall Creek Nursery methodology
 const GDH_UPPER_TEMP = 26.0 // °C - above this, growth stops (heat stress)
-// Legacy: farm-level GDH uses 4.5°C base for backward compat (gdhTunnel field).
-// Frontend recalculates GDH per-section from avgTunnelTemp + section.baseTemp.
-const FORECAST_BASE_TEMP = 4.5 // °C - used for legacy gdhTunnel field
+// baseTemp (T_baza) pochodzi z ustawień odmiany/sekcji w bazie danych — nie jest stałą w kodzie.
+// Frontend liczy GDH per-section z avgTunnelTemp + section.baseTemp.
 
 // Tunnel inertia model defaults
 const TUNNEL_ALPHA = 0.3     // how fast tunnel reacts to outside temp (0=no reaction, 1=instant)
 
 // Dynamic offset model — replaces old static +4°C
 // At night: offset = 0 (no solar gain)
-// During day: offset = shortwave_radiation * k, capped at 15°C
+// During day: offset = shortwave_radiation * k, capped at 28°C
 const MAX_RADIATION = 800    // W/m² — clear summer noon
-const MAX_OFFSET = 15        // °C — max greenhouse effect
-const RADIATION_K = MAX_OFFSET / MAX_RADIATION  // ≈ 0.01875
+const MAX_OFFSET = 28        // °C — max greenhouse effect
+const RADIATION_K = MAX_OFFSET / MAX_RADIATION  // = 0.035
 
 interface DailyAgg {
   date: Date
@@ -294,7 +293,7 @@ export async function GET(request: Request) {
 
         const meteoDays = [...meteoDailyMap.entries()].map(([date, tunnelTemps]) => {
           const hoursPerReading = 24 / tunnelTemps.length
-          const gdhTunnel = tunnelTemps.reduce((sum, t) => sum + gdhForTemp(t, hoursPerReading, FORECAST_BASE_TEMP), 0)
+          const gdhTunnel = tunnelTemps.reduce((sum, t) => sum + gdhForTemp(t, hoursPerReading, 0), 0)
           const avgTunnelTemp = tunnelTemps.reduce((s, t) => s + t, 0) / tunnelTemps.length
           return { date, gdhTunnel: Math.round(gdhTunnel * 10) / 10, avgTunnelTemp: Math.round(avgTunnelTemp * 100) / 100 }
         })
@@ -365,9 +364,9 @@ export async function GET(request: Request) {
           tunnelP90 = tunnelTemp(t90, tunnelP90, TUNNEL_ALPHA, avgDailyOffset)
 
           // Daily GDH for 24h at this tunnel temperature
-          const gdhP10 = gdhForTemp(tunnelP10, 24, FORECAST_BASE_TEMP)
-          const gdhP50 = gdhForTemp(tunnelP50, 24, FORECAST_BASE_TEMP)
-          const gdhP90 = gdhForTemp(tunnelP90, 24, FORECAST_BASE_TEMP)
+          const gdhP10 = gdhForTemp(tunnelP10, 24, 0)
+          const gdhP50 = gdhForTemp(tunnelP50, 24, 0)
+          const gdhP90 = gdhForTemp(tunnelP90, 24, 0)
 
           scenarioP10.push({ date: dateStr, gdhTunnel: Math.round(gdhP10 * 10) / 10, avgTunnelTemp: Math.round(tunnelP10 * 100) / 100 })
           scenarioP50.push({ date: dateStr, gdhTunnel: Math.round(gdhP50 * 10) / 10, avgTunnelTemp: Math.round(tunnelP50 * 100) / 100 })
@@ -497,7 +496,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       sections: validSections,
       forecast,
-      gdhParams: { upperTemp: GDH_UPPER_TEMP, forecastBaseTemp: FORECAST_BASE_TEMP },
+      gdhParams: { upperTemp: GDH_UPPER_TEMP },
     })
   } catch (error) {
     console.error('Error calculating GDH:', error)

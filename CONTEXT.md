@@ -38,9 +38,9 @@
 
 ## Ważne decyzje techniczne
 
-- GDH base temp: 4.5°C w silniku obliczeniowym (`/api/gdh/route.ts`), 6.0°C jako domyślna `baseTemp` w schema Variety/Section
+- GDH base temp (T_baza): pochodzi z ustawień odmiany/sekcji w bazie danych (`section.baseTemp ?? variety.baseTemp`), nie jest stałą w kodzie
 - GDH upper temp: 26°C (heat stress cap)
-- Tunnel inertia: α=0.3, dynamic offset z radiacji lub static +4°C
+- Tunnel inertia: α=0.3, dynamic offset z radiacji: min(28, promieniowanie × 28/800), lub static +4°C
 - Progi GDH zawsze z bazy — nigdy hardcode w kodzie
 - WeatherData: nigdy nie nadpisywać istniejących rekordów, tylko dopisywać nowe daty
 - tenantId: każde zapytanie DB musi być scopowane

@@ -351,3 +351,25 @@ npm run build
 - `grep` konkretnej funkcji/zmiennej
 - `npx tsc --noEmit`
 - Claude Code często kłamie że naprawił — zawsze weryfikuj kodem
+
+## ⛔ ZAKAZ HARDCODOWANIA WARTOŚCI DOMENOWYCH
+
+NIGDY nie wpisuj na sztywno w kodzie:
+- Temperatur bazowych (baseTemp) — zawsze z `section.baseTemp ?? v?.baseTemp`, brak = błąd
+- Progów GDH (gdhWinteredFruit, gdhAutumnFruit, gdhLcFruit itp.) — zawsze z bazy, brak = pomiń sekcję
+- Wydajności zbierania (pickingEfficiency) — zawsze z `v?.pickingEfficiency`, brak = pomiń sekcję
+- Plonów per pęd (yieldSummerPerShoot, yieldAutumnPerShoot) — zawsze z bazy, brak = 0 (brak plonu)
+- Tygodnia startu jesieni (autumnStartWeek) — zawsze z bazy, brak = brak jesieni
+- Jakichkolwiek dat, ID, kwot, norm jako literałów w kodzie
+
+JEDYNE dozwolone stałe w kodzie:
+- `GDH_UPPER_TEMP = 26.0` — biologiczny cap, niezmienialny
+- Stałe UI (kolory, teksty, etykiety)
+
+JEŚLI wartość nie jest w bazie → pomiń sekcję lub zwróć błąd. NIGDY nie zgaduj domyślnej wartości.
+
+PRZED KAŻDYM COMMITEM sprawdź:
+```bash
+grep -rn "?? [0-9]\||| [0-9]" src/app/api/ src/lib/
+```
+Każdy wynik to potencjalny błąd — uzasadnij każdy z nich.

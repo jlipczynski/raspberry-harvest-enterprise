@@ -50,6 +50,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [fetchingWeather, setFetchingWeather] = useState(false)
+  const [refreshingWeather, setRefreshingWeather] = useState(false)
+  const [refreshResult, setRefreshResult] = useState<string | null>(null)
   const [farm, setFarm] = useState<Farm | null>(null)
   const [formData, setFormData] = useState({
     name: '',
@@ -156,6 +158,33 @@ export default function SettingsPage() {
       setTimeout(() => setImportStatus(''), 5000)
     }
     finally { setFetchingWeather(false) }
+  }
+
+  const refreshWeatherData = async () => {
+    setRefreshingWeather(true)
+    setRefreshResult(null)
+
+    try {
+      const res = await fetch('/api/cron/weather')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.results?.length) {
+          const lines = data.results.map((r: { farm: string; fetched?: number; range?: string; skipped?: string }) => {
+            if (r.skipped) return `${r.farm}: ${r.skipped}`
+            return `${r.farm}: pobrano ${r.fetched ?? 0} dni (${r.range ?? '—'})`
+          })
+          setRefreshResult(lines.join('\n'))
+        } else {
+          setRefreshResult('Brak farm do aktualizacji')
+        }
+      } else {
+        const err = await res.json()
+        setRefreshResult(`Błąd: ${err.error || res.status}`)
+      }
+    } catch {
+      setRefreshResult('Błąd połączenia')
+    }
+    finally { setRefreshingWeather(false) }
   }
 
   const exportData = async () => {
@@ -450,6 +479,28 @@ export default function SettingsPage() {
                   <><RefreshCw className="w-4 h-4 mr-2" />Pobierz dane historyczne</>
                 )}
               </Button>
+              <div className="border-t pt-4 mt-4">
+                <p className="text-sm text-gray-600 mb-2">
+                  Odśwież brakujące dane pogodowe (od ostatniego wpisu do wczoraj) + invaliduj cache prognoz.
+                </p>
+                <Button
+                  onClick={refreshWeatherData}
+                  disabled={refreshingWeather}
+                  variant="outline"
+                  className="w-full"
+                >
+                  {refreshingWeather ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Odświeżanie...</>
+                  ) : (
+                    <><RefreshCw className="w-4 h-4 mr-2" />Odśwież dane pogodowe</>
+                  )}
+                </Button>
+                {refreshResult && (
+                  <div className="mt-2 p-3 bg-gray-50 rounded-lg text-xs text-gray-700 whitespace-pre-line">
+                    {refreshResult}
+                  </div>
+                )}
+              </div>
               <div className="text-xs text-gray-500">
                 Źródło: Open-Meteo Historical Weather API
               </div>

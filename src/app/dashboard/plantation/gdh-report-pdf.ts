@@ -12,6 +12,7 @@ interface SectionGdh {
   varietyName: string
   winteredInTunnel: boolean
   gdhStartDate: string | null
+  baseTemp: number
   plantMaterialType: string | null
   flowerThreshold: number | null
   fruitThreshold: number | null
@@ -24,6 +25,7 @@ interface SectionGdh {
 interface ForecastDay {
   date: string
   gdhTunnel: number
+  avgTunnelTemp?: number
 }
 
 interface SeasonalAnomaly {
@@ -105,10 +107,20 @@ function findCrossingDate(
 
   if (!forecast) return null
 
+  // Per-section GDH from tunnel temp
+  const GDH_UPPER = 26.0
+  const gdhFromDay = (day: ForecastDay): number => {
+    if (day.avgTunnelTemp != null) {
+      const eff = Math.min(day.avgTunnelTemp, GDH_UPPER)
+      return Math.max(0, eff - section.baseTemp) * 24
+    }
+    return day.gdhTunnel
+  }
+
   // Check meteo
   let cum = section.currentGdh
   for (const day of forecast.meteoDays) {
-    cum += day.gdhTunnel
+    cum += gdhFromDay(day)
     if (cum >= threshold) return fmtDate(day.date)
   }
 
@@ -116,7 +128,7 @@ function findCrossingDate(
   const scenarioData = forecast.scenarios[scenarioKey] || []
   let cumS = cum
   for (const day of scenarioData) {
-    cumS += day.gdhTunnel
+    cumS += gdhFromDay(day)
     if (cumS >= threshold) return fmtDate(day.date)
   }
 

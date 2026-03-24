@@ -19,12 +19,13 @@ interface SectionGdh {
   gdhAutumnFruit?: number | null
   flowerThreshold: number | null
   fruitThreshold: number | null
+  baseTemp: number
   dailyGdh: Array<{ date: string; cumulativeGdh: number }>
   currentGdh: number
   totalReadings: number
 }
 
-interface ForecastDay { date: string; gdhTunnel: number }
+interface ForecastDay { date: string; gdhTunnel: number; avgTunnelTemp?: number }
 
 interface GdhApiResponse {
   sections: SectionGdh[]
@@ -35,6 +36,7 @@ interface GdhApiResponse {
     lastForecastDate: string
     historicalYears: number
   } | null
+  gdhParams?: { upperTemp: number; forecastBaseTemp: number }
 }
 
 interface TemplateAssignment {
@@ -211,16 +213,36 @@ export default function PlanningPage() {
   )
 
   // ==================== CORE: fruit start date per section from GDH ====================
+  // GDH per-section: uses section.baseTemp + avgTunnelTemp from forecast (not hardcoded 4.5)
+  const GDH_UPPER_TEMP = gdhData?.gdhParams?.upperTemp ?? 26.0
+
   const sectionFruitDates = useMemo(() => {
     if (!gdhData?.sections?.length || !gdhData.forecast) return new Map<string, { fruitDate: string | null; autumnFruitDate: string | null }>()
 
     const forecast = gdhData.forecast
     const toKey = (d: string | Date) => typeof d === 'string' ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10)
 
+    /** Compute daily GDH from tunnel temp using section-specific baseTemp */
+    const gdhFromTunnelTemp = (avgTemp: number, baseTemp: number): number => {
+      const effective = Math.min(avgTemp, GDH_UPPER_TEMP)
+      return Math.max(0, effective - baseTemp) * 24
+    }
+
+    /** Get per-section daily GDH from a forecast day, using avgTunnelTemp if available */
+    const forecastDayGdh = (day: ForecastDay, baseTemp: number): number => {
+      if (day.avgTunnelTemp != null) {
+        return gdhFromTunnelTemp(day.avgTunnelTemp, baseTemp)
+      }
+      // Fallback for old cached data without avgTunnelTemp — use gdhTunnel as-is
+      return day.gdhTunnel
+    }
+
     const result = new Map<string, { fruitDate: string | null; autumnFruitDate: string | null }>()
 
     for (const section of gdhData.sections) {
       if (!section.fruitThreshold) { result.set(section.id, { fruitDate: null, autumnFruitDate: null }); continue }
+
+      const baseTemp = section.baseTemp
 
       // Build cumulative GDH timeline: real + meteo + scenario
       const dailyGdh = new Map<string, number>()
@@ -239,7 +261,7 @@ export default function PlanningPage() {
       for (const day of forecast.meteoDays) {
         if (day.date <= lastRealDate) continue
         if (gdhStartDate && day.date < gdhStartDate) continue
-        cumGdh += day.gdhTunnel
+        cumGdh += forecastDayGdh(day, baseTemp)
         dailyGdh.set(day.date, Math.round(cumGdh))
       }
 
@@ -249,7 +271,7 @@ export default function PlanningPage() {
 
       for (const day of scenarioData) {
         if (gdhStartDate && day.date < gdhStartDate) continue
-        cumGdh += day.gdhTunnel
+        cumGdh += forecastDayGdh(day, baseTemp)
         dailyGdh.set(day.date, Math.round(cumGdh))
       }
 
@@ -260,7 +282,7 @@ export default function PlanningPage() {
         if (gdh >= section.fruitThreshold) { fruitDate = date; break }
       }
 
-      // Autumn fruit date — tylko z API
+      // Autumn fruit date — tylko z API (real readings) lub prognoza per-section
       let autumnFruitDate: string | null = section.autumnFruitDate ?? null
       if (!autumnFruitDate && section.autumnGdhStartDate && section.gdhAutumnFruit) {
         const autumnStart = section.autumnGdhStartDate
@@ -269,7 +291,7 @@ export default function PlanningPage() {
         const lastMeteoDate = forecast.meteoDays.at(-1)?.date ?? ''
         for (const day of forecast.meteoDays) {
           if (day.date < autumnStart) continue
-          cumAutumn += day.gdhTunnel
+          cumAutumn += forecastDayGdh(day, baseTemp)
           if (cumAutumn >= autumnThreshold) { autumnFruitDate = day.date; break }
         }
         if (!autumnFruitDate) {
@@ -279,7 +301,7 @@ export default function PlanningPage() {
           for (const day of scenarioData) {
             if (day.date <= lastMeteoDate) continue
             if (day.date < autumnStart) continue
-            cumAutumn += day.gdhTunnel
+            cumAutumn += forecastDayGdh(day, baseTemp)
             if (cumAutumn >= autumnThreshold) { autumnFruitDate = day.date; break }
           }
         }
@@ -288,7 +310,7 @@ export default function PlanningPage() {
     }
 
     return result
-  }, [gdhData, scenario])
+  }, [gdhData, scenario, GDH_UPPER_TEMP])
 
   // ==================== WEEKLY AGGREGATION ====================
   const weeklyPlan = useMemo(() => {

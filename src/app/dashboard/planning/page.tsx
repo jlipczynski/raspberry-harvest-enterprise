@@ -60,7 +60,7 @@ interface PlantationSection {
   winteredInTunnel?: boolean; plantMaterialType?: string; plantSource?: string; productionYear?: number
   harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]
   templateAssignments?: TemplateAssignment[]
-  variety?: { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]; pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number; autumnStartWeek?: number }
+  variety?: { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]; pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number }
 }
 interface Block { id: string; name: string; sections: PlantationSection[] }
 
@@ -316,9 +316,7 @@ export default function PlanningPage() {
       const sectionDates = sectionFruitDates.get(section.id)
       const fruitDate = sectionDates?.fruitDate ?? null
       const autumnFruitDate = sectionDates?.autumnFruitDate ?? null
-      const autumnStartWeekFromVariety = v?.autumnStartWeek ?? null
-
-      // Skip sections that have neither a fruit date (summer) nor autumnStartWeek (autumn-only)
+      // Skip sections that have neither a fruit date (summer) nor autumnFruitDate (autumn)
       if (!fruitDate && !autumnFruitDate) continue
 
       const startWeek = fruitDate ? getWeekNumber(new Date(fruitDate)) : null
@@ -360,9 +358,6 @@ export default function PlanningPage() {
         ?? null
       const autumnDailyCurve = autumnAssignment?.template?.dailyCurveAutumn
       const autumnStartDate = autumnAssignment?.template?.startDateAutumn
-
-      // Autumn start week — from DB (Variety.autumnStartWeek)
-      const autumnStartWeek = v?.autumnStartWeek ?? null
 
       const summerKg = shoots * summerYield
       const autumnKg = (autumnFruitDate && autumnYield > 0) ? shoots * autumnYield : 0
@@ -1179,10 +1174,9 @@ export default function PlanningPage() {
                               .find(d => d.section.id === planSections)
                             if (!sectionDetail) return <td className="text-right px-3 text-gray-500 text-xs">—</td>
                             
-                            // Określ czy tydzień jest letni czy jesienny
-                            // autumnStartWeek pobierz z variety sekcji
-                            const autumnStartWeek = sectionDetail.section.variety?.autumnStartWeek ?? null
-                            const isSummer = autumnStartWeek !== null ? w.week < autumnStartWeek : true
+                            // Określ czy tydzień jest letni czy jesienny na podstawie danych kg
+                            const weekData = sectionDetail.weeklyKg.find(x => x.week === w.week)
+                            const isSummer = !weekData || weekData.summerKg >= weekData.autumnKg
 
                             const base = isSummer ? sectionDetail.totalSummerKg : sectionDetail.totalAutumnKg
                             const pct = base > 0 ? (w.kg / base * 100).toFixed(1) + '%' : '—'

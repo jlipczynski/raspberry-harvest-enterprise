@@ -50,7 +50,7 @@ export interface ApiResponse {
     tunnelModel: { alpha: number; offsetModel: string; staticOffset: number | null; maxOffset: number; radiationK: number }
     historicalYears: number
   } | null
-  gdhParams: { baseTemp: number; upperTemp: number }
+  gdhParams: { baseTemp?: number; upperTemp: number }
 }
 
 interface ChartPoint {

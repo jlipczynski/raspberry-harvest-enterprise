@@ -42,7 +42,7 @@ interface Forecast {
 }
 
 interface GdhParams {
-  baseTemp: number
+  baseTemp?: number
   upperTemp: number
 }
 
@@ -198,7 +198,7 @@ export function generateGdhReport(
   doc.rect(0, 28, pw, 10, 'F')
   doc.setTextColor(4, 120, 87)
   doc.setFontSize(8)
-  doc.text(`T_baz = ${gdhParams.baseTemp}°C  |  T_opt = ${gdhParams.upperTemp}°C  |  Metodologia: Fall Creek Nursery`, margin, 34)
+  doc.text(`T_baz = per-sekcja  |  T_opt = ${gdhParams.upperTemp}°C  |  Metodologia: Fall Creek Nursery`, margin, 34)
 
   if (forecast) {
     const offsetDesc = forecast.tunnelModel.offsetModel === 'static'

@@ -324,7 +324,7 @@ export async function GET(request: Request) {
         const scenarioP50: Array<{ date: string; gdhTunnel: number }> = []
         const scenarioP90: Array<{ date: string; gdhTunnel: number }> = []
 
-        for (let i = 1; i <= 300; i++) {
+        for (let i = 1; i <= 365; i++) {
           const d = new Date(lastForecastDate)
           d.setDate(d.getDate() + i)
           const mmdd = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`

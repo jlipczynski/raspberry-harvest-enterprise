@@ -12,6 +12,7 @@ interface SectionGdh {
   winteredInTunnel: boolean
   plantMaterialType: string | null
   gdhStartDate: string | null
+  baseTemp: number
   flowerThreshold: number | null
   fruitThreshold: number | null
   dailyGdh: Array<{ date: string; cumulativeGdh: number }>
@@ -22,6 +23,7 @@ interface SectionGdh {
 interface ForecastDay {
   date: string
   gdhTunnel: number
+  avgTunnelTemp?: number
 }
 
 interface ApiResponse {
@@ -33,6 +35,7 @@ interface ApiResponse {
     lastForecastDate: string
     historicalYears: number
   } | null
+  gdhParams?: { upperTemp: number; forecastBaseTemp?: number }
 }
 
 type Scenario = 'p50' | 'p10' | 'p90'
@@ -127,12 +130,22 @@ export default function GDHMatrix({ initialData, initialLoading }: Props) {
 
       if (!forecast) return { section, dailyGdh, lastDate: lastRealDate }
 
+      // Per-section GDH from tunnel temp
+      const upperTemp = data?.gdhParams?.upperTemp ?? 26.0
+      const gdhFromDay = (day: ForecastDay): number => {
+        if (day.avgTunnelTemp != null) {
+          const eff = Math.min(day.avgTunnelTemp, upperTemp)
+          return Math.max(0, eff - section.baseTemp) * 24
+        }
+        return day.gdhTunnel // fallback for old cached data
+      }
+
       // Meteo forecast
       let cumGdh = lastRealGdh
       for (const day of forecast.meteoDays) {
         if (day.date <= lastRealDate) continue
         if (gdhStartDate && day.date < gdhStartDate) continue // skip before planting
-        cumGdh += day.gdhTunnel
+        cumGdh += gdhFromDay(day)
         dailyGdh.set(day.date, Math.round(cumGdh))
       }
 
@@ -140,7 +153,7 @@ export default function GDHMatrix({ initialData, initialLoading }: Props) {
       const scenarioData = forecast.scenarios[scenario]
       for (const day of scenarioData) {
         if (gdhStartDate && day.date < gdhStartDate) continue // skip before planting
-        cumGdh += day.gdhTunnel
+        cumGdh += gdhFromDay(day)
         dailyGdh.set(day.date, Math.round(cumGdh))
       }
 
@@ -239,9 +252,19 @@ export default function GDHMatrix({ initialData, initialLoading }: Props) {
     const toKey = (d: string | Date) => typeof d === 'string' ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10)
 
     // Helper: build cumulative GDH timeline for a section with a given scenario
+    const upperTemp = data?.gdhParams?.upperTemp ?? 26.0
     const buildTimeline = (section: SectionGdh, scenarioKey: AllScenario) => {
       const dailyGdh = new Map<string, number>()
       const gdhStartDate = section.gdhStartDate || ''
+
+      // Per-section GDH from tunnel temp
+      const gdhFromDay = (day: ForecastDay): number => {
+        if (day.avgTunnelTemp != null) {
+          const eff = Math.min(day.avgTunnelTemp, upperTemp)
+          return Math.max(0, eff - section.baseTemp) * 24
+        }
+        return day.gdhTunnel // fallback for old cached data
+      }
 
       // Real data
       let lastRealGdh = 0
@@ -258,7 +281,7 @@ export default function GDHMatrix({ initialData, initialLoading }: Props) {
       for (const day of forecast.meteoDays) {
         if (day.date <= lastRealDate) continue
         if (gdhStartDate && day.date < gdhStartDate) continue
-        cumGdh += day.gdhTunnel
+        cumGdh += gdhFromDay(day)
         dailyGdh.set(day.date, Math.round(cumGdh))
       }
 
@@ -269,7 +292,7 @@ export default function GDHMatrix({ initialData, initialLoading }: Props) {
 
       for (const day of scenarioData) {
         if (gdhStartDate && day.date < gdhStartDate) continue
-        cumGdh += day.gdhTunnel
+        cumGdh += gdhFromDay(day)
         dailyGdh.set(day.date, Math.round(cumGdh))
       }
 

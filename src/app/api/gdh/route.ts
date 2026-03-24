@@ -7,8 +7,9 @@ export const dynamic = 'force-dynamic'
 
 // GDH constants per Fall Creek Nursery methodology
 const GDH_UPPER_TEMP = 26.0 // °C - above this, growth stops (heat stress)
-// TYMCZASOWE: forecast jest per-farma, nie per-sekcja — docelowo przenieść baseTemp do forecast per-sekcja
-const FORECAST_BASE_TEMP = 4.5 // °C - used only for farm-level forecast
+// Legacy: farm-level GDH uses 4.5°C base for backward compat (gdhTunnel field).
+// Frontend recalculates GDH per-section from avgTunnelTemp + section.baseTemp.
+const FORECAST_BASE_TEMP = 4.5 // °C - used for legacy gdhTunnel field
 
 // Tunnel inertia model defaults
 const TUNNEL_ALPHA = 0.3     // how fast tunnel reacts to outside temp (0=no reaction, 1=instant)
@@ -237,8 +238,8 @@ export async function GET(request: Request) {
 
           if (cached && cacheValid) {
             forecast = {
-              meteoDays: cached.meteoDays as { date: string; gdhTunnel: number }[],
-              scenarios: cached.scenarios as { p10: { date: string; gdhTunnel: number }[]; p50: { date: string; gdhTunnel: number }[]; p90: { date: string; gdhTunnel: number }[]; best?: { date: string; gdhTunnel: number }[] },
+              meteoDays: cached.meteoDays as { date: string; gdhTunnel: number; avgTunnelTemp: number }[],
+              scenarios: cached.scenarios as { p10: { date: string; gdhTunnel: number; avgTunnelTemp: number }[]; p50: { date: string; gdhTunnel: number; avgTunnelTemp: number }[]; p90: { date: string; gdhTunnel: number; avgTunnelTemp: number }[]; best?: { date: string; gdhTunnel: number; avgTunnelTemp: number }[] },
               seasonalAnomaly: cached.seasonalAnomaly as { months: Array<{ month: string; anomaly: number }>; avgAnomaly: number; verdict: string } | null,
               lastForecastDate: cached.lastForecastDate,
               historicalYears: cached.historicalYears,
@@ -294,8 +295,8 @@ export async function GET(request: Request) {
         const meteoDays = [...meteoDailyMap.entries()].map(([date, tunnelTemps]) => {
           const hoursPerReading = 24 / tunnelTemps.length
           const gdhTunnel = tunnelTemps.reduce((sum, t) => sum + gdhForTemp(t, hoursPerReading, FORECAST_BASE_TEMP), 0)
-          // Also calculate outside GDH for reference
-          return { date, gdhTunnel: Math.round(gdhTunnel * 10) / 10 }
+          const avgTunnelTemp = tunnelTemps.reduce((s, t) => s + t, 0) / tunnelTemps.length
+          return { date, gdhTunnel: Math.round(gdhTunnel * 10) / 10, avgTunnelTemp: Math.round(avgTunnelTemp * 100) / 100 }
         })
 
         // === 2. Build historical climatology by MM-DD ===
@@ -328,9 +329,9 @@ export async function GET(request: Request) {
         let tunnelP50 = lastMeteoTunnel
         let tunnelP90 = lastMeteoTunnel
 
-        const scenarioP10: Array<{ date: string; gdhTunnel: number }> = []
-        const scenarioP50: Array<{ date: string; gdhTunnel: number }> = []
-        const scenarioP90: Array<{ date: string; gdhTunnel: number }> = []
+        const scenarioP10: Array<{ date: string; gdhTunnel: number; avgTunnelTemp: number }> = []
+        const scenarioP50: Array<{ date: string; gdhTunnel: number; avgTunnelTemp: number }> = []
+        const scenarioP90: Array<{ date: string; gdhTunnel: number; avgTunnelTemp: number }> = []
 
         for (let i = 1; i <= 365; i++) {
           const d = new Date(lastForecastDate)
@@ -368,14 +369,14 @@ export async function GET(request: Request) {
           const gdhP50 = gdhForTemp(tunnelP50, 24, FORECAST_BASE_TEMP)
           const gdhP90 = gdhForTemp(tunnelP90, 24, FORECAST_BASE_TEMP)
 
-          scenarioP10.push({ date: dateStr, gdhTunnel: Math.round(gdhP10 * 10) / 10 })
-          scenarioP50.push({ date: dateStr, gdhTunnel: Math.round(gdhP50 * 10) / 10 })
-          scenarioP90.push({ date: dateStr, gdhTunnel: Math.round(gdhP90 * 10) / 10 })
+          scenarioP10.push({ date: dateStr, gdhTunnel: Math.round(gdhP10 * 10) / 10, avgTunnelTemp: Math.round(tunnelP10 * 100) / 100 })
+          scenarioP50.push({ date: dateStr, gdhTunnel: Math.round(gdhP50 * 10) / 10, avgTunnelTemp: Math.round(tunnelP50 * 100) / 100 })
+          scenarioP90.push({ date: dateStr, gdhTunnel: Math.round(gdhP90 * 10) / 10, avgTunnelTemp: Math.round(tunnelP90 * 100) / 100 })
         }
 
         // === 4. ECMWF Seasonal Forecast — anomaly-based best estimate ===
         let seasonalAnomaly: { months: Array<{ month: string; anomaly: number }>; avgAnomaly: number; verdict: string } | null = null
-        const scenarioBest: Array<{ date: string; gdhTunnel: number }> = []
+        const scenarioBest: Array<{ date: string; gdhTunnel: number; avgTunnelTemp: number }> = []
 
         try {
           const seasonalUrl = `https://seasonal-api.open-meteo.com/v1/seasonal?latitude=${lat}&longitude=${lon}&monthly=temperature_2m_anomaly`
@@ -425,15 +426,18 @@ export async function GET(request: Request) {
                 const factor = Math.max(-1, Math.min(1, monthAnomaly / 2))
 
                 let gdhBest: number
+                let tempBest: number
                 if (factor >= 0) {
                   // Interpolate between P50 and P90
                   gdhBest = dp50.gdhTunnel + factor * ((dp90?.gdhTunnel ?? dp50.gdhTunnel) - dp50.gdhTunnel)
+                  tempBest = dp50.avgTunnelTemp + factor * ((dp90?.avgTunnelTemp ?? dp50.avgTunnelTemp) - dp50.avgTunnelTemp)
                 } else {
                   // Interpolate between P10 and P50
                   gdhBest = dp50.gdhTunnel + factor * (dp50.gdhTunnel - (dp10?.gdhTunnel ?? dp50.gdhTunnel))
+                  tempBest = dp50.avgTunnelTemp + factor * (dp50.avgTunnelTemp - (dp10?.avgTunnelTemp ?? dp50.avgTunnelTemp))
                 }
 
-                scenarioBest.push({ date: dp50.date, gdhTunnel: Math.round(gdhBest * 10) / 10 })
+                scenarioBest.push({ date: dp50.date, gdhTunnel: Math.round(gdhBest * 10) / 10, avgTunnelTemp: Math.round(tempBest * 100) / 100 })
               }
             }
           }
@@ -493,7 +497,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       sections: validSections,
       forecast,
-      gdhParams: { upperTemp: GDH_UPPER_TEMP },
+      gdhParams: { upperTemp: GDH_UPPER_TEMP, forecastBaseTemp: FORECAST_BASE_TEMP },
     })
   } catch (error) {
     console.error('Error calculating GDH:', error)

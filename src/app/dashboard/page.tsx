@@ -30,18 +30,20 @@ interface SectionGdh {
   name: string
   blockName: string
   varietyName: string
+  baseTemp: number
   flowerThreshold: number | null
   fruitThreshold: number | null
   gdhStartDate: string | null
   dailyGdh: Array<{ date: string; cumulativeGdh: number }>
 }
-interface ForecastDay { date: string; gdhTunnel: number }
+interface ForecastDay { date: string; gdhTunnel: number; avgTunnelTemp?: number }
 interface GdhApiResponse {
   sections: SectionGdh[]
   forecast: {
     meteoDays: ForecastDay[]
     scenarios: { p10: ForecastDay[]; p50: ForecastDay[]; p90: ForecastDay[]; best?: ForecastDay[] }
   } | null
+  gdhParams?: { upperTemp: number; forecastBaseTemp: number }
 }
 
 // ==================== HELPERS ====================
@@ -60,6 +62,16 @@ function computeDates(gdhData: GdhApiResponse, scenario: 'p10'|'p50'|'p90'|'best
 
   const forecast = gdhData.forecast
   const toKey = (d: string) => d.slice(0, 10)
+  const upperTemp = gdhData.gdhParams?.upperTemp ?? 26.0
+
+  /** Compute per-section daily GDH from tunnel temp */
+  const gdhFromDay = (day: ForecastDay, baseTemp: number): number => {
+    if (day.avgTunnelTemp != null) {
+      const eff = Math.min(day.avgTunnelTemp, upperTemp)
+      return Math.max(0, eff - baseTemp) * 24
+    }
+    return day.gdhTunnel // fallback for old cached data
+  }
 
   for (const section of gdhData.sections) {
     if (!section.flowerThreshold && !section.fruitThreshold) {
@@ -67,6 +79,7 @@ function computeDates(gdhData: GdhApiResponse, scenario: 'p10'|'p50'|'p90'|'best
       continue
     }
 
+    const baseTemp = section.baseTemp
     const dailyGdh = new Map<string, number>()
     const gdhStartDate = section.gdhStartDate || ''
 
@@ -83,7 +96,7 @@ function computeDates(gdhData: GdhApiResponse, scenario: 'p10'|'p50'|'p90'|'best
     for (const day of forecast.meteoDays) {
       if (day.date <= lastRealDate) continue
       if (gdhStartDate && day.date < gdhStartDate) continue
-      cumGdh += day.gdhTunnel
+      cumGdh += gdhFromDay(day, baseTemp)
       dailyGdh.set(day.date, Math.round(cumGdh))
     }
 
@@ -92,7 +105,7 @@ function computeDates(gdhData: GdhApiResponse, scenario: 'p10'|'p50'|'p90'|'best
       : forecast.scenarios[scenario]
     for (const day of scenarioData) {
       if (gdhStartDate && day.date < gdhStartDate) continue
-      cumGdh += day.gdhTunnel
+      cumGdh += gdhFromDay(day, baseTemp)
       dailyGdh.set(day.date, Math.round(cumGdh))
     }
 

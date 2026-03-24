@@ -20,6 +20,7 @@ interface SectionGdh {
   winteredInTunnel: boolean
   plantingDate: string | null
   gdhStartDate: string | null
+  baseTemp: number
   plantMaterialType: string | null
   flowerThreshold: number | null
   fruitThreshold: number | null
@@ -32,6 +33,7 @@ interface SectionGdh {
 interface ForecastDay {
   date: string
   gdhTunnel: number
+  avgTunnelTemp?: number
 }
 
 interface SeasonalAnomaly {
@@ -50,7 +52,7 @@ export interface ApiResponse {
     tunnelModel: { alpha: number; offsetModel: string; staticOffset: number | null; maxOffset: number; radiationK: number }
     historicalYears: number
   } | null
-  gdhParams: { baseTemp?: number; upperTemp: number }
+  gdhParams: { baseTemp?: number; upperTemp: number; forecastBaseTemp?: number }
 }
 
 interface ChartPoint {
@@ -173,10 +175,21 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
       lastNonEmptyPoint.meteoGdh = lastCumGdh
     }
 
+    // Per-section GDH from tunnel temp using section's baseTemp
+    const upperTemp = data?.gdhParams?.upperTemp ?? 26.0
+    const sectionBaseTemp = selectedSection.baseTemp
+    const gdhFromDay = (day: ForecastDay): number => {
+      if (day.avgTunnelTemp != null) {
+        const eff = Math.min(day.avgTunnelTemp, upperTemp)
+        return Math.max(0, eff - sectionBaseTemp) * 24
+      }
+      return day.gdhTunnel // fallback for old cached data
+    }
+
     for (const day of forecast.meteoDays) {
       if (day.date <= lastRealDate) continue
       if (gdhStartDate && day.date < gdhStartDate) continue // skip before planting
-      cumMeteo += day.gdhTunnel
+      cumMeteo += gdhFromDay(day)
       points.push({ date: day.date, dateLabel: toLabel(day.date), realGdh: null, meteoGdh: Math.round(cumMeteo), p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
     }
 
@@ -216,10 +229,10 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
       if (!date) continue
       if (gdhStartDate && date < gdhStartDate) continue // skip before planting
 
-      cumP10 += dp10?.gdhTunnel ?? 0
-      cumP50 += dp50?.gdhTunnel ?? 0
-      cumP90 += dp90?.gdhTunnel ?? 0
-      cumBest += dBest?.gdhTunnel ?? dp50?.gdhTunnel ?? 0
+      cumP10 += dp10 ? gdhFromDay(dp10) : 0
+      cumP50 += dp50 ? gdhFromDay(dp50) : 0
+      cumP90 += dp90 ? gdhFromDay(dp90) : 0
+      cumBest += dBest ? gdhFromDay(dBest) : (dp50 ? gdhFromDay(dp50) : 0)
 
       points.push({
         date,

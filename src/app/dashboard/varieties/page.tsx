@@ -24,7 +24,7 @@ interface Variety {
   gdhAutumnFlower?: number; gdhAutumnFruit?: number
   gdhSummer?: number; gdhAutumn?: number
   harvestCurveSummer?: number[] | string; harvestCurveAutumn?: number[] | string
-  pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number; autumnStartWeek?: number
+  pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number
   isCustom?: boolean
 }
 
@@ -46,7 +46,7 @@ export default function VarietiesPage() {
     yieldSummerPerShoot: number; yieldAutumnPerShoot: number
     baseTemp: number; gdhWinteredFlower: number; gdhWinteredFruit: number; gdhLcFlower: number; gdhLcFruit: number; gdhAutumnFlower: number; gdhAutumnFruit: number
     harvestCurveSummer: string | number[]; harvestCurveAutumn: string | number[]
-    pickingEfficiency: number; wastePercent: number; secondCategoryPercent: number; autumnStartWeek: number
+    pickingEfficiency: number; wastePercent: number; secondCategoryPercent: number
   }>({
     name: '',
     origin: '',
@@ -59,7 +59,6 @@ export default function VarietiesPage() {
     pickingEfficiency: 8,
     wastePercent: 0,
     secondCategoryPercent: 0,
-    autumnStartWeek: 0,
   })
 
   useEffect(() => {
@@ -91,7 +90,6 @@ export default function VarietiesPage() {
       pickingEfficiency: 8,
       wastePercent: 0,
       secondCategoryPercent: 0,
-      autumnStartWeek: 0,
     })
     setEditingVariety(null)
     setShowForm(false)
@@ -111,7 +109,6 @@ export default function VarietiesPage() {
       pickingEfficiency: variety.pickingEfficiency ?? 8,
       wastePercent: variety.wastePercent ?? 0,
       secondCategoryPercent: variety.secondCategoryPercent ?? 0,
-      autumnStartWeek: variety.autumnStartWeek ?? 0,
     })
     setShowForm(true)
   }
@@ -136,7 +133,6 @@ export default function VarietiesPage() {
       pickingEfficiency: formData.pickingEfficiency,
       wastePercent: formData.wastePercent,
       secondCategoryPercent: formData.secondCategoryPercent,
-      autumnStartWeek: formData.autumnStartWeek || null,
     }
     
     try {
@@ -538,19 +534,6 @@ export default function VarietiesPage() {
                     onChange={(e) => setFormData({...formData, secondCategoryPercent: parseFloat(e.target.value) || 0})}
                   />
                 </div>
-                <div>
-                  <Label>Start jesieni (nr tygodnia)</Label>
-                  <Input
-                    type="number"
-                    step="1"
-                    min="1"
-                    max="52"
-                    placeholder="np. 33"
-                    value={formData.autumnStartWeek || ''}
-                    onChange={(e) => setFormData({...formData, autumnStartWeek: parseInt(e.target.value) || 0})}
-                  />
-                  <p className="text-xs text-gray-400 mt-1">Puste = brak jesieni</p>
-                </div>
               </div>
             </div>
 
@@ -672,10 +655,6 @@ export default function VarietiesPage() {
                     <div className="bg-yellow-50 p-3 rounded">
                       <div className="text-yellow-600 text-xs">% II kategorii</div>
                       <div className="font-semibold">{variety.secondCategoryPercent ?? 0}%</div>
-                    </div>
-                    <div className="bg-amber-50 p-3 rounded">
-                      <div className="text-amber-600 text-xs">Start jesieni</div>
-                      <div className="font-semibold">{variety.autumnStartWeek ? `T${variety.autumnStartWeek}` : 'brak'}</div>
                     </div>
                   </div>
 

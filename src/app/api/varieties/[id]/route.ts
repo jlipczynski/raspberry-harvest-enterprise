@@ -20,7 +20,7 @@ export async function PATCH(
       'gdhWinteredFlower', 'gdhWinteredFruit',
       'gdhLcFlower', 'gdhLcFruit',
       'gdhAutumnFlower', 'gdhAutumnFruit',
-      'autumnStartWeek', 'pickingEfficiency',
+      'pickingEfficiency',
       'wastePercent', 'secondCategoryPercent',
     ]
     for (const field of nullishFields) {

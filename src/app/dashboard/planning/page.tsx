@@ -408,9 +408,8 @@ export default function PlanningPage() {
             const existing = dailyKgMap.get(dateStr)
             if (existing) { existing.autumnKg += kg } else { dailyKgMap.set(dateStr, { summerKg: 0, autumnKg: kg }) }
           })
-        } else {
+        } else if (autumnFruitDate) {
           // Fallback: weekly curve divided by 7
-          if (!autumnFruitDate) break
           const autumnStartDate2 = new Date(autumnFruitDate)
           autumnWeeklyCurve.forEach((pct, i) => {
             const weekStart = new Date(autumnStartDate2)

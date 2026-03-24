@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic'
 
 // GDH constants per Fall Creek Nursery methodology
 const GDH_UPPER_TEMP = 26.0 // °C - above this, growth stops (heat stress)
-const FORECAST_BASE_TEMP = 4.5 // °C - used only for farm-level forecast (sections use per-section baseTemp)
+// TYMCZASOWE: forecast jest per-farma, nie per-sekcja — docelowo przenieść baseTemp do forecast per-sekcja
+const FORECAST_BASE_TEMP = 4.5 // °C - used only for farm-level forecast
 
 // Tunnel inertia model defaults
 const TUNNEL_ALPHA = 0.3     // how fast tunnel reacts to outside temp (0=no reaction, 1=instant)
@@ -203,6 +204,7 @@ export async function GET(request: Request) {
           autumnGdhStartDate: autumnGdhStartDate?.toISOString().slice(0, 10) ?? null,
           autumnFruitDate,
           autumnCurrentGdh,
+          baseTemp,
           gdhAutumnFruit: section.gdhAutumnFruit ?? v?.gdhAutumnFruit ?? null,
           plantMaterialType: section.plantMaterialType,
           flowerThreshold,

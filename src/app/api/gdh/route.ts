@@ -166,6 +166,7 @@ export async function GET(request: Request) {
         // Autumn fruit date from logger data (GDH od autumnShootDate)
         let autumnFruitDate: string | null = null
         let autumnCurrentGdh = 0
+        let autumnLastLoggerDate: string | null = null
         if (autumnGdhStartDate) {
           const autumnDailyAgg: DailyAgg[] = await prisma.$queryRaw`
             SELECT
@@ -178,6 +179,9 @@ export async function GET(request: Request) {
             GROUP BY DATE("timestamp")
             ORDER BY date
           `
+          if (autumnDailyAgg.length > 0) {
+            autumnLastLoggerDate = String(autumnDailyAgg[autumnDailyAgg.length - 1].date).slice(0, 10)
+          }
           const autumnThreshold = section.gdhAutumnFruit ?? v?.gdhAutumnFruit
           if (autumnThreshold) {
             for (const d of autumnDailyAgg) {
@@ -204,6 +208,7 @@ export async function GET(request: Request) {
           autumnGdhStartDate: autumnGdhStartDate?.toISOString().slice(0, 10) ?? null,
           autumnFruitDate,
           autumnCurrentGdh,
+          autumnLastLoggerDate,
           baseTemp,
           gdhAutumnFruit: section.gdhAutumnFruit ?? v?.gdhAutumnFruit ?? null,
           plantMaterialType: section.plantMaterialType,
@@ -490,6 +495,45 @@ export async function GET(request: Request) {
         } // zamknięcie if (!forecast)
       } catch (e) {
         console.error('Forecast fetch error:', e)
+      }
+    }
+
+    // ── Second pass: fill autumnFruitDate from forecast when logger has insufficient data ──
+    if (forecast) {
+      const fcast = forecast as unknown as {
+        meteoDays: Array<{ date: string; avgTunnelTemp: number }>;
+        scenarios: { p50: Array<{ date: string; avgTunnelTemp: number }> };
+      }
+      const forecastTimeline = [
+        ...(fcast.meteoDays || []),
+        ...(fcast.scenarios?.p50 || []),
+      ]
+
+      for (const section of validSections) {
+        if (section.autumnFruitDate || !section.autumnGdhStartDate) continue
+        const threshold = section.gdhAutumnFruit
+        if (threshold === null) continue
+
+        let cumGdh = section.autumnCurrentGdh
+        const skipBefore = section.autumnLastLoggerDate ?? section.autumnGdhStartDate
+
+        for (const day of forecastTimeline) {
+          if (day.date <= skipBefore) continue
+          if (day.date < section.autumnGdhStartDate) continue
+
+          const dailyGdh = Math.max(0, Math.min(day.avgTunnelTemp, GDH_UPPER_TEMP) - section.baseTemp) * 24
+          cumGdh += dailyGdh
+
+          if (cumGdh >= threshold) {
+            section.autumnFruitDate = day.date
+            section.autumnCurrentGdh = Math.round(cumGdh)
+            break
+          }
+        }
+
+        if (!section.autumnFruitDate) {
+          section.autumnCurrentGdh = Math.round(cumGdh)
+        }
       }
     }
 

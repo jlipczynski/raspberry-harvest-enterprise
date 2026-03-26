@@ -62,7 +62,7 @@ export default function VarietiesPage() {
     gdhLcFlowerSummer: 0, gdhLcFruitSummer: 0,
     gdhFruitAutumn: 0,
     harvestCurveSummer: '', harvestCurveAutumn: '',
-    pickingEfficiency: 8, wastePercent: 0, secondCategoryPercent: 0, autumnStartWeek: 33,
+    pickingEfficiency: 8, wastePercent: 0, secondCategoryPercent: 0,
   })
 
   useEffect(() => {
@@ -93,7 +93,7 @@ export default function VarietiesPage() {
       gdhPlantedFlowerAutumn: 0, gdhPlantedFruitAutumn: 0,
       gdhLcFlowerAutumn: 0, gdhLcFruitAutumn: 0,
       harvestCurveSummer: '', harvestCurveAutumn: '',
-      pickingEfficiency: 8, wastePercent: 0, secondCategoryPercent: 0, autumnStartWeek: 33,
+      pickingEfficiency: 8, wastePercent: 0, secondCategoryPercent: 0,
     })
     setEditingVariety(null)
     setShowForm(false)

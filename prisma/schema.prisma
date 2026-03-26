@@ -104,7 +104,6 @@ model Variety {
 
   harvestCurveSummer    Json?
   harvestCurveAutumn    Json?
-  autumnStartWeek       Int?      // Tydzień startu jesieni (np. 33 = połowa sierpnia)
 
   pickingEfficiency     Float?
   wastePercent          Float?

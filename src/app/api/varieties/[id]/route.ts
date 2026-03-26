@@ -16,7 +16,7 @@ export async function PATCH(
     const data: Record<string, unknown> = {}
     const nullishFields = [
       'name', 'yieldSummerPerShoot', 'yieldAutumnPerShoot',
-      'baseTemp', 'autumnStartWeek',
+      'baseTemp',
       // GDH progi — LATO
       'gdhWinteredFlowerSummer', 'gdhWinteredFruitSummer',
       'gdhPlantedFlowerSummer', 'gdhPlantedFruitSummer',

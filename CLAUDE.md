@@ -334,7 +334,7 @@ npm run build
 ### 7. autumnShootDate — start jesieni
 - `autumnShootDate` jest polem na modelu **Section** (nie Variety)
 - Od tej daty system akumuluje GDH (23 000) do obliczenia owocowania jesiennego
-- `autumnStartWeek` z odmiany NIE jest używany jako granica lato/jesień — do usunięcia
+- `autumnStartWeek` — USUNIĘTE z modelu Variety (było reliktem hardcoded tygodnia 33)
 - Każda sekcja ma własną datę wypuszczenia pędów jesiennych
 
 ### 8. Dane testowe
@@ -359,7 +359,7 @@ NIGDY nie wpisuj na sztywno w kodzie:
 - Progów GDH (gdhWinteredFruit, gdhAutumnFruit, gdhLcFruit itp.) — zawsze z bazy, brak = pomiń sekcję
 - Wydajności zbierania (pickingEfficiency) — zawsze z `v?.pickingEfficiency`, brak = pomiń sekcję
 - Plonów per pęd (yieldSummerPerShoot, yieldAutumnPerShoot) — zawsze z bazy, brak = 0 (brak plonu)
-- Tygodnia startu jesieni (autumnStartWeek) — zawsze z bazy, brak = brak jesieni
+- Tygodnia startu jesieni — pole `autumnStartWeek` usunięte, jesień liczy się z GDH od `autumnShootDate`
 - Jakichkolwiek dat, ID, kwot, norm jako literałów w kodzie
 
 JEDYNE dozwolone stałe w kodzie:

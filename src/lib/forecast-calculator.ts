@@ -4,8 +4,10 @@
 export interface TemperatureDay { date: string; min: number; max: number; avg: number }
 export interface GDHDay { date: string; gdh: number; cumulativeGdh: number }
 
-// GDH constants per Fall Creek Nursery methodology
-export const GDH_BASE_TEMP = 4.5   // °C - below this, no growth
+// GDH constants
+// baseTemp per-variety z DB (variety.baseTemp) — używaj parametru baseTemp w funkcjach
+// GDH_BASE_TEMP zachowany jako fallback dla historycznych danych pogodowych (bez odmiany)
+export const GDH_BASE_TEMP = 6.0   // °C - domyślna temp bazowa (fallback)
 export const GDH_UPPER_TEMP = 26.0 // °C - above this, growth stops (heat stress)
 
 // Calculate GDH from daily temperatures (base 4.5°C, cap 26°C for berries)

@@ -21,9 +21,7 @@ interface Section {
   winteredInTunnel: boolean
   plantingDate: string | null
   autumnShootDate: string | null
-  variety?: { name: string; gdhSummer?: number; gdhAutumn?: number }
-  gdhSummer?: number
-  gdhAutumn?: number
+  variety?: { name: string }
 }
 
 export default function WeatherPage() {
@@ -86,7 +84,7 @@ export default function WeatherPage() {
     return 0
   }
 
-  const getGDHThreshold = (section: Section) => section.gdhSummer || section.variety?.gdhSummer || 20000
+  const getGDHThreshold = () => 20000 // TODO: pobierać z GDH API per sekcja (fruitThresholdSummer)
 
   const estimateFruitingDate = (sectionGDH: number, threshold: number) => {
     const remaining = threshold - sectionGDH

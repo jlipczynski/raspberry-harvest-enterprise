@@ -12,14 +12,19 @@ export async function PATCH(
     const body = await request.json()
     
     // Only update fields that are explicitly present in the request body
-    // This prevents wiping fields the frontend doesn't send (e.g. gdhSummer/gdhAutumn)
+    // This prevents wiping fields the frontend doesn't send
     const data: Record<string, unknown> = {}
     const nullishFields = [
       'name', 'yieldSummerPerShoot', 'yieldAutumnPerShoot',
-      'gdhSummer', 'gdhAutumn', 'baseTemp',
-      'gdhWinteredFlower', 'gdhWinteredFruit',
-      'gdhLcFlower', 'gdhLcFruit',
-      'gdhAutumnFlower', 'gdhAutumnFruit',
+      'baseTemp', 'autumnStartWeek',
+      // GDH progi — LATO
+      'gdhWinteredFlowerSummer', 'gdhWinteredFruitSummer',
+      'gdhPlantedFlowerSummer', 'gdhPlantedFruitSummer',
+      'gdhLcFlowerSummer', 'gdhLcFruitSummer',
+      // GDH progi — JESIEŃ
+      'gdhWinteredFlowerAutumn', 'gdhWinteredFruitAutumn',
+      'gdhPlantedFlowerAutumn', 'gdhPlantedFruitAutumn',
+      'gdhLcFlowerAutumn', 'gdhLcFruitAutumn',
       'pickingEfficiency',
       'wastePercent', 'secondCategoryPercent',
     ]

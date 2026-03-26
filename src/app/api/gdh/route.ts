@@ -5,9 +5,9 @@ import { requireTenantId } from '@/lib/tenant'
 
 export const dynamic = 'force-dynamic'
 
-// GDH constants per Fall Creek Nursery methodology
-const GDH_UPPER_TEMP = 26.0 // °C - above this, growth stops (heat stress)
-// baseTemp (T_baza) pochodzi z ustawień odmiany/sekcji w bazie danych — nie jest stałą w kodzie.
+// GDH upper cap — above this, growth stops (heat stress)
+const GDH_UPPER_TEMP = 26.0 // °C
+// baseTemp pochodzi z ustawień odmiany/sekcji w bazie danych — nie jest stałą w kodzie.
 // Frontend liczy GDH per-section z avgTunnelTemp + section.baseTemp.
 
 // Tunnel inertia model defaults
@@ -92,9 +92,8 @@ export async function GET(request: Request) {
       allSections.map(async (section) => {
         const v = section.variety
 
-        // Per-section baseTemp from DB — skip section if not set
-        const baseTemp = section.baseTemp ?? v?.baseTemp ?? null
-        if (baseTemp === null) return null
+        // baseTemp: sekcja override → odmiana → domyślnie 6.0°C
+        const baseTemp = section.baseTemp ?? v?.baseTemp ?? 6.0
 
         // If NOT wintered and has plantingDate → only count GDH from that date
         // (logger runs before planting but tunnel is empty, readings don't count)
@@ -141,26 +140,31 @@ export async function GET(request: Request) {
           }
         })
 
-        // Determine thresholds based on section type
-        let flowerThreshold: number | null = null
-        let fruitThreshold: number | null = null
-        let thresholdType = 'autumn'
+        // Determine thresholds based on section type — LATO + JESIEŃ
+        let flowerThresholdSummer: number | null = null
+        let fruitThresholdSummer: number | null = null
+        let flowerThresholdAutumn: number | null = null
+        let fruitThresholdAutumn: number | null = null
+        let thresholdType = 'planted'
 
         if (section.winteredInTunnel) {
-          flowerThreshold = section.gdhWinteredFlower ?? v?.gdhWinteredFlower ?? null
-          fruitThreshold = section.gdhWinteredFruit ?? v?.gdhWinteredFruit ?? null
+          flowerThresholdSummer = section.gdhWinteredFlowerSummer ?? v?.gdhWinteredFlowerSummer ?? null
+          fruitThresholdSummer = section.gdhWinteredFruitSummer ?? v?.gdhWinteredFruitSummer ?? null
+          flowerThresholdAutumn = section.gdhWinteredFlowerAutumn ?? v?.gdhWinteredFlowerAutumn ?? null
+          fruitThresholdAutumn = section.gdhWinteredFruitAutumn ?? v?.gdhWinteredFruitAutumn ?? null
           thresholdType = 'wintered'
         } else if (section.plantMaterialType === 'LONGCANE') {
-          flowerThreshold = section.gdhLcFlower ?? v?.gdhLcFlower ?? null
-          fruitThreshold = section.gdhLcFruit ?? v?.gdhLcFruit ?? null
+          flowerThresholdSummer = section.gdhLcFlowerSummer ?? v?.gdhLcFlowerSummer ?? null
+          fruitThresholdSummer = section.gdhLcFruitSummer ?? v?.gdhLcFruitSummer ?? null
+          flowerThresholdAutumn = section.gdhLcFlowerAutumn ?? v?.gdhLcFlowerAutumn ?? null
+          fruitThresholdAutumn = section.gdhLcFruitAutumn ?? v?.gdhLcFruitAutumn ?? null
           thresholdType = 'lc'
         } else {
-          // Dla sekcji wysadzanych wiosną (SMALL_POT/ROOT/PLUG z datą wysadzenia)
-          // użyj gdhSummer jeśli ustawione, fallback na gdhAutumnFruit
-          flowerThreshold = section.gdhAutumnFlower ?? v?.gdhAutumnFlower ?? null
-          fruitThreshold = section.gdhSummer ?? section.gdhAutumnFruit
-            ?? v?.gdhAutumnFruit ?? null
-          thresholdType = section.gdhSummer ? 'summer_planted' : 'autumn'
+          flowerThresholdSummer = section.gdhPlantedFlowerSummer ?? v?.gdhPlantedFlowerSummer ?? null
+          fruitThresholdSummer = section.gdhPlantedFruitSummer ?? v?.gdhPlantedFruitSummer ?? null
+          flowerThresholdAutumn = section.gdhPlantedFlowerAutumn ?? v?.gdhPlantedFlowerAutumn ?? null
+          fruitThresholdAutumn = section.gdhPlantedFruitAutumn ?? v?.gdhPlantedFruitAutumn ?? null
+          thresholdType = 'planted'
         }
 
         // Autumn fruit date from logger data (GDH od autumnShootDate)
@@ -182,7 +186,7 @@ export async function GET(request: Request) {
           if (autumnDailyAgg.length > 0) {
             autumnLastLoggerDate = String(autumnDailyAgg[autumnDailyAgg.length - 1].date).slice(0, 10)
           }
-          const autumnThreshold = section.gdhAutumnFruit ?? v?.gdhAutumnFruit
+          const autumnThreshold = fruitThresholdAutumn
           if (autumnThreshold) {
             for (const d of autumnDailyAgg) {
               const daily = d.cnt > 0 ? (Number(d.sum_gdh) * 24.0) / d.cnt : 0
@@ -209,11 +213,16 @@ export async function GET(request: Request) {
           autumnFruitDate,
           autumnCurrentGdh,
           autumnLastLoggerDate,
-          baseTemp,
-          gdhAutumnFruit: section.gdhAutumnFruit ?? v?.gdhAutumnFruit ?? null,
+          gdhAutumnFruit: fruitThresholdAutumn,
           plantMaterialType: section.plantMaterialType,
-          flowerThreshold,
-          fruitThreshold,
+          baseTemp,
+          flowerThresholdSummer,
+          fruitThresholdSummer,
+          flowerThresholdAutumn,
+          fruitThresholdAutumn,
+          // backward compat for consumers expecting old field names
+          flowerThreshold: flowerThresholdSummer,
+          fruitThreshold: fruitThresholdSummer,
           thresholdType,
           dailyGdh,
           currentGdh: Math.round(cumulative),
@@ -225,6 +234,13 @@ export async function GET(request: Request) {
     const validSections = sectionResults.filter(s => s !== null)
 
     // ── Forecast: Meteo 16d + 3 climate scenarios ──
+    // Forecast GDH uses a reference baseTemp — median across all section varieties
+    // Each section applies its own baseTemp when consuming the forecast on frontend
+    const allBaseTemps = allSections.map(s => s.variety?.baseTemp ?? s.baseTemp ?? 6.0)
+    const forecastBaseTemp = allBaseTemps.length > 0
+      ? allBaseTemps.sort((a, b) => a - b)[Math.floor(allBaseTemps.length / 2)]
+      : 6.0
+
     let forecast = null
     const lat = farm.latitude
     const lon = farm.longitude
@@ -298,7 +314,7 @@ export async function GET(request: Request) {
 
         const meteoDays = [...meteoDailyMap.entries()].map(([date, tunnelTemps]) => {
           const hoursPerReading = 24 / tunnelTemps.length
-          const gdhTunnel = tunnelTemps.reduce((sum, t) => sum + gdhForTemp(t, hoursPerReading, 0), 0)
+          const gdhTunnel = tunnelTemps.reduce((sum, t) => sum + gdhForTemp(t, hoursPerReading, forecastBaseTemp), 0)
           const avgTunnelTemp = tunnelTemps.reduce((s, t) => s + t, 0) / tunnelTemps.length
           return { date, gdhTunnel: Math.round(gdhTunnel * 10) / 10, avgTunnelTemp: Math.round(avgTunnelTemp * 100) / 100 }
         })
@@ -369,9 +385,9 @@ export async function GET(request: Request) {
           tunnelP90 = tunnelTemp(t90, tunnelP90, TUNNEL_ALPHA, avgDailyOffset)
 
           // Daily GDH for 24h at this tunnel temperature
-          const gdhP10 = gdhForTemp(tunnelP10, 24, 0)
-          const gdhP50 = gdhForTemp(tunnelP50, 24, 0)
-          const gdhP90 = gdhForTemp(tunnelP90, 24, 0)
+          const gdhP10 = gdhForTemp(tunnelP10, 24, forecastBaseTemp)
+          const gdhP50 = gdhForTemp(tunnelP50, 24, forecastBaseTemp)
+          const gdhP90 = gdhForTemp(tunnelP90, 24, forecastBaseTemp)
 
           scenarioP10.push({ date: dateStr, gdhTunnel: Math.round(gdhP10 * 10) / 10, avgTunnelTemp: Math.round(tunnelP10 * 100) / 100 })
           scenarioP50.push({ date: dateStr, gdhTunnel: Math.round(gdhP50 * 10) / 10, avgTunnelTemp: Math.round(tunnelP50 * 100) / 100 })
@@ -540,7 +556,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       sections: validSections,
       forecast,
-      gdhParams: { upperTemp: GDH_UPPER_TEMP },
+      gdhParams: { forecastBaseTemp, upperTemp: GDH_UPPER_TEMP },
     })
   } catch (error) {
     console.error('Error calculating GDH:', error)

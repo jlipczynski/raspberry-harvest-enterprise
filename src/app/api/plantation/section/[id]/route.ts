@@ -19,7 +19,15 @@ export async function PATCH(
     const nullishFields = [
       'name', 'metersLength', 'potsPerMeter', 'shootsPerPot',
       'yieldSummerPerShoot', 'yieldAutumnPerShoot',
-      'gdhSummer', 'gdhAutumn', 'varietyId',
+      'baseTemp', 'varietyId',
+      // GDH progi — LATO
+      'gdhWinteredFlowerSummer', 'gdhWinteredFruitSummer',
+      'gdhPlantedFlowerSummer', 'gdhPlantedFruitSummer',
+      'gdhLcFlowerSummer', 'gdhLcFruitSummer',
+      // GDH progi — JESIEŃ
+      'gdhWinteredFlowerAutumn', 'gdhWinteredFruitAutumn',
+      'gdhPlantedFlowerAutumn', 'gdhPlantedFruitAutumn',
+      'gdhLcFlowerAutumn', 'gdhLcFruitAutumn',
     ]
     for (const field of nullishFields) {
       if (field in body) data[field] = body[field] ?? null

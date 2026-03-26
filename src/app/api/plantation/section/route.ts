@@ -20,8 +20,6 @@ export async function POST(request: NextRequest) {
         plantSource: section.plantSource || null,
         yieldSummerPerShoot: section.yieldSummerPerShoot ?? null,
         yieldAutumnPerShoot: section.yieldAutumnPerShoot ?? null,
-        gdhSummer: section.gdhSummer ?? null,
-        gdhAutumn: section.gdhAutumn ?? null,
         blockId: section.blockId,
         varietyId: section.varietyId,
         potsOverride: section.potsOverride !== undefined && section.potsOverride !== null && section.potsOverride !== ''

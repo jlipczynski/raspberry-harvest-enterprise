@@ -89,17 +89,24 @@ model Variety {
   yieldSummerPerShoot   Float?
   yieldAutumnPerShoot   Float?
   
-  gdhSummer             Int?
-  gdhAutumn             Int?
   baseTemp              Float?    @default(6.0)
-  
-  gdhWinteredFlower     Int?      // GDH do kwitnienia (zimowane w tunelu)
-  gdhWinteredFruit      Int?      // GDH do pierwszego zbioru (zimowane)
-  gdhLcFlower           Int?      // GDH do kwitnienia (LC ze szkółki)
-  gdhLcFruit            Int?      // GDH do pierwszego zbioru (LC)
-  gdhAutumnFlower       Int?      // GDH od pędów do kwitnienia (jesień)
-  gdhAutumnFruit        Int?      // GDH od pędów do owoców (jesień)
-  
+
+  // GDH progi — LATO (kwitnienie + owocowanie per typ rośliny)
+  gdhWinteredFlowerSummer  Int?   // GDH do kwitnienia lata (zimowane w tunelu)
+  gdhWinteredFruitSummer   Int?   // GDH do owocowania lata (zimowane w tunelu)
+  gdhPlantedFlowerSummer   Int?   // GDH do kwitnienia lata (wysadzona doniczka/korzeń)
+  gdhPlantedFruitSummer    Int?   // GDH do owocowania lata (wysadzona doniczka/korzeń)
+  gdhLcFlowerSummer        Int?   // GDH do kwitnienia lata (ze szkółki/LC)
+  gdhLcFruitSummer         Int?   // GDH do owocowania lata (ze szkółki/LC)
+
+  // GDH progi — JESIEŃ (kwitnienie + owocowanie per typ rośliny)
+  gdhWinteredFlowerAutumn  Int?   // GDH do kwitnienia jesieni (zimowane w tunelu)
+  gdhWinteredFruitAutumn   Int?   // GDH do owocowania jesieni (zimowane w tunelu)
+  gdhPlantedFlowerAutumn   Int?   // GDH do kwitnienia jesieni (wysadzona doniczka/korzeń)
+  gdhPlantedFruitAutumn    Int?   // GDH do owocowania jesieni (wysadzona doniczka/korzeń)
+  gdhLcFlowerAutumn        Int?   // GDH do kwitnienia jesieni (ze szkółki/LC)
+  gdhLcFruitAutumn         Int?   // GDH do owocowania jesieni (ze szkółki/LC)
+
   harvestCurveSummer    Json?
   harvestCurveAutumn    Json?
   autumnStartWeek       Int?      // Tydzień startu jesieni (np. 33 = połowa sierpnia)
@@ -147,16 +154,23 @@ model Section {
   yieldSummerPerShoot   Float?
   yieldAutumnPerShoot   Float?
   
-  gdhSummer             Int?
-  gdhAutumn             Int?
   baseTemp              Float?    @default(6.0)
-  
-  gdhWinteredFlower     Int?      // GDH do kwitnienia (zimowane w tunelu)
-  gdhWinteredFruit      Int?      // GDH do pierwszego zbioru (zimowane)
-  gdhLcFlower           Int?      // GDH do kwitnienia (LC ze szkółki)
-  gdhLcFruit            Int?      // GDH do pierwszego zbioru (LC)
-  gdhAutumnFlower       Int?      // GDH od pędów do kwitnienia (jesień)
-  gdhAutumnFruit        Int?      // GDH od pędów do owoców (jesień)
+
+  // GDH progi — LATO (override odmiany, nullable = brak override)
+  gdhWinteredFlowerSummer  Int?
+  gdhWinteredFruitSummer   Int?
+  gdhPlantedFlowerSummer   Int?
+  gdhPlantedFruitSummer    Int?
+  gdhLcFlowerSummer        Int?
+  gdhLcFruitSummer         Int?
+
+  // GDH progi — JESIEŃ (override odmiany, nullable = brak override)
+  gdhWinteredFlowerAutumn  Int?
+  gdhWinteredFruitAutumn   Int?
+  gdhPlantedFlowerAutumn   Int?
+  gdhPlantedFruitAutumn    Int?
+  gdhLcFlowerAutumn        Int?
+  gdhLcFruitAutumn         Int?
   
   certificateUrl        String?
   deliveryProofUrl      String?
@@ -191,7 +205,7 @@ model Section {
 model HarvestCurve {
   id            String   @id @default(cuid())
   year          Int                          // rok danych (2023, 2024, 2025)
-  season        String?                      // 'summer' | 'autumn' | null (combined)
+  season        String?  @default("summer")   // 'summer' | 'autumn'
   curve         Float[]                      // % na tydzień [5, 12, 18, 22, 20, 13, 7, 3]
   dailyCurve    Float[]                      // kg na dzień
   startDate     String?                      // data startu zbioru
@@ -370,6 +384,8 @@ model ProductionCurveTemplate {
   
   productionYear      Int                          // year of data (2024, 2025)
   productionCycle     Int      @default(1)          // 1st/2nd/3rd year of production
+  season              String?  @default("summer")    // 'summer' | 'autumn'
+
   plantingDate        String?                       // when planted
   winteredInTunnel    Boolean  @default(false)
   plantSource         String?                       // 'long_canes' | 'tray_plants' | 'nursery'

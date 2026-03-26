@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       where,
       include: {
         tenant: { select: { name: true } },
-        variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } },
+        variety: { select: { id: true, name: true, baseTemp: true, gdhWinteredFlowerSummer: true, gdhWinteredFruitSummer: true, gdhPlantedFlowerSummer: true, gdhPlantedFruitSummer: true, gdhLcFlowerSummer: true, gdhLcFruitSummer: true, gdhWinteredFlowerAutumn: true, gdhWinteredFruitAutumn: true, gdhPlantedFlowerAutumn: true, gdhPlantedFruitAutumn: true, gdhLcFlowerAutumn: true, gdhLcFruitAutumn: true } },
         sourceSection: { select: { id: true, name: true } },
         _count: { select: { sectionAssignments: true } }
       },
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       data: data as Parameters<typeof prisma.productionCurveTemplate.create>[0]['data'],
       include: {
         tenant: { select: { name: true } },
-        variety: { select: { id: true, name: true, baseTemp: true, gdhSummer: true, gdhAutumn: true, gdhWinteredFlower: true, gdhWinteredFruit: true, gdhLcFlower: true, gdhLcFruit: true, gdhAutumnFlower: true, gdhAutumnFruit: true } },
+        variety: { select: { id: true, name: true, baseTemp: true, gdhWinteredFlowerSummer: true, gdhWinteredFruitSummer: true, gdhPlantedFlowerSummer: true, gdhPlantedFruitSummer: true, gdhLcFlowerSummer: true, gdhLcFruitSummer: true, gdhWinteredFlowerAutumn: true, gdhWinteredFruitAutumn: true, gdhPlantedFlowerAutumn: true, gdhPlantedFruitAutumn: true, gdhLcFlowerAutumn: true, gdhLcFruitAutumn: true } },
         sourceSection: { select: { id: true, name: true } }
       },
     })

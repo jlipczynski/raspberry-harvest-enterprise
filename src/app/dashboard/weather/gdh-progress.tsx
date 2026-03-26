@@ -9,9 +9,7 @@ interface Section {
   winteredInTunnel: boolean
   plantingDate: string | null
   autumnShootDate: string | null
-  variety?: { name: string; gdhSummer?: number; gdhAutumn?: number }
-  gdhSummer?: number
-  gdhAutumn?: number
+  variety?: { name: string }
 }
 
 interface GDHProgressProps {
@@ -32,8 +30,8 @@ export default function GDHProgress({ sections, currentGDH, gdhByDate }: GDHProg
     return 0
   }
 
-  const getGDHThreshold = (section: Section) => {
-    return section.gdhSummer || section.variety?.gdhSummer || 20000
+  const getGDHThreshold = (_section: Section) => {
+    return 20000 // TODO: pobierać z GDH API per sekcja (fruitThresholdSummer)
   }
 
   const estimateFruitingDate = (section: Section, currentSectionGDH: number) => {

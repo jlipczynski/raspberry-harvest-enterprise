@@ -31,8 +31,8 @@ export async function POST() {
           description: 'Odmiana deserowa o dużych, aromatycznych owocach',
           yieldSummerPerShoot: 1.48,
           yieldAutumnPerShoot: 0.67,  // MaxCrop 2025: A-blocks avg 0.63-0.70 (było 0.44)
-          gdhSummer: 20000,
-          gdhAutumn: 25000,
+          baseTemp: 6.0,
+          // GDH progi — user wpisze realne wartości przez UI odmian
           harvestCurveSummer: [0.5, 1.8, 2.5, 8.3, 18.2, 19.9, 22.1, 17.0, 7.8, 2.6],  // MaxCrop 2025 real
           harvestCurveAutumn: [2.8, 10.1, 10.0, 17.1, 22.9, 15.1, 11.8, 5.9, 3.5, 0.4, 0.2],  // MaxCrop 2025 real, 11 tyg.
           pickingEfficiency: 8,
@@ -50,8 +50,7 @@ export async function POST() {
           description: 'Odmiana o intensywnym smaku i dobrej wydajności',
           yieldSummerPerShoot: 1.55,
           yieldAutumnPerShoot: 0,  // MaxCrop 2025: Ruby NIE daje jesieni (B08-13 kończy 6 VIII)
-          gdhSummer: 19000,
-          gdhAutumn: 24000,
+          baseTemp: 6.0,
           harvestCurveSummer: [0.5, 3.8, 6.3, 14.3, 12.4, 16.3, 17.4, 19.1, 5.9, 3.9],  // MaxCrop 2025 real
           harvestCurveAutumn: [],  // brak jesieni
           pickingEfficiency: 8.5,
@@ -82,8 +81,6 @@ export async function POST() {
             plantMaterialType: 'SMALL_POT',
             yieldSummerPerShoot: 1.47,   // MaxCrop 2025
             yieldAutumnPerShoot: 0.63,   // MaxCrop 2025
-            gdhSummer: 20000,
-            gdhAutumn: 25000,
             blockId: blockA.id,
             varietyId: dj.id
           },
@@ -97,8 +94,6 @@ export async function POST() {
             plantMaterialType: 'SMALL_POT',
             yieldSummerPerShoot: 1.48,   // MaxCrop 2025
             yieldAutumnPerShoot: 0.70,   // MaxCrop 2025
-            gdhSummer: 20000,
-            gdhAutumn: 25000,
             blockId: blockA.id,
             varietyId: dj.id
           },
@@ -113,8 +108,6 @@ export async function POST() {
             plantMaterialType: 'LONGCANE',
             yieldSummerPerShoot: 1.55,
             yieldAutumnPerShoot: 0,      // Ruby = brak jesieni (MaxCrop 2025)
-            gdhSummer: 19000,
-            gdhAutumn: 24000,
             blockId: blockB.id,
             varietyId: ruby.id
           },
@@ -128,8 +121,6 @@ export async function POST() {
             plantMaterialType: 'LONGCANE',
             yieldSummerPerShoot: 2.13,   // MaxCrop 2025 — wyższy yield niż B01-07
             yieldAutumnPerShoot: 0,      // Ruby = brak jesieni
-            gdhSummer: 19000,
-            gdhAutumn: 24000,
             blockId: blockB.id,
             varietyId: ruby.id
           },
@@ -144,8 +135,6 @@ export async function POST() {
             plantMaterialType: 'SMALL_POT',
             yieldSummerPerShoot: 0,      // MaxCrop 2025: zero lata (słaba kondycja)
             yieldAutumnPerShoot: 0.22,   // MaxCrop 2025: minimalna jesień
-            gdhSummer: 20000,
-            gdhAutumn: 25000,
             blockId: blockC.id,
             varietyId: dj.id
           },
@@ -159,8 +148,6 @@ export async function POST() {
             plantMaterialType: 'SMALL_POT',
             yieldSummerPerShoot: 0,      // MaxCrop 2025: zero lata
             yieldAutumnPerShoot: 0.22,   // MaxCrop 2025: minimalna jesień
-            gdhSummer: 20000,
-            gdhAutumn: 25000,
             blockId: blockC.id,
             varietyId: dj.id
           },
@@ -175,8 +162,6 @@ export async function POST() {
             plantMaterialType: 'PLUG',
             yieldSummerPerShoot: 1.74,   // MaxCrop 2025: PLUG rok 1 (+17% vs A-blocks)
             yieldAutumnPerShoot: 0.13,   // MaxCrop 2025: mała jesień (rok 1)
-            gdhSummer: 20000,
-            gdhAutumn: 25000,
             blockId: blockD.id,
             varietyId: dj.id
           },
@@ -190,8 +175,6 @@ export async function POST() {
             plantMaterialType: 'PLUG',
             yieldSummerPerShoot: 1.74,   // MaxCrop 2025
             yieldAutumnPerShoot: 0.13,   // MaxCrop 2025
-            gdhSummer: 20000,
-            gdhAutumn: 25000,
             blockId: blockD.id,
             varietyId: dj.id
           },

@@ -35,13 +35,8 @@ export async function POST(request: NextRequest) {
         gdhPlantedFruitSummer: variety.gdhPlantedFruitSummer != null ? parseInt(variety.gdhPlantedFruitSummer) : null,
         gdhLcFlowerSummer: variety.gdhLcFlowerSummer != null ? parseInt(variety.gdhLcFlowerSummer) : null,
         gdhLcFruitSummer: variety.gdhLcFruitSummer != null ? parseInt(variety.gdhLcFruitSummer) : null,
-        // GDH progi — JESIEŃ
-        gdhWinteredFlowerAutumn: variety.gdhWinteredFlowerAutumn != null ? parseInt(variety.gdhWinteredFlowerAutumn) : null,
-        gdhWinteredFruitAutumn: variety.gdhWinteredFruitAutumn != null ? parseInt(variety.gdhWinteredFruitAutumn) : null,
-        gdhPlantedFlowerAutumn: variety.gdhPlantedFlowerAutumn != null ? parseInt(variety.gdhPlantedFlowerAutumn) : null,
-        gdhPlantedFruitAutumn: variety.gdhPlantedFruitAutumn != null ? parseInt(variety.gdhPlantedFruitAutumn) : null,
-        gdhLcFlowerAutumn: variety.gdhLcFlowerAutumn != null ? parseInt(variety.gdhLcFlowerAutumn) : null,
-        gdhLcFruitAutumn: variety.gdhLcFruitAutumn != null ? parseInt(variety.gdhLcFruitAutumn) : null,
+        // GDH próg — JESIEŃ (od pędów jesiennych do owocowania)
+        gdhFruitAutumn: variety.gdhFruitAutumn != null ? parseInt(variety.gdhFruitAutumn) : null,
         harvestCurveSummer: variety.harvestCurveSummer || [],
         harvestCurveAutumn: variety.harvestCurveAutumn || [],
         pickingEfficiency: variety.pickingEfficiency != null ? parseFloat(variety.pickingEfficiency) : null,

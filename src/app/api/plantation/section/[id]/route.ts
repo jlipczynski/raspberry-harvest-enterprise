@@ -24,10 +24,8 @@ export async function PATCH(
       'gdhWinteredFlowerSummer', 'gdhWinteredFruitSummer',
       'gdhPlantedFlowerSummer', 'gdhPlantedFruitSummer',
       'gdhLcFlowerSummer', 'gdhLcFruitSummer',
-      // GDH progi — JESIEŃ
-      'gdhWinteredFlowerAutumn', 'gdhWinteredFruitAutumn',
-      'gdhPlantedFlowerAutumn', 'gdhPlantedFruitAutumn',
-      'gdhLcFlowerAutumn', 'gdhLcFruitAutumn',
+      // GDH próg — JESIEŃ
+      'gdhFruitAutumn',
     ]
     for (const field of nullishFields) {
       if (field in body) data[field] = body[field] ?? null

@@ -21,10 +21,8 @@ export async function PATCH(
       'gdhWinteredFlowerSummer', 'gdhWinteredFruitSummer',
       'gdhPlantedFlowerSummer', 'gdhPlantedFruitSummer',
       'gdhLcFlowerSummer', 'gdhLcFruitSummer',
-      // GDH progi — JESIEŃ
-      'gdhWinteredFlowerAutumn', 'gdhWinteredFruitAutumn',
-      'gdhPlantedFlowerAutumn', 'gdhPlantedFruitAutumn',
-      'gdhLcFlowerAutumn', 'gdhLcFruitAutumn',
+      // GDH próg — JESIEŃ
+      'gdhFruitAutumn',
       'pickingEfficiency',
       'wastePercent', 'secondCategoryPercent',
     ]

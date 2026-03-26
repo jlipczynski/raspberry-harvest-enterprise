@@ -143,27 +143,23 @@ export async function GET(request: Request) {
         // Determine thresholds based on section type — LATO + JESIEŃ
         let flowerThresholdSummer: number | null = null
         let fruitThresholdSummer: number | null = null
-        let flowerThresholdAutumn: number | null = null
         let fruitThresholdAutumn: number | null = null
         let thresholdType = 'planted'
 
         if (section.winteredInTunnel) {
           flowerThresholdSummer = section.gdhWinteredFlowerSummer ?? v?.gdhWinteredFlowerSummer ?? null
           fruitThresholdSummer = section.gdhWinteredFruitSummer ?? v?.gdhWinteredFruitSummer ?? null
-          flowerThresholdAutumn = section.gdhWinteredFlowerAutumn ?? v?.gdhWinteredFlowerAutumn ?? null
-          fruitThresholdAutumn = section.gdhWinteredFruitAutumn ?? v?.gdhWinteredFruitAutumn ?? null
+          fruitThresholdAutumn = section.gdhFruitAutumn ?? v?.gdhFruitAutumn ?? null
           thresholdType = 'wintered'
         } else if (section.plantMaterialType === 'LONGCANE') {
           flowerThresholdSummer = section.gdhLcFlowerSummer ?? v?.gdhLcFlowerSummer ?? null
           fruitThresholdSummer = section.gdhLcFruitSummer ?? v?.gdhLcFruitSummer ?? null
-          flowerThresholdAutumn = section.gdhLcFlowerAutumn ?? v?.gdhLcFlowerAutumn ?? null
-          fruitThresholdAutumn = section.gdhLcFruitAutumn ?? v?.gdhLcFruitAutumn ?? null
+          fruitThresholdAutumn = section.gdhFruitAutumn ?? v?.gdhFruitAutumn ?? null
           thresholdType = 'lc'
         } else {
           flowerThresholdSummer = section.gdhPlantedFlowerSummer ?? v?.gdhPlantedFlowerSummer ?? null
           fruitThresholdSummer = section.gdhPlantedFruitSummer ?? v?.gdhPlantedFruitSummer ?? null
-          flowerThresholdAutumn = section.gdhPlantedFlowerAutumn ?? v?.gdhPlantedFlowerAutumn ?? null
-          fruitThresholdAutumn = section.gdhPlantedFruitAutumn ?? v?.gdhPlantedFruitAutumn ?? null
+          fruitThresholdAutumn = section.gdhFruitAutumn ?? v?.gdhFruitAutumn ?? null
           thresholdType = 'planted'
         }
 
@@ -218,7 +214,6 @@ export async function GET(request: Request) {
           baseTemp,
           flowerThresholdSummer,
           fruitThresholdSummer,
-          flowerThresholdAutumn,
           fruitThresholdAutumn,
           // backward compat for consumers expecting old field names
           flowerThreshold: flowerThresholdSummer,

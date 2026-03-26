@@ -22,7 +22,6 @@ interface SectionGdh {
   fruitThreshold: number | null       // backward compat (= summer)
   flowerThresholdSummer: number | null
   fruitThresholdSummer: number | null
-  flowerThresholdAutumn: number | null
   fruitThresholdAutumn: number | null
   dailyGdh: Array<{ date: string; cumulativeGdh: number }>
   currentGdh: number

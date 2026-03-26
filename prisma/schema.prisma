@@ -99,13 +99,8 @@ model Variety {
   gdhLcFlowerSummer        Int?   // GDH do kwitnienia lata (ze szkółki/LC)
   gdhLcFruitSummer         Int?   // GDH do owocowania lata (ze szkółki/LC)
 
-  // GDH progi — JESIEŃ (kwitnienie + owocowanie per typ rośliny)
-  gdhWinteredFlowerAutumn  Int?   // GDH do kwitnienia jesieni (zimowane w tunelu)
-  gdhWinteredFruitAutumn   Int?   // GDH do owocowania jesieni (zimowane w tunelu)
-  gdhPlantedFlowerAutumn   Int?   // GDH do kwitnienia jesieni (wysadzona doniczka/korzeń)
-  gdhPlantedFruitAutumn    Int?   // GDH do owocowania jesieni (wysadzona doniczka/korzeń)
-  gdhLcFlowerAutumn        Int?   // GDH do kwitnienia jesieni (ze szkółki/LC)
-  gdhLcFruitAutumn         Int?   // GDH do owocowania jesieni (ze szkółki/LC)
+  // GDH próg — JESIEŃ (od wypuszczenia pędów jesiennych do owocowania)
+  gdhFruitAutumn           Int?   // GDH od autumnShootDate do owocowania jesiennego
 
   harvestCurveSummer    Json?
   harvestCurveAutumn    Json?
@@ -164,13 +159,8 @@ model Section {
   gdhLcFlowerSummer        Int?
   gdhLcFruitSummer         Int?
 
-  // GDH progi — JESIEŃ (override odmiany, nullable = brak override)
-  gdhWinteredFlowerAutumn  Int?
-  gdhWinteredFruitAutumn   Int?
-  gdhPlantedFlowerAutumn   Int?
-  gdhPlantedFruitAutumn    Int?
-  gdhLcFlowerAutumn        Int?
-  gdhLcFruitAutumn         Int?
+  // GDH próg — JESIEŃ (override odmiany, nullable = brak override)
+  gdhFruitAutumn           Int?   // GDH od autumnShootDate do owocowania jesiennego
   
   certificateUrl        String?
   deliveryProofUrl      String?

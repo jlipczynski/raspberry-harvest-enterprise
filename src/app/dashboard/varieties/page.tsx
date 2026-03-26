@@ -23,10 +23,8 @@ interface Variety {
   gdhWinteredFlowerSummer?: number; gdhWinteredFruitSummer?: number
   gdhPlantedFlowerSummer?: number; gdhPlantedFruitSummer?: number
   gdhLcFlowerSummer?: number; gdhLcFruitSummer?: number
-  // GDH progi — JESIEŃ
-  gdhWinteredFlowerAutumn?: number; gdhWinteredFruitAutumn?: number
-  gdhPlantedFlowerAutumn?: number; gdhPlantedFruitAutumn?: number
-  gdhLcFlowerAutumn?: number; gdhLcFruitAutumn?: number
+  // GDH próg — JESIEŃ (od pędów jesiennych do owocowania)
+  gdhFruitAutumn?: number
   harvestCurveSummer?: number[] | string; harvestCurveAutumn?: number[] | string
   pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number
   isCustom?: boolean
@@ -52,9 +50,7 @@ export default function VarietiesPage() {
     gdhWinteredFlowerSummer: number; gdhWinteredFruitSummer: number
     gdhPlantedFlowerSummer: number; gdhPlantedFruitSummer: number
     gdhLcFlowerSummer: number; gdhLcFruitSummer: number
-    gdhWinteredFlowerAutumn: number; gdhWinteredFruitAutumn: number
-    gdhPlantedFlowerAutumn: number; gdhPlantedFruitAutumn: number
-    gdhLcFlowerAutumn: number; gdhLcFruitAutumn: number
+    gdhFruitAutumn: number
     harvestCurveSummer: string | number[]; harvestCurveAutumn: string | number[]
     pickingEfficiency: number; wastePercent: number; secondCategoryPercent: number
   }>({
@@ -64,9 +60,7 @@ export default function VarietiesPage() {
     gdhWinteredFlowerSummer: 0, gdhWinteredFruitSummer: 0,
     gdhPlantedFlowerSummer: 0, gdhPlantedFruitSummer: 0,
     gdhLcFlowerSummer: 0, gdhLcFruitSummer: 0,
-    gdhWinteredFlowerAutumn: 0, gdhWinteredFruitAutumn: 0,
-    gdhPlantedFlowerAutumn: 0, gdhPlantedFruitAutumn: 0,
-    gdhLcFlowerAutumn: 0, gdhLcFruitAutumn: 0,
+    gdhFruitAutumn: 0,
     harvestCurveSummer: '', harvestCurveAutumn: '',
     pickingEfficiency: 8, wastePercent: 0, secondCategoryPercent: 0, autumnStartWeek: 33,
   })
@@ -120,12 +114,7 @@ export default function VarietiesPage() {
       gdhPlantedFruitSummer: variety.gdhPlantedFruitSummer || 0,
       gdhLcFlowerSummer: variety.gdhLcFlowerSummer || 0,
       gdhLcFruitSummer: variety.gdhLcFruitSummer || 0,
-      gdhWinteredFlowerAutumn: variety.gdhWinteredFlowerAutumn || 0,
-      gdhWinteredFruitAutumn: variety.gdhWinteredFruitAutumn || 0,
-      gdhPlantedFlowerAutumn: variety.gdhPlantedFlowerAutumn || 0,
-      gdhPlantedFruitAutumn: variety.gdhPlantedFruitAutumn || 0,
-      gdhLcFlowerAutumn: variety.gdhLcFlowerAutumn || 0,
-      gdhLcFruitAutumn: variety.gdhLcFruitAutumn || 0,
+      gdhFruitAutumn: variety.gdhFruitAutumn || 0,
       harvestCurveSummer: Array.isArray(variety.harvestCurveSummer) ? variety.harvestCurveSummer.join(', ') : String(variety.harvestCurveSummer || ''),
       harvestCurveAutumn: Array.isArray(variety.harvestCurveAutumn) ? variety.harvestCurveAutumn.join(', ') : String(variety.harvestCurveAutumn || ''),
       pickingEfficiency: variety.pickingEfficiency ?? 8,
@@ -156,12 +145,7 @@ export default function VarietiesPage() {
       gdhPlantedFruitSummer: formData.gdhPlantedFruitSummer || null,
       gdhLcFlowerSummer: formData.gdhLcFlowerSummer || null,
       gdhLcFruitSummer: formData.gdhLcFruitSummer || null,
-      gdhWinteredFlowerAutumn: formData.gdhWinteredFlowerAutumn || null,
-      gdhWinteredFruitAutumn: formData.gdhWinteredFruitAutumn || null,
-      gdhPlantedFlowerAutumn: formData.gdhPlantedFlowerAutumn || null,
-      gdhPlantedFruitAutumn: formData.gdhPlantedFruitAutumn || null,
-      gdhLcFlowerAutumn: formData.gdhLcFlowerAutumn || null,
-      gdhLcFruitAutumn: formData.gdhLcFruitAutumn || null,
+      gdhFruitAutumn: formData.gdhFruitAutumn || null,
       harvestCurveSummer: parseCurve(formData.harvestCurveSummer),
       harvestCurveAutumn: parseCurve(formData.harvestCurveAutumn),
       pickingEfficiency: formData.pickingEfficiency,
@@ -411,67 +395,15 @@ export default function VarietiesPage() {
                         />
                       </div>
                     </div>
-                    <div className="bg-red-100/50 rounded-lg p-3 mb-3">
-                      <p className="text-xs font-medium text-red-700 mb-2">❄️ Zimowane w tunelu</p>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-xs text-gray-500">🌸 GDH do kwitnienia</label>
-                          <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
-                            value={formData.gdhWinteredFlowerAutumn || ''}
-                            onChange={(e) => setFormData({...formData, gdhWinteredFlowerAutumn: parseInt(e.target.value) || 0})}
-                            placeholder="np. 15000"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">🍒 GDH do owocowania</label>
-                          <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
-                            value={formData.gdhWinteredFruitAutumn || ''}
-                            onChange={(e) => setFormData({...formData, gdhWinteredFruitAutumn: parseInt(e.target.value) || 0})}
-                            placeholder="np. 18000"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-red-100/50 rounded-lg p-3 mb-3">
-                      <p className="text-xs font-medium text-red-700 mb-2">🌱 Wysadzona (doniczka/korzeń)</p>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-xs text-gray-500">🌸 GDH do kwitnienia</label>
-                          <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
-                            value={formData.gdhPlantedFlowerAutumn || ''}
-                            onChange={(e) => setFormData({...formData, gdhPlantedFlowerAutumn: parseInt(e.target.value) || 0})}
-                            placeholder="np. 10000"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">🍒 GDH do owocowania</label>
-                          <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
-                            value={formData.gdhPlantedFruitAutumn || ''}
-                            onChange={(e) => setFormData({...formData, gdhPlantedFruitAutumn: parseInt(e.target.value) || 0})}
-                            placeholder="np. 13000"
-                          />
-                        </div>
-                      </div>
-                    </div>
                     <div className="bg-red-100/50 rounded-lg p-3">
-                      <p className="text-xs font-medium text-red-700 mb-2">🚚 Ze szkółki (Long Canes)</p>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="text-xs text-gray-500">🌸 GDH do kwitnienia</label>
-                          <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
-                            value={formData.gdhLcFlowerAutumn || ''}
-                            onChange={(e) => setFormData({...formData, gdhLcFlowerAutumn: parseInt(e.target.value) || 0})}
-                            placeholder="np. 12000"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500">🍒 GDH do owocowania</label>
-                          <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
-                            value={formData.gdhLcFruitAutumn || ''}
-                            onChange={(e) => setFormData({...formData, gdhLcFruitAutumn: parseInt(e.target.value) || 0})}
-                            placeholder="np. 15000"
-                          />
-                        </div>
+                      <p className="text-xs font-medium text-red-700 mb-2">GDH od wypuszczenia pędów jesiennych do owocowania</p>
+                      <div style={{maxWidth:'200px'}}>
+                        <label className="text-xs text-gray-500">GDH do owocowania</label>
+                        <input type="number" className="w-full border rounded px-3 py-2 text-sm mt-1 bg-white"
+                          value={formData.gdhFruitAutumn || ''}
+                          onChange={(e) => setFormData({...formData, gdhFruitAutumn: parseInt(e.target.value) || 0})}
+                          placeholder="np. 5000"
+                        />
                       </div>
                     </div>
                   </div>

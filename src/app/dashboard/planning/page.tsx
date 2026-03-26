@@ -822,14 +822,14 @@ export default function PlanningPage() {
           <div className="bg-white rounded-xl border p-6">
             <h3 className="font-semibold text-lg mb-4 flex items-center gap-2"><Users className="w-5 h-5 text-blue-500" />Zapotrzebowanie na personel (osób/dzień zbioru)</h3>
             <p className="text-xs text-gray-500 -mt-3 mb-4">Zbiór {7} dni/tydz. × {hoursPerDay}h/dzień — zbieracze + KJ + wagi + infrastruktura</p>
-            <div className="flex items-end gap-1 h-48 mb-2">
+            <div className="flex items-end gap-1 h-48 mb-2 overflow-hidden">
               {weeklyPlan.weeks.map(w => {
                 const isBottleneck = w.pickers >= bottleneckThreshold
-                const maxH = peakTotalStaff > 0 ? peakTotalStaff : 1
-                const pickerH = (w.pickers / maxH) * 180
-                const qcH = (w.qc / maxH) * 180
-                const weighH = (w.weighing / maxH) * 180
-                const infraH = (w.infra / maxH) * 180
+                const chartMax = Math.max(peakTotalStaff, ...weeklyPlan.weeks.map(wk => wk.totalStaff), 1)
+                const pickerH = (w.pickers / chartMax) * 180
+                const qcH = (w.qc / chartMax) * 180
+                const weighH = (w.weighing / chartMax) * 180
+                const infraH = (w.infra / chartMax) * 180
                 return (
                   <div key={w.week} className="flex-1 flex flex-col items-end group relative">
                     <div className="w-full flex flex-col-reverse">

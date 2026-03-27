@@ -1203,7 +1203,8 @@ export default function PlanningPage() {
                             const isSummer = !weekData || weekData.summerKg >= weekData.autumnKg
 
                             const base = isSummer ? sectionDetail.totalSummerKg : sectionDetail.totalAutumnKg
-                            const pct = base > 0 ? (w.kg / base * 100).toFixed(1) + '%' : '—'
+                            const seasonKg = weekData ? (isSummer ? weekData.summerKg : weekData.autumnKg) : 0
+                            const pct = base > 0 ? (seasonKg / base * 100).toFixed(1) + '%' : '—'
                             
                             return (
                               <td className="text-right px-3 text-gray-500 text-xs">

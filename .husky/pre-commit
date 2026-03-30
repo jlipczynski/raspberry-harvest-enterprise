@@ -1,0 +1,41 @@
+#!/bin/sh
+# ⛔ GUARD: blokuje hardkodowane wartości domenowe w skryptach migracyjnych i init
+# Dotyczy: prisma/*.ts oraz src/app/api/init/route.ts
+
+FAIL=0
+
+# 1. Yieldy per pęd w skryptach prisma (migracje mają służyć TYLKO krzywym zbiorów)
+if git diff --cached --name-only | grep -q "^prisma/.*\.ts$"; then
+  STAGED_PRISMA=$(git diff --cached --name-only | grep "^prisma/.*\.ts$")
+  if git diff --cached -- $STAGED_PRISMA | grep "^+" | grep -qE "yieldSummerPerShoot|yieldAutumnPerShoot"; then
+    echo "❌ BŁĄD: skrypt prisma zawiera hardkodowane yieldy (yieldSummerPerShoot / yieldAutumnPerShoot)"
+    echo "   Migracje prisma służą WYŁĄCZNIE do budowania krzywych zbiorów (HarvestCurve)."
+    echo "   Yieldy wpisuje użytkownik przez UI — nie hardkoduj ich w skryptach."
+    FAIL=1
+  fi
+fi
+
+# 2. Yieldy w init/route.ts na poziomie sekcji (section.createMany)
+if git diff --cached --name-only | grep -q "src/app/api/init/route.ts"; then
+  if git diff --cached -- src/app/api/init/route.ts | grep "^+" | grep -qE "yieldSummerPerShoot: [0-9]|yieldAutumnPerShoot: [0-9]"; then
+    echo "❌ BŁĄD: init/route.ts zawiera hardkodowane yieldy w danych sekcji"
+    echo "   Sekcje w init muszą mieć yieldy = null. Użytkownik wpisuje przez UI."
+    FAIL=1
+  fi
+fi
+
+# 3. Ogólny check: ?? liczba lub || liczba w API i lib (ostrzeżenie, nie blokada)
+CHANGED_API=$(git diff --cached --name-only | grep -E "^src/app/api/|^src/lib/" || true)
+if [ -n "$CHANGED_API" ]; then
+  MATCHES=$(git diff --cached -- $CHANGED_API | grep "^+" | grep -E "\?\? [0-9]|\|\| [0-9]" | grep -v "^+++" || true)
+  if [ -n "$MATCHES" ]; then
+    echo "⚠️  OSTRZEŻENIE: nowe linie z '?? liczba' lub '|| liczba' w API/lib:"
+    echo "$MATCHES"
+    echo "   Sprawdź czy to nie jest hardkodowany fallback domenowy."
+    echo "   Jeśli uzasadnione — dodaj komentarz: // dozwolone: [powód]"
+  fi
+fi
+
+if [ $FAIL -ne 0 ]; then
+  exit 1
+fi

@@ -293,8 +293,10 @@ export default function PlanningPage() {
         const autumnStart = section.autumnGdhStartDate
         const autumnThreshold = section.gdhAutumnFruit
         let cumAutumn = section.autumnCurrentGdh ?? 0
+        const autumnLastLoggerDate = section.autumnLastLoggerDate ?? ''
         const lastMeteoDate = forecast.meteoDays.at(-1)?.date ?? ''
         for (const day of forecast.meteoDays) {
+          if (day.date <= autumnLastLoggerDate) continue  // nie licz dni już w loggerze
           if (day.date < autumnStart) continue
           cumAutumn += forecastDayGdh(day, baseTemp)
           if (cumAutumn >= autumnThreshold) { autumnFruitDate = day.date; break }

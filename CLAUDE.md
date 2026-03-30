@@ -1,4 +1,30 @@
 Raspberry Harvest Enterprise
+
+## ⛔ ZAKAZ HARDCODOWANIA — NARUSZENIE = BŁĄD KRYTYCZNY RÓWNY USZKODZENIU DANYCH
+
+NIGDY nie wpisuj wprost w kodzie:
+- ID encji, UUID, CUID — zawsze z sesji (`session.user.tenantId`) lub params
+- Progów GDH (`gdhWinteredFruit` itp.) — zawsze z bazy, brak = pomiń sekcję
+- Temperatur bazowych (`baseTemp`) — zawsze z `section.baseTemp ?? variety.baseTemp`, brak = błąd
+- Plonów per pęd (`yieldSummerPerShoot` itp.) — zawsze z bazy, brak = 0
+- Dat, lat, sezonów jako literałów (`"2025"`, `"2025-06-01"`) — obliczaj dynamicznie
+- Krzywych zbiorów jako tablic `[0.1, 0.15, ...]` — zawsze z DB lub props
+- Nazw odmian, nazw sekcji — zawsze z relacji w bazie
+- URL-i, kluczy API — zawsze z `process.env.*`
+- Fallbacków z danymi: `|| "default-tenant"`, `?? "test-user"` — brak danych = błąd
+
+JEDYNE dozwolone stałe:
+- `GDH_UPPER_TEMP = 26.0` — biologiczny cap
+- Stałe UI (kolory, etykiety, teksty)
+
+JEŚLI wartość nie jest w bazie → pomiń sekcję lub zwróć błąd. NIGDY nie zgaduj.
+
+PRZED KAŻDYM COMMITEM obowiązkowo:
+```bash
+grep -rn "?? [0-9]\||| [0-9]" src/app/api/ src/lib/
+```
+Każdy wynik = potencjalny błąd — uzasadnij każdy z nich lub usuń.
+
 ⛔ ABSOLUTNE ZAKAZY — NIGDY nie łam tych zasad
 
 NIGDY nie modyfikuj .github/workflows/

@@ -6,8 +6,17 @@ export const dynamic = 'force-dynamic'
 // POST - inicjalizuj dane startowe
 export async function POST() {
   try {
+    // ⛔ GUARD: jeśli sekcje już istnieją → odmów, nie dotykaj danych
+    const existingSections = await prisma.section.count()
+    if (existingSections > 0) {
+      return NextResponse.json(
+        { error: 'Inicjalizacja niemożliwa — baza zawiera już dane sekcji. Edytuj dane przez UI.' },
+        { status: 403 }
+      )
+    }
+
     let tenant = await prisma.tenant.findFirst()
-    
+
     if (!tenant) {
       tenant = await prisma.tenant.create({
         data: {
@@ -23,21 +32,20 @@ export async function POST() {
         }
       })
 
-      // Odmiany z pełnymi danymi — krzywe i yieldy z MaxCrop 2025
+      // Odmiany — yieldy są wartościami domyślnymi odmiany, użytkownik ustawia per sekcja przez UI
       const dj = await prisma.variety.create({
         data: {
           name: 'Diamond Jubilee',
           origin: 'Wielka Brytania',
           description: 'Odmiana deserowa o dużych, aromatycznych owocach',
           yieldSummerPerShoot: 1.48,
-          yieldAutumnPerShoot: 0.67,  // MaxCrop 2025: A-blocks avg 0.63-0.70 (było 0.44)
+          yieldAutumnPerShoot: 0.67,
           baseTemp: 6.0,
-          // GDH progi — user wpisze realne wartości przez UI odmian
-          harvestCurveSummer: [0.5, 1.8, 2.5, 8.3, 18.2, 19.9, 22.1, 17.0, 7.8, 2.6],  // MaxCrop 2025 real
-          harvestCurveAutumn: [2.8, 10.1, 10.0, 17.1, 22.9, 15.1, 11.8, 5.9, 3.5, 0.4, 0.2],  // MaxCrop 2025 real, 11 tyg.
+          harvestCurveSummer: [0.5, 1.8, 2.5, 8.3, 18.2, 19.9, 22.1, 17.0, 7.8, 2.6],
+          harvestCurveAutumn: [2.8, 10.1, 10.0, 17.1, 22.9, 15.1, 11.8, 5.9, 3.5, 0.4, 0.2],
           pickingEfficiency: 8,
           wastePercent: 3,
-          secondCategoryPercent: 22,  // real 2025: ~22% II klasa
+          secondCategoryPercent: 22,
           isCustom: false,
           tenantId: tenant.id,
         }
@@ -49,13 +57,13 @@ export async function POST() {
           origin: 'Polska',
           description: 'Odmiana o intensywnym smaku i dobrej wydajności',
           yieldSummerPerShoot: 1.55,
-          yieldAutumnPerShoot: 0,  // MaxCrop 2025: Ruby NIE daje jesieni (B08-13 kończy 6 VIII)
+          yieldAutumnPerShoot: 0,
           baseTemp: 6.0,
-          harvestCurveSummer: [0.5, 3.8, 6.3, 14.3, 12.4, 16.3, 17.4, 19.1, 5.9, 3.9],  // MaxCrop 2025 real
-          harvestCurveAutumn: [],  // brak jesieni
+          harvestCurveSummer: [0.5, 3.8, 6.3, 14.3, 12.4, 16.3, 17.4, 19.1, 5.9, 3.9],
+          harvestCurveAutumn: [],
           pickingEfficiency: 8.5,
           wastePercent: 3,
-          secondCategoryPercent: 20,  // real 2025: ~20% II klasa
+          secondCategoryPercent: 20,
           isCustom: false,
           tenantId: tenant.id,
         }
@@ -67,114 +75,99 @@ export async function POST() {
       const blockC = await prisma.block.create({ data: { name: 'Blok C', farmId: farm.id } })
       const blockD = await prisma.block.create({ data: { name: 'Blok D', farmId: farm.id } })
 
-      // Sekcje z nowymi polami
+      // Sekcje — BEZ hardkodowanych yieldów per sekcja.
+      // yieldSummerPerShoot i yieldAutumnPerShoot = null → użytkownik wpisuje przez UI.
       await prisma.section.createMany({
         data: [
-          // === BLOK A: DJ, SMALL_POT, rok prod. 2 — baseline yields ===
+          // === BLOK A: DJ, SMALL_POT, rok prod. 2 ===
           {
             name: 'A1-9',
-            metersLength: 2646, // 18 rzędów × 147m
+            metersLength: 2646,
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2024,
             productionYear: 2,
             plantMaterialType: 'SMALL_POT',
-            yieldSummerPerShoot: 1.47,   // MaxCrop 2025
-            yieldAutumnPerShoot: 0.63,   // MaxCrop 2025
             blockId: blockA.id,
             varietyId: dj.id
           },
           {
             name: 'A10-19',
-            metersLength: 2340, // 20 rzędów × 117m
+            metersLength: 2340,
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2024,
             productionYear: 2,
             plantMaterialType: 'SMALL_POT',
-            yieldSummerPerShoot: 1.48,   // MaxCrop 2025
-            yieldAutumnPerShoot: 0.70,   // MaxCrop 2025
             blockId: blockA.id,
             varietyId: dj.id
           },
-          // === BLOK B: Ruby, LONGCANE, rok prod. 3 — Ruby NIE daje jesieni ===
+          // === BLOK B: Ruby, LONGCANE, rok prod. 3 ===
           {
             name: 'B01-07',
-            metersLength: 2100, // 14 rzędów × 150m
+            metersLength: 2100,
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2023,
             productionYear: 3,
             plantMaterialType: 'LONGCANE',
-            yieldSummerPerShoot: 1.55,
-            yieldAutumnPerShoot: 0,      // Ruby = brak jesieni (MaxCrop 2025)
             blockId: blockB.id,
             varietyId: ruby.id
           },
           {
             name: 'B08-13',
-            metersLength: 1800, // 12 rzędów × 150m
+            metersLength: 1800,
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2023,
             productionYear: 3,
             plantMaterialType: 'LONGCANE',
-            yieldSummerPerShoot: 2.13,   // MaxCrop 2025 — wyższy yield niż B01-07
-            yieldAutumnPerShoot: 0,      // Ruby = brak jesieni
             blockId: blockB.id,
             varietyId: ruby.id
           },
-          // === BLOK C: DJ, SMALL_POT — słaba kondycja 2025, niski yield ===
+          // === BLOK C: DJ, SMALL_POT ===
           {
             name: 'C01-05',
-            metersLength: 1500, // 10 rzędów × 150m
+            metersLength: 1500,
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2024,
             productionYear: 2,
             plantMaterialType: 'SMALL_POT',
-            yieldSummerPerShoot: 0,      // MaxCrop 2025: zero lata (słaba kondycja)
-            yieldAutumnPerShoot: 0.22,   // MaxCrop 2025: minimalna jesień
             blockId: blockC.id,
             varietyId: dj.id
           },
           {
             name: 'C06-11',
-            metersLength: 1800, // 12 rzędów × 150m
+            metersLength: 1800,
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2024,
             productionYear: 2,
             plantMaterialType: 'SMALL_POT',
-            yieldSummerPerShoot: 0,      // MaxCrop 2025: zero lata
-            yieldAutumnPerShoot: 0.22,   // MaxCrop 2025: minimalna jesień
             blockId: blockC.id,
             varietyId: dj.id
           },
-          // === BLOK D: DJ, PLUG rok 1 — wyższy lato, niski jesień (młoda rośl.) ===
+          // === BLOK D: DJ, PLUG rok 1 ===
           {
             name: 'D01-09',
-            metersLength: 2700, // 18 rzędów × 150m
+            metersLength: 2700,
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2025,
             productionYear: 1,
             plantMaterialType: 'PLUG',
-            yieldSummerPerShoot: 1.74,   // MaxCrop 2025: PLUG rok 1 (+17% vs A-blocks)
-            yieldAutumnPerShoot: 0.13,   // MaxCrop 2025: mała jesień (rok 1)
             blockId: blockD.id,
             varietyId: dj.id
           },
           {
             name: 'D10-18',
-            metersLength: 2700, // 18 rzędów × 150m
+            metersLength: 2700,
             potsPerMeter: 2,
             shootsPerPot: 2,
             plantingYear: 2025,
             productionYear: 1,
             plantMaterialType: 'PLUG',
-            yieldSummerPerShoot: 1.74,   // MaxCrop 2025
-            yieldAutumnPerShoot: 0.13,   // MaxCrop 2025
             blockId: blockD.id,
             varietyId: dj.id
           },

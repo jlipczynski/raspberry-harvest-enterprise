@@ -13,9 +13,11 @@ interface SectionGdh {
   winteredInTunnel: boolean
   plantMaterialType: string | null
   gdhStartDate: string | null
+  autumnShootDate?: string | null
   autumnGdhStartDate?: string | null
   autumnFruitDate?: string | null
   autumnCurrentGdh?: number
+  autumnLastLoggerDate?: string | null
   gdhAutumnFruit?: number | null
   baseTemp: number
   flowerThreshold: number | null      // backward compat (= summer)
@@ -334,6 +336,25 @@ export default function PlanningPage() {
       weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }>
       dailyKg: Array<{ date: string; kg: number; summerKg: number; autumnKg: number }>
       eff: number
+      // Diagnostyka
+      diag: {
+        shoots: number
+        summerYield: number
+        autumnYield: number
+        fruitDate: string | null
+        autumnFruitDate: string | null
+        autumnShootDate: string | null
+        gdhAutumnFruit: number | null
+        autumnCurrentGdh: number | null
+        summerCurveSource: string
+        summerCurveLen: number
+        summerCurveSum: number
+        autumnCurveSource: string
+        autumnCurveLen: number
+        autumnCurveSum: number
+        autumnFirstDate: string | null
+        autumnLastDate: string | null
+      }
     }> = []
 
     for (const section of allPlantationSections) {
@@ -484,7 +505,38 @@ export default function PlanningPage() {
         : (sectionSummerCurve?.length || sectionAutumnCurve?.length) ? 'section' as const
         : (varietySummerCurve?.length || varietyAutumnCurve?.length) ? 'variety' as const
         : 'none' as const
-      sectionDetails.push({ section, fruitStartDate: fruitDate ?? null, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg, dailyKg: dailyKgArr, eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null })
+      // Diagnostyka — oblicz sumy krzywych i źródła
+      const gdhSection = gdhData?.sections?.find(g => g.id === section.id)
+      const usedSummerCurve = summerDailyCurve?.length ? summerDailyCurve : summerWeeklyCurve
+      const usedAutumnCurve = autumnDailyCurve?.length ? autumnDailyCurve : autumnWeeklyCurve
+      const summerCurveSrc = summerDailyCurve?.length ? 'dailyCurve (assignment)' : summerWeeklyCurve ? (assignmentSummerWeeklyCurve?.length ? 'weeklyCurve (assignment)' : sectionSummerCurve?.length ? 'sekcja' : varietySummerCurve?.length ? 'odmiana' : 'brak') : 'brak'
+      const autumnCurveSrc = autumnDailyCurve?.length ? 'dailyCurve (assignment)' : autumnWeeklyCurve ? (assignmentAutumnWeeklyCurve?.length ? 'weeklyCurve (assignment)' : sectionAutumnCurve?.length ? 'sekcja' : varietyAutumnCurve?.length ? 'odmiana' : 'brak') : 'brak'
+
+      // Daty jesiennego rozkładu
+      const autumnDailyEntries = dailyKgArr.filter(d => d.autumnKg > 0)
+      const autumnFirstDate = autumnDailyEntries.length > 0 ? autumnDailyEntries[0].date : null
+      const autumnLastDate = autumnDailyEntries.length > 0 ? autumnDailyEntries[autumnDailyEntries.length - 1].date : null
+
+      const diag = {
+        shoots,
+        summerYield,
+        autumnYield,
+        fruitDate,
+        autumnFruitDate,
+        autumnShootDate: gdhSection?.autumnShootDate ?? null,
+        gdhAutumnFruit: gdhSection?.gdhAutumnFruit ?? null,
+        autumnCurrentGdh: gdhSection?.autumnCurrentGdh ?? null,
+        summerCurveSource: summerCurveSrc,
+        summerCurveLen: usedSummerCurve?.length ?? 0,
+        summerCurveSum: usedSummerCurve ? Math.round(usedSummerCurve.reduce((s: number, v: number) => s + v, 0) * 10) / 10 : 0,
+        autumnCurveSource: autumnCurveSrc,
+        autumnCurveLen: usedAutumnCurve?.length ?? 0,
+        autumnCurveSum: usedAutumnCurve ? Math.round(usedAutumnCurve.reduce((s: number, v: number) => s + v, 0) * 10) / 10 : 0,
+        autumnFirstDate,
+        autumnLastDate,
+      }
+
+      sectionDetails.push({ section, fruitStartDate: fruitDate ?? null, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg, dailyKg: dailyKgArr, eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null, diag })
     }
 
     const weeks = Object.entries(weekMap)
@@ -1160,6 +1212,47 @@ export default function PlanningPage() {
                 )}
               </div>
             </div>
+
+            {/* Panel diagnostyczny — widoczny gdy wybrana sekcja */}
+            {planSections !== 'all' && (() => {
+              const sd = weeklyPlan.sectionDetails.find(d => d.section.id === planSections)
+              if (!sd) return null
+              const d = sd.diag
+              return (
+                <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg text-xs font-mono space-y-2">
+                  <div className="font-semibold text-sm text-gray-700 mb-2">Diagnostyka: {sd.section.blockName}/{sd.section.name}</div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1">
+                    <div><span className="text-gray-500">Pedy:</span> {d.shoots.toLocaleString('pl-PL')}</div>
+                    <div><span className="text-gray-500">Yield lato/ped:</span> {d.summerYield} kg</div>
+                    <div><span className="text-gray-500">Yield jesien/ped:</span> {d.autumnYield} kg</div>
+                    <div><span className="text-gray-500">totalSummerKg:</span> {sd.totalSummerKg.toLocaleString('pl-PL')} kg</div>
+                    <div><span className="text-gray-500">totalAutumnKg:</span> {sd.totalAutumnKg.toLocaleString('pl-PL')} kg</div>
+                    <div><span className="text-gray-500">totalKg:</span> {sd.totalKg.toLocaleString('pl-PL')} kg</div>
+                  </div>
+                  <hr className="border-gray-200" />
+                  <div className="font-semibold text-gray-600">LATO</div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1">
+                    <div><span className="text-gray-500">fruitDate (start):</span> <span className={d.fruitDate ? 'text-green-700' : 'text-red-600'}>{d.fruitDate ?? 'BRAK'}</span></div>
+                    <div><span className="text-gray-500">Krzywa:</span> {d.summerCurveSource}</div>
+                    <div><span className="text-gray-500">Dlg krzywej:</span> {d.summerCurveLen} {d.summerCurveLen > 50 ? 'dni' : 'tyg'}</div>
+                    <div><span className="text-gray-500">Suma %:</span> <span className={Math.abs(d.summerCurveSum - 100) > 5 ? 'text-red-600 font-bold' : 'text-green-700'}>{d.summerCurveSum}%</span></div>
+                  </div>
+                  <hr className="border-gray-200" />
+                  <div className="font-semibold text-gray-600">JESIEN</div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1">
+                    <div><span className="text-gray-500">autumnShootDate:</span> <span className={d.autumnShootDate ? 'text-green-700' : 'text-red-600'}>{d.autumnShootDate ?? 'BRAK'}</span></div>
+                    <div><span className="text-gray-500">gdhAutumnFruit (prog):</span> <span className={d.gdhAutumnFruit ? 'text-green-700' : 'text-red-600'}>{d.gdhAutumnFruit ?? 'BRAK'}</span></div>
+                    <div><span className="text-gray-500">autumnCurrentGdh:</span> {d.autumnCurrentGdh ?? '—'}</div>
+                    <div><span className="text-gray-500">autumnFruitDate (start):</span> <span className={d.autumnFruitDate ? 'text-green-700' : 'text-red-600'}>{d.autumnFruitDate ?? 'BRAK'}</span></div>
+                    <div><span className="text-gray-500">Krzywa:</span> {d.autumnCurveSource}</div>
+                    <div><span className="text-gray-500">Dlg krzywej:</span> {d.autumnCurveLen} {d.autumnCurveLen > 50 ? 'dni' : 'tyg'}</div>
+                    <div><span className="text-gray-500">Suma %:</span> <span className={d.autumnCurveSum === 0 ? 'text-gray-400' : Math.abs(d.autumnCurveSum - 100) > 5 ? 'text-red-600 font-bold' : 'text-green-700'}>{d.autumnCurveSum}%</span></div>
+                    <div><span className="text-gray-500">Pierwszy dzien jesieni:</span> {d.autumnFirstDate ?? '—'}</div>
+                    <div><span className="text-gray-500">Ostatni dzien jesieni:</span> {d.autumnLastDate ?? '—'}</div>
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Weekly view */}
             {planView === 'weekly' && (

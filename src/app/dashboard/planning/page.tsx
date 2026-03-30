@@ -598,15 +598,14 @@ export default function PlanningPage() {
     const weeks = weeklyPlan.weeks
       .map(w => {
         // Przelicz kg tylko dla wybranych sekcji
-        const kg = activeSections.reduce((sum, d) => {
+        let kg = 0, summerKg = 0, autumnKg = 0, hrs = 0
+        for (const d of activeSections) {
           const wd = d.weeklyKg.find(x => x.week === w.week)
-          return sum + (wd?.kg ?? 0)
-        }, 0)
-        // Przelicz godziny z per-section eff
-        const hrs = activeSections.reduce((sum, d) => {
-          const wd = d.weeklyKg.find(x => x.week === w.week)
-          return sum + Math.round((wd?.kg ?? 0) / d.eff)
-        }, 0)
+          kg += wd?.kg ?? 0
+          summerKg += wd?.summerKg ?? 0
+          autumnKg += wd?.autumnKg ?? 0
+          hrs += Math.round((wd?.kg ?? 0) / d.eff)
+        }
         const dailyKg = Math.round(kg / 7)
         const dailyHrs = Math.round(hrs / 7)
         const pickers = Math.ceil(dailyHrs / hoursPerDay)
@@ -617,6 +616,8 @@ export default function PlanningPage() {
         return {
           ...w,
           kg,
+          summerKg,
+          autumnKg,
           dailyKg,
           hrs,
           dailyHrs,
@@ -1262,6 +1263,8 @@ export default function PlanningPage() {
                     <tr className="text-gray-500 border-b-2 border-gray-300">
                       <th className="text-left py-2 px-3">Tydzień</th>
                       <th className="text-right py-2 px-3">kg/tydzień</th>
+                      <th className="text-right py-2 px-3 text-green-600">Lato</th>
+                      <th className="text-right py-2 px-3 text-orange-500">Jesień</th>
                       {planSections !== 'all' && (
                         <th className="text-right py-2 px-3 text-gray-500">% sezonu</th>
                       )}
@@ -1280,12 +1283,23 @@ export default function PlanningPage() {
                     {filteredPlanData.weeks.map((w, wi) => {
                       const cum = filteredPlanData.weeks.slice(0, wi + 1).reduce((s, x) => s + x.kg, 0)
                       const isBottleneck = w.pickers >= bottleneckThreshold
+                      const seasonBorder = w.summerKg > 0 && w.autumnKg > 0
+                        ? 'border-l-4 border-yellow-400'
+                        : w.autumnKg > 0
+                          ? 'border-l-4 border-orange-400'
+                          : 'border-l-4 border-green-400'
                       return (
-                        <tr key={w.week} className={`border-b transition-colors ${isBottleneck ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}>
+                        <tr key={w.week} className={`border-b transition-colors ${seasonBorder} ${isBottleneck ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}>
                           <td className="py-2 px-3">
                             T{w.week} <span className="text-gray-400 text-xs">({w.dates})</span>
                           </td>
                           <td className="text-right px-3">{w.kg.toLocaleString('pl-PL')} kg</td>
+                          <td className="text-right px-3 text-green-700 text-xs">
+                            {w.summerKg > 0 ? w.summerKg.toLocaleString('pl-PL') + ' kg' : '—'}
+                          </td>
+                          <td className="text-right px-3 text-orange-600 text-xs">
+                            {w.autumnKg > 0 ? w.autumnKg.toLocaleString('pl-PL') + ' kg' : '—'}
+                          </td>
                           {planSections !== 'all' && (() => {
                             const sectionDetail = weeklyPlan.sectionDetails
                               .find(d => d.section.id === planSections)
@@ -1318,6 +1332,23 @@ export default function PlanningPage() {
                       )
                     })}
                   </tbody>
+                  <tfoot>
+                    {(() => {
+                      const totKg = filteredPlanData.weeks.reduce((s, w) => s + w.kg, 0)
+                      const totSummer = filteredPlanData.weeks.reduce((s, w) => s + w.summerKg, 0)
+                      const totAutumn = filteredPlanData.weeks.reduce((s, w) => s + w.autumnKg, 0)
+                      return (
+                        <tr className="border-t-2 font-semibold">
+                          <td className="py-2 px-3">SUMA</td>
+                          <td className="text-right px-3">{totKg.toLocaleString('pl-PL')} kg</td>
+                          <td className="text-right px-3 text-green-700">{totSummer.toLocaleString('pl-PL')} kg</td>
+                          <td className="text-right px-3 text-orange-600">{totAutumn.toLocaleString('pl-PL')} kg</td>
+                          {planSections !== 'all' && <td />}
+                          <td colSpan={8} />
+                        </tr>
+                      )
+                    })()}
+                  </tfoot>
                 </table>
               </div>
             )}

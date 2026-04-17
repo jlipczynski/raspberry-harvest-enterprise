@@ -67,7 +67,7 @@ interface PlantationSection {
   winteredInTunnel?: boolean; plantMaterialType?: string; plantSource?: string; productionYear?: number
   harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]
   templateAssignments?: TemplateAssignment[]
-  variety?: { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]; pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number }
+  variety?: { id: string; name: string; yieldSummerPerShoot?: number; yieldAutumnPerShoot?: number; harvestCurveSummer?: number[]; harvestCurveAutumn?: number[]; rushWeeksSummer?: number; rushWeeksAutumn?: number; pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number }
 }
 interface Block { id: string; name: string; sections: PlantationSection[] }
 
@@ -335,9 +335,11 @@ export default function PlanningPage() {
       curveSource: 'assignment' | 'section' | 'variety' | 'none'
       summerAssignment: TemplateAssignment | null
       autumnAssignment: TemplateAssignment | null
-      weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number }>
+      weeklyKg: Array<{ week: number; kg: number; summerKg: number; autumnKg: number; isPospiech: boolean }>
       dailyKg: Array<{ date: string; kg: number; summerKg: number; autumnKg: number }>
       eff: number
+      rushWeeksSummer: number
+      rushWeeksAutumn: number
       // Diagnostyka
       diag: {
         shoots: number
@@ -414,12 +416,19 @@ export default function PlanningPage() {
       // Build dailyKg array — per-day kg values
       const dailyKgMap = new Map<string, { summerKg: number; autumnKg: number }>()
 
+      const rushWeeksSummer = v?.rushWeeksSummer ?? 0
+      const rushWeeksAutumn = v?.rushWeeksAutumn ?? 0
+
       // --- SUMMER daily distribution ---
       if (summerKg > 0 && fruitDate && summerWeeklyCurve) {
+        // Pośpiech: cofamy start krzywej o rushWeeksSummer * 7 dni przed fruitDate
+        const adjustedSummerStart = new Date(fruitDate)
+        adjustedSummerStart.setDate(adjustedSummerStart.getDate() - rushWeeksSummer * 7)
+
         if (summerDailyCurve?.length && fruitDate) {
           // Use daily curve from template — real per-day distribution
           summerDailyCurve.forEach((pct, i) => {
-            const d = new Date(fruitDate)
+            const d = new Date(adjustedSummerStart)
             d.setDate(d.getDate() + i)
             const dateStr = d.toISOString().slice(0, 10)
             const kg = Math.round(summerKg * pct / 100)
@@ -429,7 +438,7 @@ export default function PlanningPage() {
         } else {
           // Fallback: weekly curve divided by 7
           summerWeeklyCurve.forEach((pct, i) => {
-            const weekStart = new Date(fruitDate)
+            const weekStart = new Date(adjustedSummerStart)
             weekStart.setDate(weekStart.getDate() + i * 7)
             const weekKg = Math.round(summerKg * pct / 100)
             const dayKg = Math.round(weekKg / 7)
@@ -446,21 +455,27 @@ export default function PlanningPage() {
 
       // --- AUTUMN daily distribution ---
       if (autumnKg > 0 && autumnWeeklyCurve) {
-        if (autumnDailyCurve?.length && (autumnFruitDate || autumnStartDate)) {
+        const baseAutumnDate = autumnFruitDate ?? autumnStartDate ?? null
+        const adjustedAutumnStart = baseAutumnDate ? (() => {
+          const d = new Date(baseAutumnDate)
+          d.setDate(d.getDate() - rushWeeksAutumn * 7)
+          return d
+        })() : null
+
+        if (autumnDailyCurve?.length && adjustedAutumnStart) {
           // Use daily curve from template
           autumnDailyCurve.forEach((pct, i) => {
-            const d = new Date(autumnFruitDate ?? autumnStartDate!)
+            const d = new Date(adjustedAutumnStart)
             d.setDate(d.getDate() + i)
             const dateStr = d.toISOString().slice(0, 10)
             const kg = Math.round(autumnKg * pct / 100)
             const existing = dailyKgMap.get(dateStr)
             if (existing) { existing.autumnKg += kg } else { dailyKgMap.set(dateStr, { summerKg: 0, autumnKg: kg }) }
           })
-        } else if (autumnFruitDate) {
+        } else if (adjustedAutumnStart) {
           // Fallback: weekly curve divided by 7
-          const autumnStartDate2 = new Date(autumnFruitDate)
           autumnWeeklyCurve.forEach((pct, i) => {
-            const weekStart = new Date(autumnStartDate2)
+            const weekStart = new Date(adjustedAutumnStart)
             weekStart.setDate(weekStart.getDate() + i * 7)
             const weekKg = Math.round(autumnKg * pct / 100)
             const dayKg = Math.round(weekKg / 7)
@@ -480,16 +495,29 @@ export default function PlanningPage() {
         .map(([date, vals]) => ({ date, kg: vals.summerKg + vals.autumnKg, summerKg: vals.summerKg, autumnKg: vals.autumnKg }))
         .sort((a, b) => a.date.localeCompare(b.date))
 
+      // Pośpiech week ranges (ISO week numbers before fruitDate / autumnFruitDate)
+      const summerPospiechEndDate = fruitDate ? fruitDate : null
+      const autumnBaseDate = autumnFruitDate ?? autumnStartDate ?? null
+      const autumnPospiechEndDate = autumnBaseDate
+
       // Aggregate dailyKg → weeklyKg
-      const weeklyKgMap = new Map<number, { kg: number; summerKg: number; autumnKg: number }>()
+      const weeklyKgMap = new Map<number, { kg: number; summerKg: number; autumnKg: number; isPospiech: boolean }>()
       for (const day of dailyKgArr) {
         const wk = getWeekNumber(new Date(day.date))
+        const dayIsPospiech = (
+          (day.summerKg > 0 && summerPospiechEndDate && day.date < summerPospiechEndDate) ||
+          (day.autumnKg > 0 && autumnPospiechEndDate && day.date < autumnPospiechEndDate)
+        ) || false
         const existing = weeklyKgMap.get(wk)
-        if (existing) { existing.kg += day.kg; existing.summerKg += day.summerKg; existing.autumnKg += day.autumnKg }
-        else { weeklyKgMap.set(wk, { kg: day.kg, summerKg: day.summerKg, autumnKg: day.autumnKg }) }
+        if (existing) {
+          existing.kg += day.kg; existing.summerKg += day.summerKg; existing.autumnKg += day.autumnKg
+          if (dayIsPospiech) existing.isPospiech = true
+        } else {
+          weeklyKgMap.set(wk, { kg: day.kg, summerKg: day.summerKg, autumnKg: day.autumnKg, isPospiech: dayIsPospiech })
+        }
       }
       const weeklyKg = [...weeklyKgMap.entries()]
-        .map(([week, vals]) => ({ week, kg: vals.kg, summerKg: vals.summerKg, autumnKg: vals.autumnKg }))
+        .map(([week, vals]) => ({ week, kg: vals.kg, summerKg: vals.summerKg, autumnKg: vals.autumnKg, isPospiech: vals.isPospiech }))
         .sort((a, b) => a.week - b.week)
 
       // Update weekMap for global aggregation
@@ -538,7 +566,7 @@ export default function PlanningPage() {
         autumnLastDate,
       }
 
-      sectionDetails.push({ section, fruitStartDate: fruitDate ?? null, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg, dailyKg: dailyKgArr, eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null, diag })
+      sectionDetails.push({ section, fruitStartDate: fruitDate ?? null, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg, dailyKg: dailyKgArr, eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null, diag, rushWeeksSummer, rushWeeksAutumn })
     }
 
     const weeks = Object.entries(weekMap)
@@ -1463,6 +1491,9 @@ export default function PlanningPage() {
                             <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
                               {d.fruitStartDate ? new Date(d.fruitStartDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) : '—'}
                             </span>
+                            {d.rushWeeksSummer > 0 && (
+                              <span className="ml-1 px-1.5 py-0.5 bg-gray-200 text-gray-600 rounded text-xs" title="Tygodnie pośpiechu przed owocowaniem">P:{d.rushWeeksSummer}t</span>
+                            )}
                           </td>
                           <td className="text-center px-3 font-medium">{d.startWeek ? `T${d.startWeek}` : '—'}</td>
                           <td className="text-right px-3 text-green-700">{d.totalSummerKg > 0 ? `${Math.round(d.totalSummerKg).toLocaleString('pl-PL')}` : '—'}</td>
@@ -1472,13 +1503,13 @@ export default function PlanningPage() {
                           <td className="px-3">
                             <div className="flex items-end gap-0.5 h-5">
                               {d.weeklyKg.map(w => {
-                                const color = w.autumnKg > w.summerKg ? 'bg-amber-400' : 'bg-green-400'
+                                const color = w.isPospiech ? 'bg-gray-300' : w.autumnKg > w.summerKg ? 'bg-amber-400' : 'bg-green-400'
                                 return (
                                   <div
                                     key={w.week}
                                     className={`flex-1 ${color} rounded-t`}
                                     style={{ height: `${(w.kg / maxWeekKg) * 20}px`, minHeight: w.kg > 0 ? '2px' : '0' }}
-                                    title={`T${w.week}: ${w.kg.toLocaleString('pl-PL')} kg${w.summerKg > 0 ? ` (lato: ${w.summerKg.toLocaleString('pl-PL')})` : ''}${w.autumnKg > 0 ? ` (jesień: ${w.autumnKg.toLocaleString('pl-PL')})` : ''}`}
+                                    title={`T${w.week}${w.isPospiech ? ' [POŚPIECH]' : ''}: ${w.kg.toLocaleString('pl-PL')} kg${w.summerKg > 0 ? ` (lato: ${w.summerKg.toLocaleString('pl-PL')})` : ''}${w.autumnKg > 0 ? ` (jesień: ${w.autumnKg.toLocaleString('pl-PL')})` : ''}`}
                                   />
                                 )
                               })}
@@ -1597,7 +1628,9 @@ export default function PlanningPage() {
                             const kg = wd?.kg || 0
                             const intensity = kg / maxSectionKg
                             const isAutumn = wd ? wd.autumnKg > wd.summerKg : false
+                            const isPospiech = wd?.isPospiech ?? false
                             const bg = kg === 0 ? 'bg-gray-50'
+                              : isPospiech ? (intensity > 0.5 ? 'bg-gray-400 text-white' : 'bg-gray-200')
                               : isAutumn
                                 ? (intensity > 0.8 ? 'bg-amber-600 text-white'
                                   : intensity > 0.6 ? 'bg-amber-500 text-white'

@@ -26,6 +26,7 @@ interface Variety {
   // GDH próg — JESIEŃ (od pędów jesiennych do owocowania)
   gdhFruitAutumn?: number
   harvestCurveSummer?: number[] | string; harvestCurveAutumn?: number[] | string
+  rushWeeksSummer?: number; rushWeeksAutumn?: number
   pickingEfficiency?: number; wastePercent?: number; secondCategoryPercent?: number
   isCustom?: boolean
 }
@@ -52,6 +53,7 @@ export default function VarietiesPage() {
     gdhLcFlowerSummer: number; gdhLcFruitSummer: number
     gdhFruitAutumn: number
     harvestCurveSummer: string | number[]; harvestCurveAutumn: string | number[]
+    rushWeeksSummer: number; rushWeeksAutumn: number
     pickingEfficiency: number; wastePercent: number; secondCategoryPercent: number
   }>({
     name: '', origin: '', description: '',
@@ -62,6 +64,7 @@ export default function VarietiesPage() {
     gdhLcFlowerSummer: 0, gdhLcFruitSummer: 0,
     gdhFruitAutumn: 0,
     harvestCurveSummer: '', harvestCurveAutumn: '',
+    rushWeeksSummer: 0, rushWeeksAutumn: 0,
     pickingEfficiency: 8, wastePercent: 0, secondCategoryPercent: 0,
   })
 
@@ -89,10 +92,9 @@ export default function VarietiesPage() {
       gdhWinteredFlowerSummer: 0, gdhWinteredFruitSummer: 0,
       gdhPlantedFlowerSummer: 0, gdhPlantedFruitSummer: 0,
       gdhLcFlowerSummer: 0, gdhLcFruitSummer: 0,
-      gdhWinteredFlowerAutumn: 0, gdhWinteredFruitAutumn: 0,
-      gdhPlantedFlowerAutumn: 0, gdhPlantedFruitAutumn: 0,
-      gdhLcFlowerAutumn: 0, gdhLcFruitAutumn: 0,
+      gdhFruitAutumn: 0,
       harvestCurveSummer: '', harvestCurveAutumn: '',
+      rushWeeksSummer: 0, rushWeeksAutumn: 0,
       pickingEfficiency: 8, wastePercent: 0, secondCategoryPercent: 0,
     })
     setEditingVariety(null)
@@ -117,6 +119,8 @@ export default function VarietiesPage() {
       gdhFruitAutumn: variety.gdhFruitAutumn || 0,
       harvestCurveSummer: Array.isArray(variety.harvestCurveSummer) ? variety.harvestCurveSummer.join(', ') : String(variety.harvestCurveSummer || ''),
       harvestCurveAutumn: Array.isArray(variety.harvestCurveAutumn) ? variety.harvestCurveAutumn.join(', ') : String(variety.harvestCurveAutumn || ''),
+      rushWeeksSummer: variety.rushWeeksSummer ?? 0,
+      rushWeeksAutumn: variety.rushWeeksAutumn ?? 0,
       pickingEfficiency: variety.pickingEfficiency ?? 8,
       wastePercent: variety.wastePercent ?? 0,
       secondCategoryPercent: variety.secondCategoryPercent ?? 0,
@@ -148,6 +152,8 @@ export default function VarietiesPage() {
       gdhFruitAutumn: formData.gdhFruitAutumn || null,
       harvestCurveSummer: parseCurve(formData.harvestCurveSummer),
       harvestCurveAutumn: parseCurve(formData.harvestCurveAutumn),
+      rushWeeksSummer: formData.rushWeeksSummer || null,
+      rushWeeksAutumn: formData.rushWeeksAutumn || null,
       pickingEfficiency: formData.pickingEfficiency,
       wastePercent: formData.wastePercent,
       secondCategoryPercent: formData.secondCategoryPercent,
@@ -414,6 +420,14 @@ export default function VarietiesPage() {
                   <div className="bg-orange-50 rounded-lg p-4 mb-4 border border-orange-200">
                     <p className="text-sm font-semibold text-orange-800 mb-3">☀️ WZORCOWY ROZKŁAD OWOCOWANIA — LATO</p>
                     <p className="text-xs text-gray-500 mb-3">Procentowy udział zbiorów w kolejnych tygodniach owocowania. Suma = 100%</p>
+                    <div className="flex items-center gap-3 mb-3 bg-orange-100/60 rounded p-2 border border-orange-200">
+                      <label className="text-xs font-medium text-orange-800 whitespace-nowrap">Tygodnie pośpiechu (LATO):</label>
+                      <input type="number" min="0" max="10" className="w-16 border rounded px-2 py-1 text-sm text-center bg-white"
+                        value={formData.rushWeeksSummer}
+                        onChange={(e) => setFormData({...formData, rushWeeksSummer: parseInt(e.target.value) || 0})}
+                      />
+                      <span className="text-xs text-gray-500">Pierwsze N tygodni = pośpiech (przed startem owocowania GDH)</span>
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm mb-2">
                         <thead><tr className="border-b">
@@ -423,8 +437,15 @@ export default function VarietiesPage() {
                         </tr></thead>
                         <tbody>
                           {(parseCurve(formData.harvestCurveSummer) || []).map((val: number, i: number) => (
-                            <tr key={i} className="border-b hover:bg-orange-100/50">
-                              <td className="py-1 px-2 text-xs font-medium text-orange-800">{['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV'][i] || (i+1)+'.'} tydzień</td>
+                            <tr key={i} className={`border-b hover:bg-orange-100/50 ${i < formData.rushWeeksSummer ? 'bg-gray-50' : ''}`}>
+                              <td className="py-1 px-2 text-xs font-medium">
+                                <span className={i < formData.rushWeeksSummer ? 'text-gray-400' : 'text-orange-800'}>
+                                  {['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV'][i] || (i+1)+'.'} tydzień
+                                </span>
+                                {i < formData.rushWeeksSummer && (
+                                  <span className="ml-2 px-1.5 py-0.5 bg-gray-200 text-gray-500 rounded text-xs font-semibold">POŚPIECH</span>
+                                )}
+                              </td>
                               <td className="py-1 px-2 text-right">
                                 <input type="number" step="0.01" className="w-20 border rounded px-2 py-1 text-sm text-right"
                                   value={val}
@@ -475,6 +496,14 @@ export default function VarietiesPage() {
                   <div className="bg-red-50 rounded-lg p-4 mb-4 border border-red-200">
                     <p className="text-sm font-semibold text-red-800 mb-3">🍂 WZORCOWY ROZKŁAD OWOCOWANIA — JESIEŃ</p>
                     <p className="text-xs text-gray-500 mb-3">Procentowy udział zbiorów w kolejnych tygodniach owocowania jesiennego. Suma = 100%</p>
+                    <div className="flex items-center gap-3 mb-3 bg-red-100/60 rounded p-2 border border-red-200">
+                      <label className="text-xs font-medium text-red-800 whitespace-nowrap">Tygodnie pośpiechu (JESIEŃ):</label>
+                      <input type="number" min="0" max="10" className="w-16 border rounded px-2 py-1 text-sm text-center bg-white"
+                        value={formData.rushWeeksAutumn}
+                        onChange={(e) => setFormData({...formData, rushWeeksAutumn: parseInt(e.target.value) || 0})}
+                      />
+                      <span className="text-xs text-gray-500">Pierwsze N tygodni = pośpiech (przed startem owocowania GDH)</span>
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm mb-2">
                         <thead><tr className="border-b">
@@ -484,8 +513,15 @@ export default function VarietiesPage() {
                         </tr></thead>
                         <tbody>
                           {(parseCurve(formData.harvestCurveAutumn) || []).map((val: number, i: number) => (
-                            <tr key={i} className="border-b hover:bg-red-100/50">
-                              <td className="py-1 px-2 text-xs font-medium text-red-800">{['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV'][i] || (i+1)+'.'} tydzień</td>
+                            <tr key={i} className={`border-b hover:bg-red-100/50 ${i < formData.rushWeeksAutumn ? 'bg-gray-50' : ''}`}>
+                              <td className="py-1 px-2 text-xs font-medium">
+                                <span className={i < formData.rushWeeksAutumn ? 'text-gray-400' : 'text-red-800'}>
+                                  {['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV'][i] || (i+1)+'.'} tydzień
+                                </span>
+                                {i < formData.rushWeeksAutumn && (
+                                  <span className="ml-2 px-1.5 py-0.5 bg-gray-200 text-gray-500 rounded text-xs font-semibold">POŚPIECH</span>
+                                )}
+                              </td>
                               <td className="py-1 px-2 text-right">
                                 <input type="number" step="0.01" className="w-20 border rounded px-2 py-1 text-sm text-right"
                                   value={val}

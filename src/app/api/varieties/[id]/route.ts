@@ -23,6 +23,7 @@ export async function PATCH(
       'gdhLcFlowerSummer', 'gdhLcFruitSummer',
       // GDH próg — JESIEŃ
       'gdhFruitAutumn',
+      'rushWeeksSummer', 'rushWeeksAutumn',
       'pickingEfficiency',
       'wastePercent', 'secondCategoryPercent',
     ]

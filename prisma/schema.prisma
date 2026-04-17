@@ -105,6 +105,9 @@ model Variety {
   harvestCurveSummer    Json?
   harvestCurveAutumn    Json?
 
+  rushWeeksSummer       Int?   // liczba pierwszych tygodni lata = pośpiech (przed fruitDate)
+  rushWeeksAutumn       Int?   // liczba pierwszych tygodni jesieni = pośpiech (przed autumnFruitDate)
+
   pickingEfficiency     Float?
   wastePercent          Float?
   secondCategoryPercent Float?

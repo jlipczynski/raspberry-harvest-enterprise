@@ -56,28 +56,37 @@ export async function POST(request: NextRequest) {
       const endDate = year === new Date().getFullYear()
         ? new Date().toISOString().split('T')[0]
         : year + '-12-31'
-      const url = 'https://archive-api.open-meteo.com/v1/archive?latitude=' + latitude + '&longitude=' + longitude + '&start_date=' + startDate + '&end_date=' + endDate + '&daily=temperature_2m_max,temperature_2m_min&timezone=Europe/Warsaw'
+      // Godzinowe temperatury — dokładne GDH zamiast przybliżenia (min+max)/2
+      const url = 'https://archive-api.open-meteo.com/v1/archive?latitude=' + latitude + '&longitude=' + longitude + '&start_date=' + startDate + '&end_date=' + endDate + '&hourly=temperature_2m&timezone=Europe/Warsaw'
 
       const response = await fetch(url)
       if (!response.ok) continue
       const data = await response.json()
-      if (!data.daily?.time) continue
+      if (!data.hourly?.time) continue
+
+      // Grupuj godzinowe temperatury per dzień
+      const dailyMap = new Map<string, number[]>()
+      for (let i = 0; i < data.hourly.time.length; i++) {
+        const temp = data.hourly.temperature_2m[i]
+        if (temp === null) continue
+        const dateStr = (data.hourly.time[i] as string).slice(0, 10)
+        const arr = dailyMap.get(dateStr)
+        if (arr) { arr.push(temp) } else { dailyMap.set(dateStr, [temp]) }
+      }
 
       let cumulativeGDH = 0
-      for (let i = 0; i < data.daily.time.length; i++) {
-        const date = new Date(data.daily.time[i])
-        const tempMin = data.daily.temperature_2m_min[i]
-        const tempMax = data.daily.temperature_2m_max[i]
-        if (tempMin === null || tempMax === null) continue
-        const tempAvg = (tempMin + tempMax) / 2
-        const effectiveTemp = Math.min(tempAvg, GDH_UPPER_TEMP)
-        const gdhDaily = Math.max(0, effectiveTemp - GDH_BASE_TEMP) * 24
+      for (const [dateStr, temps] of [...dailyMap.entries()].sort()) {
+        const date = new Date(dateStr)
+        const tempMin = Math.min(...temps)
+        const tempMax = Math.max(...temps)
+        const tempAvg = temps.reduce((a, b) => a + b, 0) / temps.length
+        const gdhDaily = temps.reduce((sum, t) => sum + Math.max(0, Math.min(t, GDH_UPPER_TEMP) - GDH_BASE_TEMP), 0)
         cumulativeGDH += gdhDaily
 
         await prisma.weatherData.upsert({
           where: { farmId_date: { farmId: farm.id, date } },
-          update: { tempMin, tempMax, tempAvg, gdhDaily, gdhCumulative: cumulativeGDH, source: 'API_HISTORICAL' },
-          create: { farmId: farm.id, date, tempMin, tempMax, tempAvg, gdhDaily, gdhCumulative: cumulativeGDH, source: 'API_HISTORICAL' }
+          update: { tempMin, tempMax, tempAvg, gdhDaily, gdhCumulative: cumulativeGDH, source: 'API_HOURLY' },
+          create: { farmId: farm.id, date, tempMin, tempMax, tempAvg, gdhDaily, gdhCumulative: cumulativeGDH, source: 'API_HOURLY' }
         })
         totalCount++
       }

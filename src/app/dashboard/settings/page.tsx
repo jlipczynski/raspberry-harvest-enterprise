@@ -54,6 +54,38 @@ interface UploadHistoryEntry {
   duplicates: number
 }
 
+interface SectionImpact {
+  sectionId: string
+  sectionName: string
+  inserted: number
+  flowerThreshold: number | null
+  fruitThreshold: number | null
+  flowerDateBefore: string | null
+  fruitDateBefore: string | null
+  flowerDateAfter: string | null
+  fruitDateAfter: string | null
+}
+
+function findThresholdDate(
+  dailyGdh: Array<{ date: unknown; cumulativeGdh: number }>,
+  threshold: number | null
+): string | null {
+  if (threshold === null) return null
+  const hit = dailyGdh.find(d => d.cumulativeGdh >= threshold)
+  return hit ? String(hit.date).slice(0, 10) : null
+}
+
+function daysDiff(a: string | null, b: string | null): number | null {
+  if (!a || !b) return null
+  return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000)
+}
+
+function formatImpactDate(d: string | null): string {
+  if (!d) return '—'
+  const dt = new Date(d)
+  return `${dt.getDate().toString().padStart(2, '0')}.${(dt.getMonth() + 1).toString().padStart(2, '0')}`
+}
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'general' | 'temperature'>('general')
   const [importStatus, setImportStatus] = useState('')
@@ -80,6 +112,7 @@ export default function SettingsPage() {
   const [importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<UploadResult[] | null>(null)
   const [uploadHistory, setUploadHistory] = useState<UploadHistoryEntry[]>([])
+  const [uploadImpact, setUploadImpact] = useState<SectionImpact[] | null>(null)
   const [isDragging, setIsDragging] = useState(false)
 
   useEffect(() => {
@@ -328,6 +361,34 @@ export default function SettingsPage() {
     if (!farm || tempFiles.length === 0 || !previewData) return
     setImporting(true)
     setImportResults(null)
+    setUploadImpact(null)
+
+    // Zbierz docelowe sekcje
+    const targetSectionIds = new Set<string>()
+    for (let i = 0; i < previewData.length; i++) {
+      getEffectiveSectionIds(i).forEach(id => targetSectionIds.add(id))
+    }
+
+    // Pobierz GDH przed importem
+    type GdhSnapshot = { name: string; flowerThreshold: number | null; fruitThreshold: number | null; flowerDate: string | null; fruitDate: string | null }
+    const gdhBefore: Record<string, GdhSnapshot> = {}
+    try {
+      const res = await fetch('/api/gdh')
+      if (res.ok) {
+        const data = await res.json()
+        for (const s of (data.sections || [])) {
+          if (targetSectionIds.has(s.id)) {
+            gdhBefore[s.id] = {
+              name: s.name,
+              flowerThreshold: s.flowerThresholdSummer ?? null,
+              fruitThreshold: s.fruitThresholdSummer ?? null,
+              flowerDate: findThresholdDate(s.dailyGdh, s.flowerThresholdSummer ?? null),
+              fruitDate: findThresholdDate(s.dailyGdh, s.fruitThresholdSummer ?? null),
+            }
+          }
+        }
+      }
+    } catch { /* kontynuuj bez snapshotu */ }
 
     const results: UploadResult[] = []
 
@@ -359,6 +420,39 @@ export default function SettingsPage() {
       }
     }
     setImportResults(results)
+
+    // Pobierz GDH po imporcie i oblicz wpływ na daty (tylko gdy wgrano coś nowego)
+    const anyInserted = results.some(r => r.success && (r.totalInserted ?? 0) > 0)
+    if (anyInserted && targetSectionIds.size > 0) {
+      try {
+        const res = await fetch('/api/gdh')
+        if (res.ok) {
+          const data = await res.json()
+          const impact: SectionImpact[] = []
+          for (const s of (data.sections || [])) {
+            if (!targetSectionIds.has(s.id)) continue
+            const before = gdhBefore[s.id]
+            const insertedForSection = results
+              .filter(r => r.success)
+              .flatMap(r => r.sections ?? [])
+              .filter(sec => sec.sectionId === s.id)
+              .reduce((sum, sec) => sum + (sec.inserted ?? 0), 0)
+            impact.push({
+              sectionId: s.id,
+              sectionName: s.name,
+              inserted: insertedForSection,
+              flowerThreshold: s.flowerThresholdSummer ?? null,
+              fruitThreshold: s.fruitThresholdSummer ?? null,
+              flowerDateBefore: before?.flowerDate ?? null,
+              fruitDateBefore: before?.fruitDate ?? null,
+              flowerDateAfter: findThresholdDate(s.dailyGdh, s.flowerThresholdSummer ?? null),
+              fruitDateAfter: findThresholdDate(s.dailyGdh, s.fruitThresholdSummer ?? null),
+            })
+          }
+          setUploadImpact(impact)
+        }
+      } catch { /* ignoruj — import już się udał */ }
+    }
 
     // Zapisz udane importy do historii (localStorage)
     const newEntries: UploadHistoryEntry[] = results
@@ -844,6 +938,75 @@ export default function SettingsPage() {
               ))}
               <Button variant="ghost" size="sm" className="text-gray-400" onClick={() => setImportResults(null)}>Zamknij</Button>
             </div>
+          )}
+
+          {/* Wpływ na daty kwitnienia i owocowania */}
+          {uploadImpact && uploadImpact.length > 0 && (
+            <Card className="border-blue-200">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base text-blue-800">
+                  <Thermometer className="w-5 h-5 text-blue-600" />
+                  Wpływ importu na daty GDH
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {uploadImpact.map(s => {
+                  const flowerDelta = daysDiff(s.flowerDateBefore, s.flowerDateAfter)
+                  const fruitDelta = daysDiff(s.fruitDateBefore, s.fruitDateAfter)
+                  const noThresholds = s.flowerThreshold === null && s.fruitThreshold === null
+                  return (
+                    <div key={s.sectionId} className="border rounded-lg p-3 bg-blue-50">
+                      <div className="font-medium text-sm text-blue-900 mb-2">{s.sectionName}</div>
+                      {noThresholds ? (
+                        <p className="text-xs text-gray-500">Brak progów GDH w odmianie — uzupełnij dane odmiany</p>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                          {s.flowerThreshold !== null && (
+                            <div className="bg-white rounded p-2 border">
+                              <div className="text-xs text-gray-500 mb-1">🌸 Kwitnienie (próg {s.flowerThreshold} GDH)</div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <span className="text-gray-400">{formatImpactDate(s.flowerDateBefore)}</span>
+                                <span className="text-gray-300">→</span>
+                                <span className="font-semibold text-blue-800">{formatImpactDate(s.flowerDateAfter)}</span>
+                                {flowerDelta !== null && flowerDelta !== 0 && (
+                                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${flowerDelta < 0 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                    {flowerDelta < 0 ? `${Math.abs(flowerDelta)} dni wcześniej` : `${flowerDelta} dni później`}
+                                  </span>
+                                )}
+                                {flowerDelta === 0 && <span className="text-xs text-gray-400">bez zmian</span>}
+                                {flowerDelta === null && s.flowerDateBefore === null && s.flowerDateAfter === null && (
+                                  <span className="text-xs text-gray-400">brak danych</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {s.fruitThreshold !== null && (
+                            <div className="bg-white rounded p-2 border">
+                              <div className="text-xs text-gray-500 mb-1">🍓 Owocowanie (próg {s.fruitThreshold} GDH)</div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <span className="text-gray-400">{formatImpactDate(s.fruitDateBefore)}</span>
+                                <span className="text-gray-300">→</span>
+                                <span className="font-semibold text-blue-800">{formatImpactDate(s.fruitDateAfter)}</span>
+                                {fruitDelta !== null && fruitDelta !== 0 && (
+                                  <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${fruitDelta < 0 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                    {fruitDelta < 0 ? `${Math.abs(fruitDelta)} dni wcześniej` : `${fruitDelta} dni później`}
+                                  </span>
+                                )}
+                                {fruitDelta === 0 && <span className="text-xs text-gray-400">bez zmian</span>}
+                                {fruitDelta === null && s.fruitDateBefore === null && s.fruitDateAfter === null && (
+                                  <span className="text-xs text-gray-400">brak danych</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+                <Button variant="ghost" size="sm" className="text-gray-400" onClick={() => setUploadImpact(null)}>Zamknij</Button>
+              </CardContent>
+            </Card>
           )}
 
           {/* Historia importów */}

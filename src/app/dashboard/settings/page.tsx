@@ -44,6 +44,16 @@ interface UploadResult {
   errors?: string[]
 }
 
+interface UploadHistoryEntry {
+  id: string
+  uploadedAt: string
+  blockName: string
+  sections: string[]
+  totalInFile: number
+  inserted: number
+  duplicates: number
+}
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'general' | 'temperature'>('general')
   const [importStatus, setImportStatus] = useState('')
@@ -69,7 +79,15 @@ export default function SettingsPage() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<UploadResult[] | null>(null)
+  const [uploadHistory, setUploadHistory] = useState<UploadHistoryEntry[]>([])
   const [isDragging, setIsDragging] = useState(false)
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('temperatureUploadHistory')
+      if (stored) setUploadHistory(JSON.parse(stored))
+    } catch { /* ignore */ }
+  }, [])
   const tempFileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { fetchFarm() }, [])
@@ -341,6 +359,27 @@ export default function SettingsPage() {
       }
     }
     setImportResults(results)
+
+    // Zapisz udane importy do historii (localStorage)
+    const newEntries: UploadHistoryEntry[] = results
+      .filter(r => r.success)
+      .map(r => ({
+        id: crypto.randomUUID(),
+        uploadedAt: new Date().toISOString(),
+        blockName: r.blockName || r.sections?.[0]?.blockName || r.sections?.[0]?.sheetName || '—',
+        sections: (r.sections ?? []).map(s => s.sectionName || s.sectionId).filter(Boolean) as string[],
+        totalInFile: r.totalReadings ?? 0,
+        inserted: r.totalInserted ?? 0,
+        duplicates: (r.totalReadings ?? 0) - (r.totalInserted ?? 0),
+      }))
+    if (newEntries.length > 0) {
+      setUploadHistory(prev => {
+        const updated = [...newEntries, ...prev].slice(0, 100)
+        try { localStorage.setItem('temperatureUploadHistory', JSON.stringify(updated)) } catch { /* ignore */ }
+        return updated
+      })
+    }
+
     setImporting(false)
     setTempFiles([])
     setPreviewData(null)
@@ -778,13 +817,25 @@ export default function SettingsPage() {
               {importResults.map((r, i) => (
                 <div key={i} className={`rounded-lg px-4 py-3 text-sm ${r.success ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'}`}>
                   {r.success ? (
-                    <div className="flex items-center gap-2">
-                      <Thermometer className="w-4 h-4" />
-                      {r.format === 'xlsx' ? (
-                        <span>XLSX: <strong>{r.totalInserted}</strong> pomiarów &rarr; {r.sections?.map(s => s.sectionName).join(', ')}</span>
-                      ) : (
-                        <span>Blok <strong>{r.blockName}</strong>: {r.totalReadings} pomiarów &rarr; {r.sections?.map(s => s.sectionName).join(', ')}</span>
-                      )}
+                    <div className="flex items-start gap-2">
+                      <Thermometer className="w-4 h-4 mt-0.5 shrink-0" />
+                      <div>
+                        <span className="font-medium">
+                          {r.blockName ? `Blok ${r.blockName}` : r.sections?.[0]?.sheetName ?? 'Import'}
+                        </span>
+                        {' → '}
+                        <span>{r.sections?.map(s => s.sectionName).filter(Boolean).join(', ') || '—'}</span>
+                        <div className="text-xs mt-0.5 text-green-700">
+                          Plik zawierał <strong>{(r.totalReadings ?? 0).toLocaleString('pl-PL')}</strong> pomiarów &nbsp;·&nbsp;
+                          dodano <strong>{(r.totalInserted ?? 0).toLocaleString('pl-PL')}</strong> nowych
+                          {(r.totalReadings ?? 0) > (r.totalInserted ?? 0) && (
+                            <span className="text-green-600"> &nbsp;·&nbsp; {((r.totalReadings ?? 0) - (r.totalInserted ?? 0)).toLocaleString('pl-PL')} już było w bazie</span>
+                          )}
+                        </div>
+                        {r.errors && r.errors.length > 0 && (
+                          <div className="text-xs mt-1 text-amber-700">{r.errors.join(' · ')}</div>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <span>{r.error}</span>
@@ -793,6 +844,64 @@ export default function SettingsPage() {
               ))}
               <Button variant="ghost" size="sm" className="text-gray-400" onClick={() => setImportResults(null)}>Zamknij</Button>
             </div>
+          )}
+
+          {/* Historia importów */}
+          {uploadHistory.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between text-base">
+                  <span className="flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-gray-500" />
+                    Historia importów
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-gray-400 text-xs"
+                    onClick={() => {
+                      setUploadHistory([])
+                      try { localStorage.removeItem('temperatureUploadHistory') } catch { /* ignore */ }
+                    }}
+                  >
+                    Wyczyść historię
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-gray-50 text-gray-500 text-xs">
+                        <th className="text-left px-4 py-2 font-medium">Data i godzina</th>
+                        <th className="text-left px-4 py-2 font-medium">Blok / Sekcja</th>
+                        <th className="text-right px-4 py-2 font-medium">W pliku</th>
+                        <th className="text-right px-4 py-2 font-medium">Nowych</th>
+                        <th className="text-right px-4 py-2 font-medium">Duplikatów</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {uploadHistory.map(entry => (
+                        <tr key={entry.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 text-gray-400 text-xs whitespace-nowrap">
+                            {new Date(entry.uploadedAt).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="px-4 py-2">
+                            <span className="font-medium">{entry.blockName}</span>
+                            {entry.sections.length > 0 && (
+                              <span className="text-gray-400 text-xs ml-1">→ {entry.sections.join(', ')}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-right text-gray-500">{entry.totalInFile.toLocaleString('pl-PL')}</td>
+                          <td className="px-4 py-2 text-right font-medium text-green-700">{entry.inserted.toLocaleString('pl-PL')}</td>
+                          <td className="px-4 py-2 text-right text-gray-400">{entry.duplicates.toLocaleString('pl-PL')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </div>
       )}

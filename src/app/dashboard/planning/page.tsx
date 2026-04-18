@@ -628,14 +628,16 @@ export default function PlanningPage() {
     const weeks = weeklyPlan.weeks
       .map(w => {
         // Przelicz kg tylko dla wybranych sekcji
-        let kg = 0, summerKg = 0, autumnKg = 0, hrs = 0
+        let kg = 0, summerKg = 0, autumnKg = 0, hrs = 0, pospiechKg = 0
         for (const d of activeSections) {
           const wd = d.weeklyKg.find(x => x.week === w.week)
           kg += wd?.kg ?? 0
           summerKg += wd?.summerKg ?? 0
           autumnKg += wd?.autumnKg ?? 0
           hrs += Math.round((wd?.kg ?? 0) / d.eff)
+          if (wd?.isPospiech) pospiechKg += wd.kg ?? 0
         }
+        const isPospiech = kg > 0 && pospiechKg >= kg
         const dailyKg = Math.round(kg / 7)
         const dailyHrs = Math.round(hrs / 7)
         const pickers = Math.ceil(dailyHrs / hoursPerDay)
@@ -656,6 +658,7 @@ export default function PlanningPage() {
           weighing,
           infra,
           totalStaff: pickers + qc + weighing + infra,
+          isPospiech,
         }
       })
       .filter(w => {
@@ -1319,9 +1322,10 @@ export default function PlanningPage() {
                           ? 'border-l-4 border-orange-400'
                           : 'border-l-4 border-green-400'
                       return (
-                        <tr key={w.week} className={`border-b transition-colors ${seasonBorder} ${isBottleneck ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}>
+                        <tr key={w.week} className={`border-b transition-colors ${seasonBorder} ${w.isPospiech ? 'bg-gray-50 text-gray-400' : isBottleneck ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}>
                           <td className="py-2 px-3">
                             T{w.week} <span className="text-gray-400 text-xs">({w.dates})</span>
+                            {w.isPospiech && <span className="ml-1.5 text-xs px-1.5 py-0.5 bg-gray-200 text-gray-500 rounded">Pośpiech</span>}
                           </td>
                           <td className="text-right px-3">{w.kg.toLocaleString('pl-PL')} kg</td>
                           <td className="text-right px-3 text-green-700 text-xs">

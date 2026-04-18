@@ -16,26 +16,70 @@ interface WeatherRecord {
   source: string
 }
 
-interface Section {
+interface GdhSection {
   id: string
   name: string
+  blockName: string
   winteredInTunnel: boolean
-  plantingDate: string | null
-  autumnShootDate: string | null
-  gdhWinteredFruitSummer?: number | null
-  gdhPlantedFruitSummer?: number | null
-  gdhLcFruitSummer?: number | null
-  variety?: {
-    name: string
-    gdhWinteredFruitSummer?: number | null
-    gdhPlantedFruitSummer?: number | null
-    gdhLcFruitSummer?: number | null
+  gdhStartDate: string | null
+  baseTemp: number
+  currentGdh: number
+  fruitThreshold: number | null
+  flowerThreshold: number | null
+  dailyGdh: Array<{ date: string; cumulativeGdh: number }>
+}
+
+interface ForecastDay { date: string; gdhTunnel: number; avgTunnelTemp?: number }
+interface GdhApiResponse {
+  sections: GdhSection[]
+  forecast: {
+    meteoDays: ForecastDay[]
+    scenarios: { p50: ForecastDay[] }
+  } | null
+}
+
+const GDH_UPPER = 26.0
+
+function computeFruitDate(section: GdhSection, forecast: GdhApiResponse['forecast']): string | null {
+  const threshold = section.fruitThreshold
+  if (!threshold) return null
+  const baseTemp = section.baseTemp
+  const gdhStartDate = section.gdhStartDate || ''
+
+  const dayGdh = (day: ForecastDay): number => {
+    if (day.avgTunnelTemp != null) return Math.max(0, Math.min(day.avgTunnelTemp, GDH_UPPER) - baseTemp) * 24
+    return day.gdhTunnel ?? 0
   }
+
+  const gdhMap = new Map<string, number>()
+  let lastRealGdh = 0, lastRealDate = ''
+  for (const d of section.dailyGdh) {
+    gdhMap.set(d.date, d.cumulativeGdh)
+    lastRealGdh = d.cumulativeGdh
+    lastRealDate = d.date
+  }
+  let cum = lastRealGdh
+  for (const day of (forecast?.meteoDays ?? [])) {
+    if (day.date <= lastRealDate) continue
+    if (gdhStartDate && day.date < gdhStartDate) continue
+    cum += dayGdh(day)
+    gdhMap.set(day.date, Math.round(cum))
+  }
+  for (const day of (forecast?.scenarios?.p50 ?? [])) {
+    if (gdhStartDate && day.date < gdhStartDate) continue
+    cum += dayGdh(day)
+    gdhMap.set(day.date, Math.round(cum))
+  }
+  const entries = [...gdhMap.entries()].sort(([a], [b]) => a.localeCompare(b))
+  for (const [date, gdh] of entries) {
+    if (gdh >= threshold) return date
+  }
+  return null
 }
 
 export default function WeatherPage() {
   const [weatherData, setWeatherData] = useState<WeatherRecord[]>([])
-  const [sections, setSections] = useState<Section[]>([])
+  const [gdhData, setGdhData] = useState<GdhApiResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingSections, setLoadingSections] = useState(true)
   const [currentYear] = useState(new Date().getFullYear())
@@ -54,17 +98,11 @@ export default function WeatherPage() {
       .catch(e => console.error('Weather fetch error:', e))
       .finally(() => setLoading(false))
 
-    // Sekcje ładują się osobno — nie blokują wyświetlenia pogody
-    fetch('/api/plantation')
+    // GDH z loggerów + prognoza — poprawna data owocowania per sekcja
+    fetch('/api/gdh')
       .then(r => r.json())
-      .then(json => {
-        if (json.blocks) {
-          setSections(json.blocks.flatMap((b: { name: string; sections: Section[] }) =>
-            b.sections.map((s: Section) => ({ ...s, blockName: b.name }))
-          ))
-        }
-      })
-      .catch(e => console.error('Plantation fetch error:', e))
+      .then(json => setGdhData(json))
+      .catch(e => console.error('GDH fetch error:', e))
       .finally(() => setLoadingSections(false))
   }, [])
 
@@ -82,16 +120,10 @@ export default function WeatherPage() {
       })
       .catch(e => console.error('Weather fetch error:', e))
       .finally(() => setLoading(false))
-    fetch('/api/plantation')
+    fetch('/api/gdh')
       .then(r => r.json())
-      .then(json => {
-        if (json.blocks) {
-          setSections(json.blocks.flatMap((b: { name: string; sections: Section[] }) =>
-            b.sections.map((s: Section) => ({ ...s, blockName: b.name }))
-          ))
-        }
-      })
-      .catch(e => console.error('Plantation fetch error:', e))
+      .then(json => setGdhData(json))
+      .catch(e => console.error('GDH fetch error:', e))
       .finally(() => setLoadingSections(false))
   }
 
@@ -106,35 +138,18 @@ export default function WeatherPage() {
   const last7Days = currentYearData.slice(0, 7)
   const last7GDH = last7Days.reduce((sum, d) => sum + (d.gdhDaily || 0), 0)
 
-  const getGDHForSection = (section: Section) => {
-    if (section.winteredInTunnel) return currentGDH
-    if (section.plantingDate) {
-      const plantDate = new Date(section.plantingDate)
-      const afterPlanting = currentYearData.filter(w => new Date(w.date) >= plantDate)
-      return afterPlanting.reduce((sum, w) => sum + (w.gdhDaily || 0), 0)
+  // Sekcje z GDH API — logger + prognoza zewnętrzna po ostatnim odczycie (P50)
+  // Deduplikacja: jedna sekcja per unikalna nazwa (ta z większym currentGdh)
+  const gdhSections: GdhSection[] = (() => {
+    const raw = gdhData?.sections ?? []
+    const map = new Map<string, GdhSection>()
+    for (const s of raw) {
+      const key = `${s.blockName}/${s.name}`
+      const existing = map.get(key)
+      if (!existing || s.currentGdh > existing.currentGdh) map.set(key, s)
     }
-    return 0
-  }
-
-  const getGDHThreshold = (section: Section): number | null => {
-    if (section.winteredInTunnel) {
-      return section.gdhWinteredFruitSummer ?? section.variety?.gdhWinteredFruitSummer ?? null
-    }
-    return section.gdhPlantedFruitSummer ?? section.variety?.gdhPlantedFruitSummer
-      ?? section.gdhLcFruitSummer ?? section.variety?.gdhLcFruitSummer ?? null
-  }
-
-  const estimateFruitingDate = (sectionGDH: number, threshold: number | null) => {
-    if (!threshold) return '—'
-    const remaining = threshold - sectionGDH
-    if (remaining <= 0) return 'Teraz!'
-    const avgDailyGDH = last7Days.length > 0 ? last7GDH / Math.max(last7Days.length, 1) : null
-    if (!avgDailyGDH || avgDailyGDH <= 0) return '—'
-    const daysRemaining = Math.ceil(remaining / avgDailyGDH)
-    const date = new Date()
-    date.setDate(date.getDate() + daysRemaining)
-    return date.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })
-  }
+    return [...map.values()].sort((a, b) => `${a.blockName}${a.name}`.localeCompare(`${b.blockName}${b.name}`))
+  })()
 
   const getSourceBadge = (source: string) => {
     if (source === 'API_HOURLY') return <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">Godzinowe</span>
@@ -221,34 +236,35 @@ export default function WeatherPage() {
 
           {loadingSections ? (
             <div className="text-center text-gray-400 py-4 text-sm">Ładowanie sekcji...</div>
-          ) : sections.length > 0 && (
+          ) : gdhSections.length > 0 && (
             <div className="space-y-3">
               <div className="grid grid-cols-5 gap-2 text-xs font-medium text-gray-500 px-2">
                 <span>Sekcja</span>
                 <span>Typ</span>
-                <span>Start</span>
-                <span>GDH</span>
-                <span>Owocowanie</span>
+                <span>Start GDH</span>
+                <span>GDH (logger)</span>
+                <span>Owocowanie (P50)</span>
               </div>
-              
-              {sections.slice(0, 10).map(section => {
-                const sectionGDH = getGDHForSection(section)
-                const threshold = getGDHThreshold(section)
+              {gdhSections.map(section => {
+                const threshold = section.fruitThreshold
+                const sectionGDH = section.currentGdh
                 const progress = threshold ? (sectionGDH / threshold) * 100 : 0
-                const fruitingDate = estimateFruitingDate(sectionGDH, threshold)
-                
+                const fruitDate = computeFruitDate(section, gdhData?.forecast ?? null)
+                const fruitingDisplay = fruitDate
+                  ? new Date(fruitDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })
+                  : threshold ? '—' : 'brak progu'
                 return (
                   <div key={section.id} className="p-3 bg-gray-50 rounded-lg">
                     <div className="grid grid-cols-5 gap-2 items-center text-sm mb-2">
-                      <span className="font-medium truncate">{section.name}</span>
+                      <span className="font-medium truncate">{section.blockName}/{section.name}</span>
                       <span className={`text-xs px-2 py-0.5 rounded ${section.winteredInTunnel ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
                         {section.winteredInTunnel ? '🏠 Zimowana' : '📦 Wysadzona'}
                       </span>
-                      <span className="text-gray-600">
-                        {section.winteredInTunnel ? '01.01' : section.plantingDate ? formatDate(section.plantingDate).slice(0, 5) : '—'}
+                      <span className="text-gray-600 text-xs">
+                        {section.gdhStartDate ? new Date(section.gdhStartDate).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' }) : '01.01'}
                       </span>
                       <span className="font-medium">{sectionGDH.toLocaleString()}</span>
-                      <span className="text-green-600 font-medium text-xs">{fruitingDate}</span>
+                      <span className="text-green-600 font-medium text-xs">{fruitingDisplay}</span>
                     </div>
                     <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
                       <div className={`h-full rounded-full ${progress >= 80 ? 'bg-green-500' : progress >= 50 ? 'bg-yellow-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, progress)}%` }} />

@@ -178,7 +178,7 @@ export default function WeatherPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-orange-700">Dziś</p>
-                <p className="text-4xl font-bold text-orange-800">+{todayData?.gdhDaily || 0} GDH</p>
+                <p className="text-4xl font-bold text-orange-800">+{Math.round(todayData?.gdhDaily || 0)} GDH</p>
                 <p className="text-sm text-orange-600">{todayData ? `${todayData.tempMin}° - ${todayData.tempMax}°` : '—'}</p>
               </div>
               <Thermometer className="w-12 h-12 text-orange-500" />

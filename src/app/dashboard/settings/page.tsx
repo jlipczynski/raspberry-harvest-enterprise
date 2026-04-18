@@ -36,6 +36,7 @@ interface UploadResult {
   success?: boolean
   error?: string
   blockName?: string
+  fileName?: string
   totalReadings?: number
   totalInserted?: number
   sections?: Array<{ sectionId: string; sectionName: string | null; inserted: number; sheetName?: string; blockName?: string }>
@@ -47,6 +48,7 @@ interface UploadResult {
 interface UploadHistoryEntry {
   id: string
   uploadedAt: string
+  fileName: string
   blockName: string
   sections: string[]
   totalInFile: number
@@ -453,7 +455,7 @@ export default function SettingsPage() {
           const res = await fetch('/api/plantation/temperature-upload', { method: 'POST', body: fd })
           const data = await res.json()
           if (!res.ok) results.push({ error: `${row.fileName}${row.sheetName ? ` (${row.sheetName})` : ''}: ${data.error || `błąd ${res.status}`}` })
-          else results.push({ ...data, success: true })
+          else results.push({ ...data, success: true, fileName: row.fileName })
         } catch (err) {
           results.push({ error: `${row.fileName}: ${err instanceof Error ? err.message : 'błąd połączenia'}` })
         }
@@ -506,6 +508,7 @@ export default function SettingsPage() {
       .map(r => ({
         id: crypto.randomUUID(),
         uploadedAt: new Date().toISOString(),
+        fileName: r.fileName || '—',
         blockName: r.blockName || r.sections?.[0]?.blockName || r.sections?.[0]?.sheetName || '—',
         sections: (r.sections ?? []).map(s => s.sectionName || s.sectionId).filter(Boolean) as string[],
         totalInFile: r.totalReadings ?? 0,
@@ -1083,6 +1086,7 @@ export default function SettingsPage() {
                     <thead>
                       <tr className="border-b bg-gray-50 text-gray-500 text-xs">
                         <th className="text-left px-4 py-2 font-medium">Data i godzina</th>
+                        <th className="text-left px-4 py-2 font-medium">Plik</th>
                         <th className="text-left px-4 py-2 font-medium">Blok / Sekcja</th>
                         <th className="text-right px-4 py-2 font-medium">W pliku</th>
                         <th className="text-right px-4 py-2 font-medium">Nowych</th>
@@ -1094,6 +1098,9 @@ export default function SettingsPage() {
                         <tr key={entry.id} className="hover:bg-gray-50">
                           <td className="px-4 py-2 text-gray-400 text-xs whitespace-nowrap">
                             {new Date(entry.uploadedAt).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="px-4 py-2 text-xs text-gray-500 max-w-[180px] truncate" title={entry.fileName}>
+                            {entry.fileName}
                           </td>
                           <td className="px-4 py-2">
                             <span className="font-medium">{entry.blockName}</span>

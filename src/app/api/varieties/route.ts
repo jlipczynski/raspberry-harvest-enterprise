@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
         description: variety.description || null,
         yieldSummerPerShoot: variety.yieldSummerPerShoot != null ? parseFloat(variety.yieldSummerPerShoot) : null,
         yieldAutumnPerShoot: variety.yieldAutumnPerShoot != null ? parseFloat(variety.yieldAutumnPerShoot) : null,
-        baseTemp: variety.baseTemp != null ? parseFloat(variety.baseTemp) : 6.0,
+        baseTemp: variety.baseTemp != null ? parseFloat(variety.baseTemp) : null,
         // GDH progi — LATO
         gdhWinteredFlowerSummer: variety.gdhWinteredFlowerSummer != null ? parseInt(variety.gdhWinteredFlowerSummer) : null,
         gdhWinteredFruitSummer: variety.gdhWinteredFruitSummer != null ? parseInt(variety.gdhWinteredFruitSummer) : null,

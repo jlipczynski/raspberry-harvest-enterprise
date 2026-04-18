@@ -516,8 +516,12 @@ export default function PlanningPage() {
           weeklyKgMap.set(wk, { kg: day.kg, summerKg: day.summerKg, autumnKg: day.autumnKg, isPospiech: dayIsPospiech })
         }
       }
+      const fruitWeekNum = fruitDate ? getWeekNumber(new Date(fruitDate)) : null
       const weeklyKg = [...weeklyKgMap.entries()]
-        .map(([week, vals]) => ({ week, kg: vals.kg, summerKg: vals.summerKg, autumnKg: vals.autumnKg, isPospiech: vals.isPospiech }))
+        .map(([week, vals]) => ({
+          week, kg: vals.kg, summerKg: vals.summerKg, autumnKg: vals.autumnKg,
+          isPospiech: rushWeeksSummer > 0 && fruitWeekNum != null && week < fruitWeekNum,
+        }))
         .sort((a, b) => a.week - b.week)
 
       // Update weekMap for global aggregation

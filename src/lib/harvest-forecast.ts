@@ -95,14 +95,15 @@ export function calculateHarvestForecast(params: {
     year,
   } = params
 
-  // === 1. Oryginalna prognoza (GDH + krzywa odmiany) ===
-  const startWeek = gdhPredictedStartWeek || 22 // domyślnie tydzień 22 dla lata
-  const originalForecast: WeeklyForecast[] = varietyCurve.map((pct, i) => ({
-    week: startWeek + i,
-    weekDates: getWeekDates(startWeek + i, year),
-    kg: Math.round((pct / 100) * estimatedTotalKg),
-    pct,
-  }))
+  // === 1. Oryginalna prognoza (GDH + krzywa odmiany) — tylko gdy znamy start GDH ===
+  const originalForecast: WeeklyForecast[] = gdhPredictedStartWeek != null
+    ? varietyCurve.map((pct, i) => ({
+        week: gdhPredictedStartWeek! + i,
+        weekDates: getWeekDates(gdhPredictedStartWeek! + i, year),
+        kg: Math.round((pct / 100) * estimatedTotalKg),
+        pct,
+      }))
+    : []
 
   // === Rozdziel dane na pośpiech i komercyjne ===
   const preHarvestDays = actualHarvests.filter(h => h.isPreHarvest)

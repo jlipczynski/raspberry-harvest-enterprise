@@ -78,9 +78,7 @@ export async function GET(
       ? harvestSeason.commercialStartDate.toISOString().split('T')[0]
       : null
 
-    // Domyślny start week
-    const defaultStartWeek = season === 'summer' ? 22 : 33
-    let gdhPredictedStartWeek = defaultStartWeek
+    let gdhPredictedStartWeek: number | null = null
     if (gdhPredictedStartDate) {
       const d = new Date(gdhPredictedStartDate)
       const dayNum = d.getUTCDay() || 7

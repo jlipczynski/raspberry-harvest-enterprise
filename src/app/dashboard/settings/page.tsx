@@ -66,13 +66,47 @@ interface SectionImpact {
   fruitDateAfter: string | null
 }
 
+type ForecastData = {
+  meteoDays?: Array<{ date: string; avgTunnelTemp: number }>
+  scenarios?: { p50?: Array<{ date: string; avgTunnelTemp: number }> }
+} | null
+
+const GDH_UPPER = 26.0
+
+// Logger data + Meteo 16d forecast + P50 scenario — identycznie jak planning page
 function findThresholdDate(
   dailyGdh: Array<{ date: unknown; cumulativeGdh: number }>,
-  threshold: number | null
+  forecast: ForecastData,
+  threshold: number | null,
+  baseTemp: number
 ): string | null {
   if (threshold === null) return null
-  const hit = dailyGdh.find(d => d.cumulativeGdh >= threshold)
-  return hit ? String(hit.date).slice(0, 10) : null
+
+  // 1. Sprawdź czy logger już przekroczył próg
+  const fromLogger = dailyGdh.find(d => d.cumulativeGdh >= threshold)
+  if (fromLogger) return String(fromLogger.date).slice(0, 10)
+
+  // 2. Kontynuuj od ostatniego skumulowanego GDH loggera
+  let cumGdh = dailyGdh.length > 0 ? dailyGdh[dailyGdh.length - 1].cumulativeGdh : 0
+  const lastLoggerDate = dailyGdh.length > 0 ? String(dailyGdh[dailyGdh.length - 1].date).slice(0, 10) : ''
+
+  // 3. Prognoza Meteo 16d
+  for (const day of (forecast?.meteoDays ?? [])) {
+    if (day.date <= lastLoggerDate) continue
+    cumGdh += Math.max(0, Math.min(day.avgTunnelTemp, GDH_UPPER) - baseTemp) * 24
+    if (cumGdh >= threshold) return day.date
+  }
+
+  // 4. Scenariusz P50 (po 16 dniach)
+  const meteoDays = forecast?.meteoDays ?? []
+  const lastMeteoDate = meteoDays.length > 0 ? meteoDays[meteoDays.length - 1].date : lastLoggerDate
+  for (const day of (forecast?.scenarios?.p50 ?? [])) {
+    if (day.date <= lastMeteoDate) continue
+    cumGdh += Math.max(0, Math.min(day.avgTunnelTemp, GDH_UPPER) - baseTemp) * 24
+    if (cumGdh >= threshold) return day.date
+  }
+
+  return null
 }
 
 function daysDiff(a: string | null, b: string | null): number | null {
@@ -369,8 +403,14 @@ export default function SettingsPage() {
       getEffectiveSectionIds(i).forEach(id => targetSectionIds.add(id))
     }
 
-    // Pobierz GDH przed importem
-    type GdhSnapshot = { name: string; flowerThreshold: number | null; fruitThreshold: number | null; flowerDate: string | null; fruitDate: string | null }
+    // Pobierz GDH przed importem — zapisz dailyGdh + baseTemp do późniejszego przeliczenia z prognozą
+    type GdhSnapshot = {
+      name: string
+      baseTemp: number
+      flowerThreshold: number | null
+      fruitThreshold: number | null
+      dailyGdh: Array<{ date: unknown; cumulativeGdh: number }>
+    }
     const gdhBefore: Record<string, GdhSnapshot> = {}
     try {
       const res = await fetch('/api/gdh')
@@ -380,10 +420,10 @@ export default function SettingsPage() {
           if (targetSectionIds.has(s.id)) {
             gdhBefore[s.id] = {
               name: s.name,
+              baseTemp: s.baseTemp ?? 6.0,
               flowerThreshold: s.flowerThresholdSummer ?? null,
               fruitThreshold: s.fruitThresholdSummer ?? null,
-              flowerDate: findThresholdDate(s.dailyGdh, s.flowerThresholdSummer ?? null),
-              fruitDate: findThresholdDate(s.dailyGdh, s.fruitThresholdSummer ?? null),
+              dailyGdh: s.dailyGdh ?? [],
             }
           }
         }
@@ -421,17 +461,21 @@ export default function SettingsPage() {
     }
     setImportResults(results)
 
-    // Pobierz GDH po imporcie i oblicz wpływ na daty (tylko gdy wgrano coś nowego)
+    // Pobierz GDH po imporcie i oblicz wpływ na daty (logger + prognoza, jak planning page)
     const anyInserted = results.some(r => r.success && (r.totalInserted ?? 0) > 0)
     if (anyInserted && targetSectionIds.size > 0) {
       try {
         const res = await fetch('/api/gdh')
         if (res.ok) {
           const data = await res.json()
+          const forecast: ForecastData = data.forecast ?? null
           const impact: SectionImpact[] = []
           for (const s of (data.sections || [])) {
             if (!targetSectionIds.has(s.id)) continue
             const before = gdhBefore[s.id]
+            const baseTemp = s.baseTemp ?? before?.baseTemp ?? 6.0
+            const flowerThr = s.flowerThresholdSummer ?? null
+            const fruitThr = s.fruitThresholdSummer ?? null
             const insertedForSection = results
               .filter(r => r.success)
               .flatMap(r => r.sections ?? [])
@@ -441,12 +485,14 @@ export default function SettingsPage() {
               sectionId: s.id,
               sectionName: s.name,
               inserted: insertedForSection,
-              flowerThreshold: s.flowerThresholdSummer ?? null,
-              fruitThreshold: s.fruitThresholdSummer ?? null,
-              flowerDateBefore: before?.flowerDate ?? null,
-              fruitDateBefore: before?.fruitDate ?? null,
-              flowerDateAfter: findThresholdDate(s.dailyGdh, s.flowerThresholdSummer ?? null),
-              fruitDateAfter: findThresholdDate(s.dailyGdh, s.fruitThresholdSummer ?? null),
+              flowerThreshold: flowerThr,
+              fruitThreshold: fruitThr,
+              // PRZED: stary dailyGdh + ta sama prognoza (forecast jest ten sam — cached)
+              flowerDateBefore: before ? findThresholdDate(before.dailyGdh, forecast, flowerThr, baseTemp) : null,
+              fruitDateBefore: before ? findThresholdDate(before.dailyGdh, forecast, fruitThr, baseTemp) : null,
+              // PO: nowy dailyGdh (z importem) + prognoza
+              flowerDateAfter: findThresholdDate(s.dailyGdh ?? [], forecast, flowerThr, baseTemp),
+              fruitDateAfter: findThresholdDate(s.dailyGdh ?? [], forecast, fruitThr, baseTemp),
             })
           }
           setUploadImpact(impact)

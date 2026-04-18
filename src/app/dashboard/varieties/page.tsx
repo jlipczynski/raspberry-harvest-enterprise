@@ -47,7 +47,7 @@ export default function VarietiesPage() {
   const [formData, setFormData] = useState<{
     name: string; origin: string; description: string
     yieldSummerPerShoot: number; yieldAutumnPerShoot: number
-    baseTemp: number
+    baseTemp: number | null
     gdhWinteredFlowerSummer: number; gdhWinteredFruitSummer: number
     gdhPlantedFlowerSummer: number; gdhPlantedFruitSummer: number
     gdhLcFlowerSummer: number; gdhLcFruitSummer: number
@@ -58,7 +58,7 @@ export default function VarietiesPage() {
   }>({
     name: '', origin: '', description: '',
     yieldSummerPerShoot: 1.5, yieldAutumnPerShoot: 0.5,
-    baseTemp: 6.0,
+    baseTemp: null,
     gdhWinteredFlowerSummer: 0, gdhWinteredFruitSummer: 0,
     gdhPlantedFlowerSummer: 0, gdhPlantedFruitSummer: 0,
     gdhLcFlowerSummer: 0, gdhLcFruitSummer: 0,
@@ -88,7 +88,7 @@ export default function VarietiesPage() {
     setFormData({
       name: '', origin: '', description: '',
       yieldSummerPerShoot: 1.5, yieldAutumnPerShoot: 0.5,
-      baseTemp: 6.0,
+      baseTemp: null,
       gdhWinteredFlowerSummer: 0, gdhWinteredFruitSummer: 0,
       gdhPlantedFlowerSummer: 0, gdhPlantedFruitSummer: 0,
       gdhLcFlowerSummer: 0, gdhLcFruitSummer: 0,
@@ -109,7 +109,7 @@ export default function VarietiesPage() {
       description: variety.description || '',
       yieldSummerPerShoot: variety.yieldSummerPerShoot || 1.5,
       yieldAutumnPerShoot: variety.yieldAutumnPerShoot || 0.5,
-      baseTemp: variety.baseTemp || 6.0,
+      baseTemp: variety.baseTemp ?? null,
       gdhWinteredFlowerSummer: variety.gdhWinteredFlowerSummer || 0,
       gdhWinteredFruitSummer: variety.gdhWinteredFruitSummer || 0,
       gdhPlantedFlowerSummer: variety.gdhPlantedFlowerSummer || 0,
@@ -142,7 +142,7 @@ export default function VarietiesPage() {
       description: formData.description,
       yieldSummerPerShoot: formData.yieldSummerPerShoot,
       yieldAutumnPerShoot: formData.yieldAutumnPerShoot,
-      baseTemp: formData.baseTemp || null,
+      baseTemp: formData.baseTemp ?? null,
       gdhWinteredFlowerSummer: formData.gdhWinteredFlowerSummer || null,
       gdhWinteredFruitSummer: formData.gdhWinteredFruitSummer || null,
       gdhPlantedFlowerSummer: formData.gdhPlantedFlowerSummer || null,
@@ -304,8 +304,8 @@ export default function VarietiesPage() {
                       <div>
                         <label className="text-xs text-gray-500 font-medium">🌡️ Temperatura bazowa GDH (°C)</label>
                         <input type="number" step="0.5" className="w-full border rounded px-3 py-2 text-sm mt-1"
-                          value={formData.baseTemp || ''}
-                          onChange={(e) => setFormData({...formData, baseTemp: parseFloat(e.target.value) || 6.0})}
+                          value={formData.baseTemp ?? ''}
+                          onChange={(e) => setFormData({...formData, baseTemp: e.target.value ? parseFloat(e.target.value) : null})}
                           placeholder="6.0"
                         />
                       </div>
@@ -671,7 +671,7 @@ export default function VarietiesPage() {
                 </div>
                 <div className="bg-green-50 p-3 rounded">
                   <div className="text-green-600 text-xs">Temp. bazowa</div>
-                  <div className="font-semibold">{variety.baseTemp ?? '6.0'}°C</div>
+                  <div className="font-semibold">{variety.baseTemp != null ? `${variety.baseTemp}°C` : '—'}</div>
                 </div>
 
                 <div className="bg-blue-50 p-3 rounded">

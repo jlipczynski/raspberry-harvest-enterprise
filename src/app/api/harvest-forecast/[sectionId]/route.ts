@@ -31,10 +31,14 @@ export async function GET(
 
     const variety = section.variety
 
-    // Krzywa z odmiany (% na tydzień)
-    const varietyCurve = season === 'summer'
-      ? (variety.harvestCurveSummer as number[] || [5, 10, 15, 20, 20, 15, 10, 5])
-      : (variety.harvestCurveAutumn as number[] || [5, 15, 25, 25, 15, 10, 5])
+    // Krzywa z odmiany (% na tydzień) — brak = błąd, nie generuj danych
+    const rawCurve = season === 'summer'
+      ? (variety.harvestCurveSummer as number[])
+      : (variety.harvestCurveAutumn as number[])
+    if (!rawCurve || rawCurve.length === 0) {
+      return NextResponse.json({ error: 'Brak krzywej zbiorów dla odmiany — uzupełnij dane odmiany' }, { status: 422 })
+    }
+    const varietyCurve = rawCurve
 
     // Szacowany plon: shoots * yieldPerShoot
     const pots = (section.potsOverride != null && section.potsOverride > 0) ? section.potsOverride : section.metersLength * section.potsPerMeter

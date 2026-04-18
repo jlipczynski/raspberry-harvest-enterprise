@@ -12,8 +12,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Missing startDate/endDate' }, { status: 400 })
     }
     const farm = await prisma.farm.findFirst()
-    const lat = farm?.latitude || 51.75
-    const lon = farm?.longitude || 19.45
+    const lat = farm?.latitude
+    const lon = farm?.longitude
+    if (!lat || !lon) {
+      return NextResponse.json({ error: 'Brak współrzędnych GPS farmy — uzupełnij dane farmy' }, { status: 422 })
+    }
 
     const url = 'https://archive-api.open-meteo.com/v1/archive?latitude=' + lat + '&longitude=' + lon + '&start_date=' + startDate + '&end_date=' + endDate + '&daily=temperature_2m_max,temperature_2m_min&timezone=Europe/Warsaw'
     const response = await fetch(url)

@@ -92,8 +92,9 @@ export async function GET(request: Request) {
       allSections.map(async (section) => {
         const v = section.variety
 
-        // baseTemp: sekcja override → odmiana → domyślnie 6.0°C
-        const baseTemp = section.baseTemp ?? v?.baseTemp ?? 6.0
+        // baseTemp: sekcja override → odmiana → brak = pomiń sekcję
+        const baseTemp = section.baseTemp ?? v?.baseTemp ?? null
+        if (baseTemp === null) return null
 
         // If NOT wintered and has plantingDate → only count GDH from that date
         // (logger runs before planting but tunnel is empty, readings don't count)
@@ -231,17 +232,19 @@ export async function GET(request: Request) {
     // ── Forecast: Meteo 16d + 3 climate scenarios ──
     // Forecast GDH uses a reference baseTemp — median across all section varieties
     // Each section applies its own baseTemp when consuming the forecast on frontend
-    const allBaseTemps = allSections.map(s => s.variety?.baseTemp ?? s.baseTemp ?? 6.0)
+    const allBaseTemps = allSections
+      .map(s => s.variety?.baseTemp ?? s.baseTemp)
+      .filter((t): t is number => t != null)
     const forecastBaseTemp = allBaseTemps.length > 0
       ? allBaseTemps.sort((a, b) => a - b)[Math.floor(allBaseTemps.length / 2)]
-      : 6.0
+      : null
 
     let forecast = null
     const lat = farm.latitude
     const lon = farm.longitude
     const currentYear = new Date().getFullYear()
 
-    if (lat && lon) {
+    if (lat && lon && forecastBaseTemp !== null) {
       try {
         // === Cache check — tylko dla dynamic offset ===
         if (!useStaticOffset) {

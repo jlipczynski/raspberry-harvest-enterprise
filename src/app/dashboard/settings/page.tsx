@@ -84,28 +84,46 @@ function findThresholdDate(
 ): string | null {
   if (threshold === null) return null
 
-  // 1. Sprawdź czy logger już przekroczył próg
-  const fromLogger = dailyGdh.find(d => d.cumulativeGdh >= threshold)
-  if (fromLogger) return String(fromLogger.date).slice(0, 10)
-
-  // 2. Kontynuuj od ostatniego skumulowanego GDH loggera
-  let cumGdh = dailyGdh.length > 0 ? dailyGdh[dailyGdh.length - 1].cumulativeGdh : 0
-  const lastLoggerDate = dailyGdh.length > 0 ? String(dailyGdh[dailyGdh.length - 1].date).slice(0, 10) : ''
-
-  // 3. Prognoza Meteo 16d
-  for (const day of (forecast?.meteoDays ?? [])) {
-    if (day.date <= lastLoggerDate) continue
-    cumGdh += Math.max(0, Math.min(day.avgTunnelTemp, GDH_UPPER) - baseTemp) * 24
-    if (cumGdh >= threshold) return day.date
+  const toKey = (d: unknown): string => {
+    if (typeof d === 'string') return d.slice(0, 10)
+    return new Date(d as Date).toISOString().slice(0, 10)
   }
 
-  // 4. Scenariusz P50 (po 16 dniach)
-  const meteoDays = forecast?.meteoDays ?? []
-  const lastMeteoDate = meteoDays.length > 0 ? meteoDays[meteoDays.length - 1].date : lastLoggerDate
+  const dayGdh = (day: { avgTunnelTemp?: number; gdhTunnel?: number }): number => {
+    if (day.avgTunnelTemp != null) return Math.max(0, Math.min(day.avgTunnelTemp, GDH_UPPER) - baseTemp) * 24
+    return (day.gdhTunnel ?? 0)
+  }
+
+  // Zbuduj mapę: data → kumulatywne GDH (jak planning page)
+  const gdhMap = new Map<string, number>()
+  let lastRealGdh = 0
+  let lastRealDate = ''
+
+  for (const d of dailyGdh) {
+    const key = toKey(d.date)
+    gdhMap.set(key, d.cumulativeGdh)
+    lastRealGdh = d.cumulativeGdh
+    lastRealDate = key
+  }
+
+  // Meteo 16d — pomiń dni już pokryte przez logger
+  let cumGdh = lastRealGdh
+  for (const day of (forecast?.meteoDays ?? [])) {
+    if (day.date <= lastRealDate) continue
+    cumGdh += dayGdh(day)
+    gdhMap.set(day.date, Math.round(cumGdh))
+  }
+
+  // Scenariusz P50 — zaczyna się naturalnie po ostatnim dniu Meteo, bez dodatkowego filtru
   for (const day of (forecast?.scenarios?.p50 ?? [])) {
-    if (day.date <= lastMeteoDate) continue
-    cumGdh += Math.max(0, Math.min(day.avgTunnelTemp, GDH_UPPER) - baseTemp) * 24
-    if (cumGdh >= threshold) return day.date
+    cumGdh += dayGdh(day)
+    gdhMap.set(day.date, Math.round(cumGdh))
+  }
+
+  // Posortuj wszystkie wpisy, znajdź pierwsze przekroczenie progu
+  const entries = [...gdhMap.entries()].sort(([a], [b]) => a.localeCompare(b))
+  for (const [date, gdh] of entries) {
+    if (gdh >= threshold) return date
   }
 
   return null
@@ -422,7 +440,7 @@ export default function SettingsPage() {
           if (targetSectionIds.has(s.id)) {
             gdhBefore[s.id] = {
               name: s.name,
-              baseTemp: s.baseTemp ?? 6.0,
+              baseTemp: s.baseTemp,
               flowerThreshold: s.flowerThresholdSummer ?? null,
               fruitThreshold: s.fruitThresholdSummer ?? null,
               dailyGdh: s.dailyGdh ?? [],
@@ -475,7 +493,7 @@ export default function SettingsPage() {
           for (const s of (data.sections || [])) {
             if (!targetSectionIds.has(s.id)) continue
             const before = gdhBefore[s.id]
-            const baseTemp = s.baseTemp ?? before?.baseTemp ?? 6.0
+            const baseTemp = s.baseTemp
             const flowerThr = s.flowerThresholdSummer ?? null
             const fruitThr = s.fruitThresholdSummer ?? null
             const insertedForSection = results

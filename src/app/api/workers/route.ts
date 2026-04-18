@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         whatsapp: body.whatsapp || null,
         viber: body.viber || null,
         phone: body.phone || null,
-        efficiencyKgH: body.efficiencyKgH || 8.0,
+        efficiencyKgH: body.efficiencyKgH ?? null,
         isActive: body.isActive !== false,
         farmId: farm.id,
       }

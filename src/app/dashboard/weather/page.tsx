@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Cloud, Thermometer, TrendingUp, Target, RefreshCw } from 'lucide-react'
+import { GDH_BASE_TEMP } from '@/lib/forecast-calculator'
 
 interface WeatherRecord {
   id: string
@@ -21,46 +22,77 @@ interface Section {
   winteredInTunnel: boolean
   plantingDate: string | null
   autumnShootDate: string | null
-  variety?: { name: string }
+  gdhWinteredFruitSummer?: number | null
+  gdhPlantedFruitSummer?: number | null
+  gdhLcFruitSummer?: number | null
+  variety?: {
+    name: string
+    gdhWinteredFruitSummer?: number | null
+    gdhPlantedFruitSummer?: number | null
+    gdhLcFruitSummer?: number | null
+  }
 }
 
 export default function WeatherPage() {
   const [weatherData, setWeatherData] = useState<WeatherRecord[]>([])
   const [sections, setSections] = useState<Section[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingSections, setLoadingSections] = useState(true)
   const [currentYear] = useState(new Date().getFullYear())
 
   useEffect(() => {
-    fetchData()
+    // Pogoda ładuje się natychmiast
+    fetch('/api/weather')
+      .then(r => r.json())
+      .then(json => {
+        if (json.weatherData) {
+          setWeatherData(json.weatherData.sort((a: WeatherRecord, b: WeatherRecord) =>
+            new Date(b.date).getTime() - new Date(a.date).getTime()
+          ))
+        }
+      })
+      .catch(e => console.error('Weather fetch error:', e))
+      .finally(() => setLoading(false))
+
+    // Sekcje ładują się osobno — nie blokują wyświetlenia pogody
+    fetch('/api/plantation')
+      .then(r => r.json())
+      .then(json => {
+        if (json.blocks) {
+          setSections(json.blocks.flatMap((b: { name: string; sections: Section[] }) =>
+            b.sections.map((s: Section) => ({ ...s, blockName: b.name }))
+          ))
+        }
+      })
+      .catch(e => console.error('Plantation fetch error:', e))
+      .finally(() => setLoadingSections(false))
   }, [])
 
-  const fetchData = async () => {
-    try {
-      const [weatherRes, plantationRes] = await Promise.all([
-        fetch('/api/weather'),
-        fetch('/api/plantation')
-      ])
-      const weatherJson = await weatherRes.json()
-      const plantationJson = await plantationRes.json()
-      
-      if (weatherJson.weatherData) {
-        const sorted = weatherJson.weatherData.sort((a: WeatherRecord, b: WeatherRecord) => 
-          new Date(b.date).getTime() - new Date(a.date).getTime()
-        )
-        setWeatherData(sorted)
-      }
-      
-      if (plantationJson.blocks) {
-        const allSections = plantationJson.blocks.flatMap((b: { name: string; sections: Section[] }) =>
-          b.sections.map((s: Section) => ({ ...s, blockName: b.name }))
-        )
-        setSections(allSections)
-      }
-    } catch (e) {
-      console.error('Fetch error:', e)
-    } finally {
-      setLoading(false)
-    }
+  const fetchData = () => {
+    setLoading(true)
+    setLoadingSections(true)
+    fetch('/api/weather')
+      .then(r => r.json())
+      .then(json => {
+        if (json.weatherData) {
+          setWeatherData(json.weatherData.sort((a: WeatherRecord, b: WeatherRecord) =>
+            new Date(b.date).getTime() - new Date(a.date).getTime()
+          ))
+        }
+      })
+      .catch(e => console.error('Weather fetch error:', e))
+      .finally(() => setLoading(false))
+    fetch('/api/plantation')
+      .then(r => r.json())
+      .then(json => {
+        if (json.blocks) {
+          setSections(json.blocks.flatMap((b: { name: string; sections: Section[] }) =>
+            b.sections.map((s: Section) => ({ ...s, blockName: b.name }))
+          ))
+        }
+      })
+      .catch(e => console.error('Plantation fetch error:', e))
+      .finally(() => setLoadingSections(false))
   }
 
   const formatDate = (dateStr: string) => {
@@ -84,12 +116,20 @@ export default function WeatherPage() {
     return 0
   }
 
-  const getGDHThreshold = () => 20000 // TODO: pobierać z GDH API per sekcja (fruitThresholdSummer)
+  const getGDHThreshold = (section: Section): number | null => {
+    if (section.winteredInTunnel) {
+      return section.gdhWinteredFruitSummer ?? section.variety?.gdhWinteredFruitSummer ?? null
+    }
+    return section.gdhPlantedFruitSummer ?? section.variety?.gdhPlantedFruitSummer
+      ?? section.gdhLcFruitSummer ?? section.variety?.gdhLcFruitSummer ?? null
+  }
 
-  const estimateFruitingDate = (sectionGDH: number, threshold: number) => {
+  const estimateFruitingDate = (sectionGDH: number, threshold: number | null) => {
+    if (!threshold) return '—'
     const remaining = threshold - sectionGDH
     if (remaining <= 0) return 'Teraz!'
-    const avgDailyGDH = 150
+    const avgDailyGDH = last7Days.length > 0 ? last7GDH / Math.max(last7Days.length, 1) : null
+    if (!avgDailyGDH || avgDailyGDH <= 0) return '—'
     const daysRemaining = Math.ceil(remaining / avgDailyGDH)
     const date = new Date()
     date.setDate(date.getDate() + daysRemaining)
@@ -97,6 +137,7 @@ export default function WeatherPage() {
   }
 
   const getSourceBadge = (source: string) => {
+    if (source === 'API_HOURLY') return <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">Godzinowe</span>
     if (source === 'API_HISTORICAL' || source === 'API') return <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">API</span>
     if (source === 'FORECAST' || source === 'Prognoza') return <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">Prognoza</span>
     return <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded">Ręczny</span>
@@ -125,7 +166,7 @@ export default function WeatherPage() {
               <div>
                 <p className="text-sm text-green-700">Aktualne GDH ({currentYear})</p>
                 <p className="text-4xl font-bold text-green-800">{currentGDH.toLocaleString()}</p>
-                <p className="text-sm text-green-600">Temp. bazowa: 5°C</p>
+                <p className="text-sm text-green-600">Temp. bazowa: {GDH_BASE_TEMP}°C</p>
               </div>
               <TrendingUp className="w-12 h-12 text-green-500" />
             </div>
@@ -170,15 +211,17 @@ export default function WeatherPage() {
         <CardContent className="space-y-4">
           <div className="p-4 bg-green-50 rounded-lg border border-green-200">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-green-700">🌡️ GDH w tunelu (od 1.01)</span>
-              <span className="font-bold text-green-700">{currentGDH.toLocaleString()} / 20,000</span>
+              <span className="text-sm text-green-700">🌡️ GDH skumulowane (od 1.01, baza {GDH_BASE_TEMP}°C)</span>
+              <span className="font-bold text-green-700">{currentGDH.toLocaleString()}</span>
             </div>
             <div className="w-full h-4 bg-green-200 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-green-500 to-green-600 rounded-full" style={{ width: `${Math.min(100, (currentGDH / 20000) * 100)}%` }} />
+              <div className="h-full bg-gradient-to-r from-green-500 to-green-600 rounded-full" style={{ width: `${Math.min(100, currentGDH > 0 ? 50 : 0)}%` }} />
             </div>
           </div>
 
-          {sections.length > 0 && (
+          {loadingSections ? (
+            <div className="text-center text-gray-400 py-4 text-sm">Ładowanie sekcji...</div>
+          ) : sections.length > 0 && (
             <div className="space-y-3">
               <div className="grid grid-cols-5 gap-2 text-xs font-medium text-gray-500 px-2">
                 <span>Sekcja</span>
@@ -191,7 +234,7 @@ export default function WeatherPage() {
               {sections.slice(0, 10).map(section => {
                 const sectionGDH = getGDHForSection(section)
                 const threshold = getGDHThreshold(section)
-                const progress = (sectionGDH / threshold) * 100
+                const progress = threshold ? (sectionGDH / threshold) * 100 : 0
                 const fruitingDate = estimateFruitingDate(sectionGDH, threshold)
                 
                 return (

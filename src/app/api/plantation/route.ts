@@ -51,6 +51,13 @@ export async function POST(request: NextRequest) {
     if (!farm) {
       farm = await prisma.farm.create({ data: { name: body.name || 'Moja plantacja', tenantId } })
     }
+    if (body.block) {
+      const block = await prisma.block.create({
+        data: { name: body.block.name, farmId: farm.id },
+        include: { sections: true }
+      })
+      return NextResponse.json({ block, farm })
+    }
     return NextResponse.json({ farm })
   } catch (error) {
     console.error('Error:', error)

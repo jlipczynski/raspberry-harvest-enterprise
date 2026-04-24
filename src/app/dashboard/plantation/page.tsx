@@ -60,7 +60,16 @@ export default function PlantationPage() {
   const fetchData = async () => {
     try {
       const res = await fetch('/api/plantation')
+      if (!res.ok) {
+        console.error('fetchData failed:', res.status)
+        alert(`Błąd ładowania danych plantacji: ${res.status}`)
+        return
+      }
       const data = await res.json()
+      if (data.error) {
+        alert(`Błąd serwera: ${data.error}`)
+        return
+      }
       const bs = data.blocks || []
       setBlocks(bs); setVarieties(data.varieties || []); setFarm(data.farm)
       const counts: Record<string, number> = {}
@@ -68,7 +77,7 @@ export default function PlantationPage() {
         counts[s.id] = s._count?.temperatureReadings ?? 0
       }))
       setTempCounts(counts)
-    } catch (e) { console.error(e) } finally { setLoading(false) }
+    } catch (e) { console.error(e); alert(`Błąd sieci: ${e}`) } finally { setLoading(false) }
   }
 
   // Fetch temp counts for all sections
@@ -152,7 +161,8 @@ export default function PlantationPage() {
     setSectionForm({ ...sectionForm, varietyId: vid })
   }
   const saveSection = async (bid: string) => {
-    if (!sectionForm.name || !sectionForm.varietyId) return
+    if (!sectionForm.name) { alert('Wpisz nazwę sekcji'); return }
+    if (!sectionForm.varietyId) { alert('Wybierz odmianę'); return }
     const payload = {
       ...sectionForm,
       blockId: bid,

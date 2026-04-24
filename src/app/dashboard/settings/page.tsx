@@ -190,7 +190,9 @@ export default function SettingsPage() {
           location: data.farm.location || '',
           latitude: data.farm.latitude?.toString() || '',
           longitude: data.farm.longitude?.toString() || '',
-          seasonStartDate: data.farm.seasonStartDate || ''
+          seasonStartDate: data.farm.seasonStartDate
+            ? new Date(data.farm.seasonStartDate).toISOString().slice(0, 10)
+            : ''
         })
       }
     } catch (e) { console.error(e) }
@@ -217,12 +219,13 @@ export default function SettingsPage() {
         setTimeout(() => setImportStatus(''), 3000)
         fetchFarm()
       } else {
-        setImportStatus('❌ Błąd zapisu')
-        setTimeout(() => setImportStatus(''), 3000)
+        const err = await res.json().catch(() => ({}))
+        setImportStatus(`❌ Błąd zapisu: ${err.error || res.status}`)
+        setTimeout(() => setImportStatus(''), 8000)
       }
-    } catch {
-      setImportStatus('❌ Błąd połączenia')
-      setTimeout(() => setImportStatus(''), 3000)
+    } catch (e) {
+      setImportStatus(`❌ Błąd połączenia: ${e}`)
+      setTimeout(() => setImportStatus(''), 8000)
     }
     finally { setSaving(false) }
   }

@@ -160,9 +160,23 @@ export default function PlantationPage() {
       yieldAutumnPerShoot: sectionForm.yieldAutumnPerShoot !== '' ? Number(sectionForm.yieldAutumnPerShoot) : null,
       autumnShootDate: sectionForm.autumnShootDate || null,
     }
-    if (editingSection) await fetch(`/api/plantation/section/${editingSection.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    else await fetch('/api/plantation/section', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ section: payload }) })
-    resetSection(); fetchData()
+    try {
+      let res: Response
+      if (editingSection) {
+        res = await fetch(`/api/plantation/section/${editingSection.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      } else {
+        res = await fetch('/api/plantation/section', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ section: payload }) })
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(`Błąd zapisu sekcji: ${err.error || res.status}`)
+        return
+      }
+      resetSection()
+      await fetchData()
+    } catch (e) {
+      alert(`Błąd sieci: ${e}`)
+    }
   }
   const delSection = async (id: string) => { if (confirm('Usunąć sekcję?')) { await fetch(`/api/plantation/section/${id}`, { method: 'DELETE' }); fetchData() } }
 
@@ -187,6 +201,13 @@ export default function PlantationPage() {
         <div className="bg-green-50 rounded-xl p-4 border border-green-200 text-center"><p className="text-2xl font-bold text-green-700">{((totals.fs + totals.fa) / 1000).toFixed(1)}t</p><p className="text-xs text-green-700">Razem</p></div>
       </div>
 
+      {showBlockForm && (
+        <div className="bg-gray-50 rounded-xl p-5 border">
+          <div className="flex items-center justify-between mb-4"><h3 className="font-semibold">{editingBlock ? 'Edytuj blok' : 'Nowy blok'}</h3><Button variant="ghost" size="icon" className="hover:cursor-pointer" onClick={resetBlock}><X className="w-4 h-4" /></Button></div>
+          <div className="flex gap-3"><Input placeholder="Nazwa bloku" value={blockName} onChange={e => setBlockName(e.target.value)} className="flex-1" /><Button onClick={saveBlock} className="bg-green-600 hover:bg-green-700">{editingBlock ? 'Zapisz' : 'Dodaj'}</Button></div>
+        </div>
+      )}
+
       {/* GDH Module */}
       <div>
         <button
@@ -210,13 +231,6 @@ export default function PlantationPage() {
       {showGDH && (
         <div className="mt-3">
           <GDHMatrix initialData={gdhData} initialLoading={gdhLoading} />
-        </div>
-      )}
-
-      {showBlockForm && (
-        <div className="bg-gray-50 rounded-xl p-5 border">
-          <div className="flex items-center justify-between mb-4"><h3 className="font-semibold">{editingBlock ? 'Edytuj blok' : 'Nowy blok'}</h3><Button variant="ghost" size="icon" className="hover:cursor-pointer" onClick={resetBlock}><X className="w-4 h-4" /></Button></div>
-          <div className="flex gap-3"><Input placeholder="Nazwa bloku" value={blockName} onChange={e => setBlockName(e.target.value)} className="flex-1" /><Button onClick={saveBlock} className="bg-green-600 hover:bg-green-700">{editingBlock ? 'Zapisz' : 'Dodaj'}</Button></div>
         </div>
       )}
 

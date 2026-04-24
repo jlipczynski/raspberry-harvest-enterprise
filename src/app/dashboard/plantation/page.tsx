@@ -119,10 +119,24 @@ export default function PlantationPage() {
 
   const resetBlock = () => { setBlockName(''); setEditingBlock(null); setShowBlockForm(false) }
   const saveBlock = async () => {
-    if (!blockName.trim() || !farm) return
-    if (editingBlock) await fetch(`/api/plantation/block/${editingBlock.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: blockName }) })
-    else await fetch('/api/plantation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block: { name: blockName }, farmId: farm.id }) })
-    resetBlock(); fetchData()
+    if (!blockName.trim()) return
+    try {
+      let res: Response
+      if (editingBlock) {
+        res = await fetch(`/api/plantation/block/${editingBlock.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: blockName }) })
+      } else {
+        res = await fetch('/api/plantation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block: { name: blockName } }) })
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(`Błąd zapisu: ${err.error || res.status}`)
+        return
+      }
+      resetBlock()
+      await fetchData()
+    } catch (e) {
+      alert(`Błąd sieci: ${e}`)
+    }
   }
   const delBlock = async (id: string) => { if (confirm('Usunąć blok?')) { await fetch(`/api/plantation/block/${id}`, { method: 'DELETE' }); fetchData() } }
 

@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ section: newSection })
   } catch (error) {
     console.error('Error creating section:', error)
-    return NextResponse.json({ error: 'Failed to create section' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

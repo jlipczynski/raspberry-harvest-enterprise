@@ -163,6 +163,7 @@ export default function PlantationPage() {
   const saveSection = async (bid: string) => {
     if (!sectionForm.name) { alert('Wpisz nazwę sekcji'); return }
     if (!sectionForm.varietyId) { alert('Wybierz odmianę'); return }
+    console.log('[saveSection] bid:', bid, 'form:', sectionForm)
     const payload = {
       ...sectionForm,
       blockId: bid,

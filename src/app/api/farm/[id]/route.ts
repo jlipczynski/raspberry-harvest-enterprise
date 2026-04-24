@@ -25,7 +25,8 @@ export async function PATCH(
     return NextResponse.json({ farm })
   } catch (error) {
     console.error('Farm update error:', error)
-    return NextResponse.json({ error: 'Failed to update farm' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 

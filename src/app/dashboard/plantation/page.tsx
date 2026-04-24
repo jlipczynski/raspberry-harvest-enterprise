@@ -161,6 +161,7 @@ export default function PlantationPage() {
     setSectionForm({ ...sectionForm, varietyId: vid })
   }
   const saveSection = async (bid: string) => {
+    alert(`[DEBUG] saveSection wywołane. Nazwa: "${sectionForm.name}", Odmiana: "${sectionForm.varietyId}", Block: "${bid}"`)
     if (!sectionForm.name) { alert('Wpisz nazwę sekcji'); return }
     if (!sectionForm.varietyId) { alert('Wybierz odmianę'); return }
     console.log('[saveSection] bid:', bid, 'form:', sectionForm)

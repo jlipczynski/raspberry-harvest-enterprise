@@ -130,6 +130,7 @@ export default function DashboardPage() {
   const [gdhData, setGdhData] = useState<GdhApiResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [scenario, setScenario] = useState<'p10'|'p50'|'p90'|'best'>('best')
+  // eslint-disable-next-line react-hooks/purity
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
@@ -236,12 +237,12 @@ export default function DashboardPage() {
 
   // ==================== FIRST DATES ====================
   const firstFlower = useMemo(() => {
-    const future = flowerSections.filter(s => s.flowerDate && new Date(s.flowerDate).getTime() > Date.now()).map(s => s.flowerDate!)
+    const future = flowerSections.filter(s => s.flowerDate && new Date(s.flowerDate).getTime() > now).map(s => s.flowerDate!)
     return future.length ? future.sort()[0] : null
   }, [flowerSections])
 
   const firstFruit = useMemo(() => {
-    const future = fruitSections.filter(s => s.fruitDate && new Date(s.fruitDate).getTime() > Date.now()).map(s => s.fruitDate!)
+    const future = fruitSections.filter(s => s.fruitDate && new Date(s.fruitDate).getTime() > now).map(s => s.fruitDate!)
     return future.length ? future.sort()[0] : null
   }, [fruitSections])
 
@@ -366,7 +367,7 @@ export default function DashboardPage() {
                 <tbody>
                   {flowerSections.map(s => {
                     const cd = s.flowerDate ? countdown(s.flowerDate) : null
-                    const past = s.flowerDate && new Date(s.flowerDate).getTime() <= Date.now()
+                    const past = s.flowerDate && new Date(s.flowerDate).getTime() <= now
                     return (
                       <tr key={s.id} className="border-b last:border-0">
                         <td className="py-2 px-3 font-medium">{s.blockName} / {s.name}</td>
@@ -422,7 +423,7 @@ export default function DashboardPage() {
                 <tbody>
                   {fruitSections.map(s => {
                     const cd = s.fruitDate ? countdown(s.fruitDate) : null
-                    const past = s.fruitDate && new Date(s.fruitDate).getTime() <= Date.now()
+                    const past = s.fruitDate && new Date(s.fruitDate).getTime() <= now
                     return (
                       <tr key={s.id} className="border-b last:border-0">
                         <td className="py-2 px-3 font-medium">{s.blockName} / {s.name}</td>

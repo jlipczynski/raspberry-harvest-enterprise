@@ -15,6 +15,7 @@ vi.mock('@/lib/prisma', () => ({
   },
 }))
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockedPrisma = (await import('@/lib/prisma')) as any
 
 const makeRequest = (url: string, body?: unknown) => {
@@ -25,6 +26,7 @@ const makeRequest = (url: string, body?: unknown) => {
         body: JSON.stringify(body),
       }
     : { method: 'GET' }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return new NextRequest(url, init as any)
 }
 
@@ -69,6 +71,7 @@ describe('weather API', () => {
       ],
     })
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response = await weatherRoute.POST(request as any)
     const body = await response.json()
 

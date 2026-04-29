@@ -28,6 +28,12 @@ interface SectionGdh {
   dailyGdh: Array<{ date: string; dailyGdh: number; cumulativeGdh: number; readingCount: number }>
   currentGdh: number
   totalReadings: number
+  autumnShootDate: string | null
+  autumnGdhStartDate: string | null
+  autumnCurrentGdh: number
+  autumnFruitDate: string | null
+  autumnLastLoggerDate: string | null
+  gdhAutumnFruit: number | null
 }
 
 interface ForecastDay {
@@ -93,6 +99,7 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
   })
   const [offsetMode, setOffsetMode] = useState<'dynamic' | 'static'>('dynamic')
   const [staticOffset, setStaticOffset] = useState(4)
+  const [season, setSeason] = useState<'summer' | 'autumn'>('summer')
 
   // Sync danych z parenta — bez fetcha
   useEffect(() => {
@@ -133,132 +140,170 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
   // ── Build chart data: real + meteo + 3 scenarios ──
   const chartData = useMemo(() => {
     const points: ChartPoint[] = []
-    if (!selectedSection) return points
+    if (!selectedSection || !forecast) return points
 
     const toLabel = (d: string) => new Date(d).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })
     const toKey = (d: string | Date) => typeof d === 'string' ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10)
-
-    // If section has a planting date (non-wintered), skip all forecast days before it
-    const gdhStartDate = selectedSection.gdhStartDate || ''
-
-    // For sections with future planting date: add empty points from today to gdhStartDate
-    // so the X axis starts from today, but curves only begin at planting date
-    const todayStr = new Date().toISOString().slice(0, 10)
-    if (gdhStartDate && gdhStartDate > todayStr && selectedSection.dailyGdh.length === 0) {
-      // Add weekly empty ticks from today until planting date
-      const cursor = new Date(todayStr)
-      const plantDate = new Date(gdhStartDate)
-      while (cursor < plantDate) {
-        const key = cursor.toISOString().slice(0, 10)
-        points.push({ date: key, dateLabel: toLabel(key), realGdh: null, meteoGdh: null, p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
-        cursor.setDate(cursor.getDate() + 7) // weekly ticks
-      }
-    }
-
-    // Zone 1: Real data from CSV readings
-    let lastCumGdh = 0
-    for (const d of selectedSection.dailyGdh) {
-      const dateStr = toKey(d.date)
-      points.push({ date: dateStr, dateLabel: toLabel(dateStr), realGdh: d.cumulativeGdh, meteoGdh: null, p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
-      lastCumGdh = d.cumulativeGdh
-    }
-
-    if (!forecast) return points
-
-    // Zone 2: Meteo 16-day forecast
-    let cumMeteo = lastCumGdh
-    const lastRealDate = points.length > 0 ? points[points.length - 1].date : ''
-
-    // Bridge: last real point also starts meteo
-    const lastNonEmptyPoint = [...points].reverse().find(p => p.realGdh !== null)
-    if (lastNonEmptyPoint) {
-      lastNonEmptyPoint.meteoGdh = lastCumGdh
-    }
-
-    // Per-section GDH from tunnel temp using section's baseTemp
     const upperTemp = data?.gdhParams?.upperTemp ?? 26.0
-    const sectionBaseTemp = selectedSection.baseTemp
+    const baseTemp = selectedSection.baseTemp
     const gdhFromDay = (day: ForecastDay): number => {
-      if (day.avgTunnelTemp != null) {
-        const eff = Math.min(day.avgTunnelTemp, upperTemp)
-        return Math.max(0, eff - sectionBaseTemp) * 24
-      }
-      return day.gdhTunnel // fallback for old cached data
+      if (day.avgTunnelTemp != null) return Math.max(0, Math.min(day.avgTunnelTemp, upperTemp) - baseTemp) * 24
+      return day.gdhTunnel
     }
-
-    for (const day of forecast.meteoDays) {
-      if (day.date <= lastRealDate) continue
-      if (gdhStartDate && day.date < gdhStartDate) continue // skip before planting
-      cumMeteo += gdhFromDay(day)
-      points.push({ date: day.date, dateLabel: toLabel(day.date), realGdh: null, meteoGdh: Math.round(cumMeteo), p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
-    }
-
-    // Zone 3: Three climate scenarios (P10, P50, P90)
-    const lastMeteoGdh = cumMeteo
-
-    // Bridge: last meteo point starts scenarios
-    const lastMeteoPoint = [...points].reverse().find(p => p.meteoGdh !== null)
-    if (lastMeteoPoint) {
-      lastMeteoPoint.p10Gdh = lastMeteoGdh
-      lastMeteoPoint.p50Gdh = lastMeteoGdh
-      lastMeteoPoint.p90Gdh = lastMeteoGdh
-      lastMeteoPoint.bestGdh = lastMeteoGdh
-    } else if (gdhStartDate) {
-      // No meteo data before planting — add a zero-point at planting date as scenario start
-      points.push({ date: gdhStartDate, dateLabel: toLabel(gdhStartDate), realGdh: null, meteoGdh: null, p10Gdh: 0, p50Gdh: 0, p90Gdh: 0, bestGdh: 0 })
-    } else if (points.length > 0) {
-      points[points.length - 1].p10Gdh = lastCumGdh
-      points[points.length - 1].p50Gdh = lastCumGdh
-      points[points.length - 1].p90Gdh = lastCumGdh
-      points[points.length - 1].bestGdh = lastCumGdh
-    }
-
-    let cumP10 = lastMeteoGdh
-    let cumP50 = lastMeteoGdh
-    let cumP90 = lastMeteoGdh
-    let cumBest = lastMeteoGdh
-
-    const bestData = forecast.scenarios.best || []
-    const maxLen = Math.max(forecast.scenarios.p10.length, forecast.scenarios.p50.length, forecast.scenarios.p90.length, bestData.length)
     const endOfYearStr = `${new Date().getFullYear()}-12-31`
-    for (let i = 0; i < maxLen; i++) {
-      const dp10 = forecast.scenarios.p10[i]
-      const dp50 = forecast.scenarios.p50[i]
-      const dp90 = forecast.scenarios.p90[i]
-      const dBest = bestData[i]
-      const date = dp50?.date || dp10?.date || dp90?.date || dBest?.date
-      if (!date) continue
-      if (date > endOfYearStr) break
-      if (gdhStartDate && date < gdhStartDate) continue // skip before planting
+    const bestData = forecast.scenarios.best || []
 
-      cumP10 += dp10 ? gdhFromDay(dp10) : 0
-      cumP50 += dp50 ? gdhFromDay(dp50) : 0
-      cumP90 += dp90 ? gdhFromDay(dp90) : 0
-      cumBest += dBest ? gdhFromDay(dBest) : (dp50 ? gdhFromDay(dp50) : 0)
+    if (season === 'summer') {
+      const gdhStartDate = selectedSection.gdhStartDate || ''
+      const fruitThreshold = selectedSection.fruitThreshold
 
-      points.push({
-        date,
-        dateLabel: toLabel(date),
-        realGdh: null,
-        meteoGdh: null,
-        p10Gdh: Math.round(cumP10),
-        p50Gdh: Math.round(cumP50),
-        p90Gdh: Math.round(cumP90),
-        bestGdh: bestData.length > 0 ? Math.round(cumBest) : null,
-      })
+      // Zone 1: Real data — stop at fruitThreshold
+      let lastCumGdh = 0
+      const todayStr = new Date().toISOString().slice(0, 10)
+      if (gdhStartDate && gdhStartDate > todayStr && selectedSection.dailyGdh.length === 0) {
+        const cursor = new Date(todayStr)
+        while (cursor < new Date(gdhStartDate)) {
+          const key = cursor.toISOString().slice(0, 10)
+          points.push({ date: key, dateLabel: toLabel(key), realGdh: null, meteoGdh: null, p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
+          cursor.setDate(cursor.getDate() + 7)
+        }
+      }
+      for (const d of selectedSection.dailyGdh) {
+        const dateStr = toKey(d.date)
+        points.push({ date: dateStr, dateLabel: toLabel(dateStr), realGdh: d.cumulativeGdh, meteoGdh: null, p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
+        lastCumGdh = d.cumulativeGdh
+        if (fruitThreshold && lastCumGdh >= fruitThreshold) break
+      }
+
+      const lastRealDate = [...points].reverse().find(p => p.realGdh !== null)?.date ?? ''
+      const lastNonEmptyPoint = [...points].reverse().find(p => p.realGdh !== null)
+      if (lastNonEmptyPoint) lastNonEmptyPoint.meteoGdh = lastCumGdh
+
+      // Zone 2: Meteo — stop at fruitThreshold
+      let cumMeteo = lastCumGdh
+      for (const day of forecast.meteoDays) {
+        if (day.date <= lastRealDate) continue
+        if (gdhStartDate && day.date < gdhStartDate) continue
+        cumMeteo += gdhFromDay(day)
+        points.push({ date: day.date, dateLabel: toLabel(day.date), realGdh: null, meteoGdh: Math.round(cumMeteo), p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
+        if (fruitThreshold && cumMeteo >= fruitThreshold) break
+      }
+
+      const lastMeteoGdh = cumMeteo
+      const lastMeteoPoint = [...points].reverse().find(p => p.meteoGdh !== null)
+      if (lastMeteoPoint) {
+        lastMeteoPoint.p10Gdh = lastMeteoGdh
+        lastMeteoPoint.p50Gdh = lastMeteoGdh
+        lastMeteoPoint.p90Gdh = lastMeteoGdh
+        lastMeteoPoint.bestGdh = lastMeteoGdh
+      } else if (gdhStartDate) {
+        points.push({ date: gdhStartDate, dateLabel: toLabel(gdhStartDate), realGdh: null, meteoGdh: null, p10Gdh: 0, p50Gdh: 0, p90Gdh: 0, bestGdh: 0 })
+      } else if (points.length > 0) {
+        points[points.length - 1].p10Gdh = lastCumGdh
+        points[points.length - 1].p50Gdh = lastCumGdh
+        points[points.length - 1].p90Gdh = lastCumGdh
+        points[points.length - 1].bestGdh = lastCumGdh
+      }
+
+      // Zone 3: Scenarios — stop when P10 (slowest) crosses fruitThreshold
+      if (!fruitThreshold || cumMeteo < fruitThreshold) {
+        let cumP10 = lastMeteoGdh, cumP50 = lastMeteoGdh, cumP90 = lastMeteoGdh, cumBest = lastMeteoGdh
+        const maxLen = Math.max(forecast.scenarios.p10.length, forecast.scenarios.p50.length, forecast.scenarios.p90.length, bestData.length)
+        for (let i = 0; i < maxLen; i++) {
+          const dp10 = forecast.scenarios.p10[i], dp50 = forecast.scenarios.p50[i]
+          const dp90 = forecast.scenarios.p90[i], dBest = bestData[i]
+          const date = dp50?.date || dp10?.date || dp90?.date || dBest?.date
+          if (!date || date > endOfYearStr) break
+          if (gdhStartDate && date < gdhStartDate) continue
+          cumP10 += dp10 ? gdhFromDay(dp10) : 0
+          cumP50 += dp50 ? gdhFromDay(dp50) : 0
+          cumP90 += dp90 ? gdhFromDay(dp90) : 0
+          cumBest += dBest ? gdhFromDay(dBest) : (dp50 ? gdhFromDay(dp50) : 0)
+          points.push({ date, dateLabel: toLabel(date), realGdh: null, meteoGdh: null,
+            p10Gdh: Math.round(cumP10), p50Gdh: Math.round(cumP50),
+            p90Gdh: Math.round(cumP90), bestGdh: bestData.length > 0 ? Math.round(cumBest) : null })
+          if (fruitThreshold && cumP10 >= fruitThreshold) break
+        }
+      }
+
+    } else {
+      // === JESIEŃ ===
+      const autumnStart = selectedSection.autumnGdhStartDate ?? selectedSection.autumnShootDate
+      if (!autumnStart) return points
+      const autumnThreshold = selectedSection.gdhAutumnFruit
+
+      // Zone 1: Real autumn data — reset cumulative to 0 at autumnStart
+      let autumnCum = 0
+      let lastAutumnDate = ''
+      for (const d of selectedSection.dailyGdh) {
+        const dateStr = toKey(d.date)
+        if (dateStr < autumnStart) continue
+        autumnCum += d.dailyGdh
+        points.push({ date: dateStr, dateLabel: toLabel(dateStr), realGdh: Math.round(autumnCum), meteoGdh: null, p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
+        lastAutumnDate = dateStr
+        if (autumnThreshold && autumnCum >= autumnThreshold) break
+      }
+
+      const lastNonEmptyPoint = [...points].reverse().find(p => p.realGdh !== null)
+      if (lastNonEmptyPoint) lastNonEmptyPoint.meteoGdh = Math.round(autumnCum)
+
+      // Zone 2: Meteo
+      let cumMeteo = autumnCum
+      for (const day of forecast.meteoDays) {
+        if (day.date <= lastAutumnDate) continue
+        if (day.date < autumnStart) continue
+        cumMeteo += gdhFromDay(day)
+        points.push({ date: day.date, dateLabel: toLabel(day.date), realGdh: null, meteoGdh: Math.round(cumMeteo), p10Gdh: null, p50Gdh: null, p90Gdh: null, bestGdh: null })
+        if (autumnThreshold && cumMeteo >= autumnThreshold) break
+      }
+
+      const lastMeteoGdh = cumMeteo
+      const lastMeteoPoint = [...points].reverse().find(p => p.meteoGdh !== null)
+      if (lastMeteoPoint) {
+        lastMeteoPoint.p50Gdh = lastMeteoGdh
+        lastMeteoPoint.p90Gdh = lastMeteoGdh
+        lastMeteoPoint.bestGdh = lastMeteoGdh
+      } else if (points.length > 0) {
+        points[points.length - 1].p50Gdh = autumnCum
+        points[points.length - 1].p90Gdh = autumnCum
+        points[points.length - 1].bestGdh = autumnCum
+      }
+
+      // Zone 3: Scenarios — stop when P50 crosses autumnThreshold
+      if (!autumnThreshold || cumMeteo < autumnThreshold) {
+        let cumP50 = lastMeteoGdh, cumP90 = lastMeteoGdh, cumBest = lastMeteoGdh
+        const maxLen = Math.max(forecast.scenarios.p50.length, forecast.scenarios.p90.length, bestData.length)
+        for (let i = 0; i < maxLen; i++) {
+          const dp50 = forecast.scenarios.p50[i], dp90 = forecast.scenarios.p90[i], dBest = bestData[i]
+          const date = dp50?.date || dp90?.date || dBest?.date
+          if (!date || date > endOfYearStr) break
+          if (date < autumnStart) continue
+          cumP50 += dp50 ? gdhFromDay(dp50) : 0
+          cumP90 += dp90 ? gdhFromDay(dp90) : 0
+          cumBest += dBest ? gdhFromDay(dBest) : (dp50 ? gdhFromDay(dp50) : 0)
+          points.push({ date, dateLabel: toLabel(date), realGdh: null, meteoGdh: null,
+            p10Gdh: null, p50Gdh: Math.round(cumP50),
+            p90Gdh: Math.round(cumP90), bestGdh: bestData.length > 0 ? Math.round(cumBest) : null })
+          if (autumnThreshold && cumP50 >= autumnThreshold) break
+        }
+      }
     }
 
     return points
-  }, [selectedSection, forecast])
+  }, [selectedSection, forecast, season, data?.gdhParams?.upperTemp])
 
   // ── Reference lines for thresholds ──
   const refLines = useMemo(() => {
     if (!selectedSection) return []
     const lines: Array<{ y: number; label: string; color: string }> = []
-    if (selectedSection.flowerThreshold) lines.push({ y: selectedSection.flowerThreshold, label: 'Kwitnienie', color: '#f59e0b' })
-    if (selectedSection.fruitThreshold) lines.push({ y: selectedSection.fruitThreshold, label: 'Owocowanie', color: '#ef4444' })
+    if (season === 'summer') {
+      if (selectedSection.flowerThreshold) lines.push({ y: selectedSection.flowerThreshold, label: 'Kwitnienie', color: '#f59e0b' })
+      if (selectedSection.fruitThreshold) lines.push({ y: selectedSection.fruitThreshold, label: 'Owocowanie', color: '#ef4444' })
+    } else {
+      if (selectedSection.gdhAutumnFruit) lines.push({ y: selectedSection.gdhAutumnFruit, label: 'Owocowanie jesień', color: '#ef4444' })
+    }
     return lines
-  }, [selectedSection])
+  }, [selectedSection, season])
 
   // ── Predict dates for each scenario ──
   const scenarioPredictions = useMemo((): ScenarioPrediction[] | null => {
@@ -266,89 +311,86 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
 
     const findCrossing = (threshold: number | null, gdhKey: 'realGdh' | 'meteoGdh' | 'p10Gdh' | 'p50Gdh' | 'p90Gdh' | 'bestGdh') => {
       if (!threshold) return null
-      // Walk through all points, tracking cumulative across zones
       for (const pt of chartData) {
         const val = pt[gdhKey]
-        if (val !== null && val >= threshold) {
-          return new Date(pt.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })
-        }
+        if (val !== null && val >= threshold) return new Date(pt.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })
       }
       return null
     }
-
-    // Also check if real+meteo already crossed before scenarios
     const findFirstCrossing = (threshold: number | null) => {
       if (!threshold) return { date: null, zone: null }
       for (const pt of chartData) {
-        // Check in priority order
         if (pt.realGdh !== null && pt.realGdh >= threshold) return { date: new Date(pt.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' }), zone: 'real' }
         if (pt.meteoGdh !== null && pt.meteoGdh >= threshold) return { date: new Date(pt.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' }), zone: 'meteo' }
       }
       return { date: null, zone: null }
     }
 
-    const flowerReal = findFirstCrossing(selectedSection.flowerThreshold)
-    const fruitReal = findFirstCrossing(selectedSection.fruitThreshold)
-
     const hasBest = forecast?.scenarios?.best && forecast.scenarios.best.length > 0
+    const anom = forecast?.seasonalAnomaly
 
-    const rows: ScenarioPrediction[] = []
-
-    if (hasBest) {
-      const anom = forecast?.seasonalAnomaly
-      rows.push({
+    if (season === 'summer') {
+      const flowerReal = findFirstCrossing(selectedSection.flowerThreshold)
+      const fruitReal = findFirstCrossing(selectedSection.fruitThreshold)
+      const rows: ScenarioPrediction[] = []
+      if (hasBest) rows.push({
         label: `Prognoza 2026 (ECMWF${anom ? `: ${anom.avgAnomaly > 0 ? '+' : ''}${anom.avgAnomaly}K` : ''})`,
-        color: 'text-rose-700',
-        bgColor: 'bg-rose-50 border-rose-300',
-        flowerDate: flowerReal.date ?? findCrossing(selectedSection.flowerThreshold, 'bestGdh'),
-        flowerZone: flowerReal.zone ?? 'best',
-        fruitDate: fruitReal.date ?? findCrossing(selectedSection.fruitThreshold, 'bestGdh'),
-        fruitZone: fruitReal.zone ?? 'best',
+        color: 'text-rose-700', bgColor: 'bg-rose-50 border-rose-300',
+        flowerDate: flowerReal.date ?? findCrossing(selectedSection.flowerThreshold, 'bestGdh'), flowerZone: flowerReal.zone ?? 'best',
+        fruitDate: fruitReal.date ?? findCrossing(selectedSection.fruitThreshold, 'bestGdh'), fruitZone: fruitReal.zone ?? 'best',
       })
+      rows.push(
+        { label: 'Ciepły rok (P90)', color: 'text-orange-700', bgColor: 'bg-orange-50 border-orange-200',
+          flowerDate: flowerReal.date ?? findCrossing(selectedSection.flowerThreshold, 'p90Gdh'), flowerZone: flowerReal.zone ?? 'p90',
+          fruitDate: fruitReal.date ?? findCrossing(selectedSection.fruitThreshold, 'p90Gdh'), fruitZone: fruitReal.zone ?? 'p90' },
+        { label: 'Przeciętny rok (P50)', color: 'text-purple-700', bgColor: 'bg-purple-50 border-purple-200',
+          flowerDate: flowerReal.date ?? findCrossing(selectedSection.flowerThreshold, 'p50Gdh'), flowerZone: flowerReal.zone ?? 'p50',
+          fruitDate: fruitReal.date ?? findCrossing(selectedSection.fruitThreshold, 'p50Gdh'), fruitZone: fruitReal.zone ?? 'p50' },
+        { label: 'Zimny rok (P10)', color: 'text-sky-700', bgColor: 'bg-sky-50 border-sky-200',
+          flowerDate: flowerReal.date ?? findCrossing(selectedSection.flowerThreshold, 'p10Gdh'), flowerZone: flowerReal.zone ?? 'p10',
+          fruitDate: fruitReal.date ?? findCrossing(selectedSection.fruitThreshold, 'p10Gdh'), fruitZone: fruitReal.zone ?? 'p10' },
+      )
+      return rows
+    } else {
+      // Jesień — tylko owocowanie, bez kwitnienia
+      const threshold = selectedSection.gdhAutumnFruit
+      const fruitReal = findFirstCrossing(threshold)
+      const rows: ScenarioPrediction[] = []
+      if (hasBest) rows.push({
+        label: `Prognoza 2026 (ECMWF${anom ? `: ${anom.avgAnomaly > 0 ? '+' : ''}${anom.avgAnomaly}K` : ''})`,
+        color: 'text-rose-700', bgColor: 'bg-rose-50 border-rose-300',
+        flowerDate: null, flowerZone: null,
+        fruitDate: fruitReal.date ?? findCrossing(threshold, 'bestGdh'), fruitZone: fruitReal.zone ?? 'best',
+      })
+      rows.push(
+        { label: 'Ciepły rok (P90)', color: 'text-orange-700', bgColor: 'bg-orange-50 border-orange-200',
+          flowerDate: null, flowerZone: null,
+          fruitDate: fruitReal.date ?? findCrossing(threshold, 'p90Gdh'), fruitZone: fruitReal.zone ?? 'p90' },
+        { label: 'Przeciętny rok (P50)', color: 'text-purple-700', bgColor: 'bg-purple-50 border-purple-200',
+          flowerDate: null, flowerZone: null,
+          fruitDate: fruitReal.date ?? findCrossing(threshold, 'p50Gdh'), fruitZone: fruitReal.zone ?? 'p50' },
+      )
+      return rows
     }
-
-    rows.push(
-      {
-        label: 'Ciepły rok (P90)',
-        color: 'text-orange-700',
-        bgColor: 'bg-orange-50 border-orange-200',
-        flowerDate: flowerReal.date ?? findCrossing(selectedSection.flowerThreshold, 'p90Gdh'),
-        flowerZone: flowerReal.zone ?? 'p90',
-        fruitDate: fruitReal.date ?? findCrossing(selectedSection.fruitThreshold, 'p90Gdh'),
-        fruitZone: fruitReal.zone ?? 'p90',
-      },
-      {
-        label: 'Przeciętny rok (P50)',
-        color: 'text-purple-700',
-        bgColor: 'bg-purple-50 border-purple-200',
-        flowerDate: flowerReal.date ?? findCrossing(selectedSection.flowerThreshold, 'p50Gdh'),
-        flowerZone: flowerReal.zone ?? 'p50',
-        fruitDate: fruitReal.date ?? findCrossing(selectedSection.fruitThreshold, 'p50Gdh'),
-        fruitZone: fruitReal.zone ?? 'p50',
-      },
-      {
-        label: 'Zimny rok (P10)',
-        color: 'text-sky-700',
-        bgColor: 'bg-sky-50 border-sky-200',
-        flowerDate: flowerReal.date ?? findCrossing(selectedSection.flowerThreshold, 'p10Gdh'),
-        flowerZone: flowerReal.zone ?? 'p10',
-        fruitDate: fruitReal.date ?? findCrossing(selectedSection.fruitThreshold, 'p10Gdh'),
-        fruitZone: fruitReal.zone ?? 'p10',
-      },
-    )
-
-    return rows
-  }, [selectedSection, chartData, forecast?.scenarios?.best, forecast?.seasonalAnomaly])
+  }, [selectedSection, chartData, forecast?.scenarios?.best, forecast?.seasonalAnomaly, season])
 
   // ── Progress ──
   const currentProgress = useMemo(() => {
     if (!selectedSection) return null
-    const c = selectedSection.currentGdh
-    return {
-      flower: selectedSection.flowerThreshold ? Math.min(100, Math.round((c / selectedSection.flowerThreshold) * 100)) : null,
-      fruit: selectedSection.fruitThreshold ? Math.min(100, Math.round((c / selectedSection.fruitThreshold) * 100)) : null,
+    if (season === 'summer') {
+      const c = selectedSection.currentGdh
+      return {
+        flower: selectedSection.flowerThreshold ? Math.min(100, Math.round((c / selectedSection.flowerThreshold) * 100)) : null,
+        fruit: selectedSection.fruitThreshold ? Math.min(100, Math.round((c / selectedSection.fruitThreshold) * 100)) : null,
+      }
+    } else {
+      const c = selectedSection.autumnCurrentGdh ?? 0
+      return {
+        flower: null,
+        fruit: selectedSection.gdhAutumnFruit ? Math.min(100, Math.round((c / selectedSection.gdhAutumnFruit) * 100)) : null,
+      }
     }
-  }, [selectedSection])
+  }, [selectedSection, season])
 
   // Avg daily GDH from last 7 days
   const avgDailyGdh = useMemo(() => {
@@ -633,6 +675,40 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
           </div>
         </div>
 
+        {/* ── Season toggle ── */}
+        {selectedSection && selectedSection.autumnShootDate && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500 font-medium">Sezon GDH:</span>
+            <div className="flex rounded-lg overflow-hidden border border-gray-200">
+              <button
+                onClick={() => setSeason('summer')}
+                className={`px-4 py-1.5 text-xs font-semibold transition-colors ${
+                  season === 'summer'
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                Lato
+              </button>
+              <button
+                onClick={() => setSeason('autumn')}
+                className={`px-4 py-1.5 text-xs font-semibold transition-colors ${
+                  season === 'autumn'
+                    ? 'bg-orange-700 text-white'
+                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                Jesień
+              </button>
+            </div>
+            {season === 'autumn' && selectedSection.autumnShootDate && (
+              <span className="text-xs text-gray-400">
+                GDH liczone od pędów: {new Date(selectedSection.autumnShootDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* ── Section info ── */}
         {selectedSection && (
           <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
@@ -683,7 +759,7 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
               ...(forecast?.seasonalAnomaly ? [{ key: 'bestGdh', label: '2026 ECMWF', color: 'bg-rose-500', icon: null as React.ReactNode }] : []),
               { key: 'p90Gdh', label: 'P90 ciepły', color: 'bg-orange-400', icon: null as React.ReactNode },
               { key: 'p50Gdh', label: 'P50 typowy', color: 'bg-purple-500', icon: null as React.ReactNode },
-              { key: 'p10Gdh', label: 'P10 zimny', color: 'bg-sky-500', icon: null as React.ReactNode },
+              ...(season === 'summer' ? [{ key: 'p10Gdh', label: 'P10 zimny', color: 'bg-sky-500', icon: null as React.ReactNode }] : []),
             ].map(item => (
               <button
                 key={item.key}
@@ -768,7 +844,7 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
         ) : null}
 
         {/* ── Scenario predictions table ── */}
-        {selectedSection && scenarioPredictions && (selectedSection.flowerThreshold || selectedSection.fruitThreshold) && (
+        {selectedSection && scenarioPredictions && (selectedSection.flowerThreshold || selectedSection.fruitThreshold || selectedSection.gdhAutumnFruit) && (
           <div>
             <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 mb-3">
               <Target className="w-4 h-4 text-green-600" />
@@ -777,7 +853,7 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
 
             {/* Progress bars */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-              {selectedSection.flowerThreshold && currentProgress?.flower != null && (
+              {season === 'summer' && selectedSection.flowerThreshold && currentProgress?.flower != null && (
                 <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-sm font-medium text-amber-800">Kwitnienie</span>
@@ -791,10 +867,10 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
                   </div>
                 </div>
               )}
-              {selectedSection.fruitThreshold && currentProgress?.fruit != null && (
+              {season === 'summer' && selectedSection.fruitThreshold && currentProgress?.fruit != null && (
                 <div className="bg-red-50 rounded-lg p-3 border border-red-200">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-sm font-medium text-red-800">Owocowanie</span>
+                    <span className="text-sm font-medium text-red-800">Owocowanie lato</span>
                     <span className="text-xs text-red-600">{selectedSection.currentGdh.toLocaleString('pl-PL')} / {selectedSection.fruitThreshold.toLocaleString('pl-PL')} GDH</span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -802,6 +878,20 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
                       <div className="h-full bg-gradient-to-r from-red-400 to-red-500 rounded-full transition-all" style={{ width: `${currentProgress.fruit}%` }} />
                     </div>
                     <span className="text-sm font-bold text-red-700 w-12 text-right">{currentProgress.fruit}%</span>
+                  </div>
+                </div>
+              )}
+              {season === 'autumn' && selectedSection.gdhAutumnFruit && currentProgress?.fruit != null && (
+                <div className="bg-orange-50 rounded-lg p-3 border border-orange-200">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm font-medium text-orange-800">Owocowanie jesień</span>
+                    <span className="text-xs text-orange-600">{(selectedSection.autumnCurrentGdh ?? 0).toLocaleString('pl-PL')} / {selectedSection.gdhAutumnFruit.toLocaleString('pl-PL')} GDH</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-4 bg-orange-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-orange-400 to-orange-500 rounded-full transition-all" style={{ width: `${currentProgress.fruit}%` }} />
+                    </div>
+                    <span className="text-sm font-bold text-orange-700 w-12 text-right">{currentProgress.fruit}%</span>
                   </div>
                 </div>
               )}
@@ -813,14 +903,19 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="text-left px-4 py-2.5 font-medium text-gray-600">Scenariusz</th>
-                    {selectedSection.flowerThreshold && (
+                    {season === 'summer' && selectedSection.flowerThreshold && (
                       <th className="text-center px-4 py-2.5 font-medium text-amber-700">
                         Kwitnienie ({selectedSection.flowerThreshold.toLocaleString('pl-PL')} GDH)
                       </th>
                     )}
-                    {selectedSection.fruitThreshold && (
+                    {season === 'summer' && selectedSection.fruitThreshold && (
                       <th className="text-center px-4 py-2.5 font-medium text-red-700">
-                        Owocowanie ({selectedSection.fruitThreshold.toLocaleString('pl-PL')} GDH)
+                        Owocowanie lato ({selectedSection.fruitThreshold.toLocaleString('pl-PL')} GDH)
+                      </th>
+                    )}
+                    {season === 'autumn' && selectedSection.gdhAutumnFruit && (
+                      <th className="text-center px-4 py-2.5 font-medium text-orange-700">
+                        Owocowanie jesień ({selectedSection.gdhAutumnFruit.toLocaleString('pl-PL')} GDH)
                       </th>
                     )}
                   </tr>
@@ -829,7 +924,7 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
                   {scenarioPredictions.map((sc, i) => (
                     <tr key={i} className={sc.bgColor.replace('border-', 'hover:bg-').split(' ')[0]}>
                       <td className={`px-4 py-3 font-semibold ${sc.color}`}>{sc.label}</td>
-                      {selectedSection.flowerThreshold && (
+                      {season === 'summer' && selectedSection.flowerThreshold && (
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-2">
                             <span className="font-medium">{sc.flowerDate ?? 'Poza zasięgiem'}</span>
@@ -837,7 +932,15 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
                           </div>
                         </td>
                       )}
-                      {selectedSection.fruitThreshold && (
+                      {season === 'summer' && selectedSection.fruitThreshold && (
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <span className="font-medium">{sc.fruitDate ?? 'Poza zasięgiem'}</span>
+                            {zoneBadge(sc.fruitZone)}
+                          </div>
+                        </td>
+                      )}
+                      {season === 'autumn' && selectedSection.gdhAutumnFruit && (
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-2">
                             <span className="font-medium">{sc.fruitDate ?? 'Poza zasięgiem'}</span>

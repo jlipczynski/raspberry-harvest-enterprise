@@ -795,7 +795,7 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
                         <div className="bg-white p-3 border rounded-lg shadow-md text-xs">
                           <p className="font-medium mb-1.5 text-gray-700">Data: {label}</p>
                           {pt.realGdh != null && <p className="text-emerald-700">Realne: <strong>{pt.realGdh.toLocaleString('pl-PL')}</strong> GDH</p>}
-                          {pt.meteoGdh != null && <p className="text-blue-600">Meteo: <strong>{pt.meteoGdh.toLocaleString('pl-PL')}</strong> GDH</p>}
+                          {pt.meteoGdh != null && pt.realGdh == null && <p className="text-blue-600">Meteo: <strong>{pt.meteoGdh.toLocaleString('pl-PL')}</strong> GDH</p>}
                           {pt.bestGdh != null && <p className="text-rose-600 font-semibold">2026 ECMWF: <strong>{pt.bestGdh.toLocaleString('pl-PL')}</strong> GDH</p>}
                           {pt.p90Gdh != null && <p className="text-orange-600">P90 (ciepły): <strong>{pt.p90Gdh.toLocaleString('pl-PL')}</strong> GDH</p>}
                           {pt.p50Gdh != null && <p className="text-purple-600">P50 (typowy): <strong>{pt.p50Gdh.toLocaleString('pl-PL')}</strong> GDH</p>}

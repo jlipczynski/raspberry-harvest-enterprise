@@ -57,8 +57,8 @@ function percentile(values: number[], p: number): number {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const offsetModeParam = searchParams.get('offsetMode') || 'dynamic'
-    const staticOffsetParam = parseFloat(searchParams.get('staticOffset') || '4')
+    const offsetModeParam = searchParams.get('offsetMode') || 'static'
+    const staticOffsetParam = parseFloat(searchParams.get('staticOffset') || '4.5')
     const useStaticOffset = offsetModeParam === 'static'
 
     const tenantId = await requireTenantId()

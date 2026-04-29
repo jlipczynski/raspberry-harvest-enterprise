@@ -220,6 +220,7 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
 
     const bestData = forecast.scenarios.best || []
     const maxLen = Math.max(forecast.scenarios.p10.length, forecast.scenarios.p50.length, forecast.scenarios.p90.length, bestData.length)
+    const endOfYearStr = `${new Date().getFullYear()}-12-31`
     for (let i = 0; i < maxLen; i++) {
       const dp10 = forecast.scenarios.p10[i]
       const dp50 = forecast.scenarios.p50[i]
@@ -227,6 +228,7 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
       const dBest = bestData[i]
       const date = dp50?.date || dp10?.date || dp90?.date || dBest?.date
       if (!date) continue
+      if (date > endOfYearStr) break
       if (gdhStartDate && date < gdhStartDate) continue // skip before planting
 
       cumP10 += dp10 ? gdhFromDay(dp10) : 0
@@ -703,8 +705,8 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
         {/* ── Chart ── */}
         {selectedSection && chartData.length > 0 ? (
           <div className="bg-white rounded-lg border p-4">
-            <div className="h-[400px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="w-full">
+              <ResponsiveContainer width="100%" height={400}>
                 <LineChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} interval={Math.max(1, Math.floor(chartData.length / 16))} />

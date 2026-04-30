@@ -338,14 +338,10 @@ export async function GET(request: Request) {
           ? new Date(meteoDays[meteoDays.length - 1].date)
           : new Date()
 
-        // Initialize tunnel temps for each scenario from last meteo tunnel temp
-        const lastMeteoTunnel = meteoTunnelHourly.length > 0
-          ? meteoTunnelHourly[meteoTunnelHourly.length - 1]
-          : 10
-
-        let tunnelP10 = lastMeteoTunnel
-        let tunnelP50 = lastMeteoTunnel
-        let tunnelP90 = lastMeteoTunnel
+        // Scenario tunnel temps: steady-state (outdoor + offset), no inertia initialization needed
+        let tunnelP10 = 0
+        let tunnelP50 = 0
+        let tunnelP90 = 0
 
         const scenarioP10: Array<{ date: string; gdhTunnel: number; avgTunnelTemp: number }> = []
         const scenarioP50: Array<{ date: string; gdhTunnel: number; avgTunnelTemp: number }> = []
@@ -377,10 +373,12 @@ export async function GET(request: Request) {
             avgDailyOffset = (dayHours * dayOffset) / 24
           }
 
-          // Apply tunnel inertia to each scenario
-          tunnelP10 = tunnelTemp(t10, tunnelP10, TUNNEL_ALPHA, avgDailyOffset)
-          tunnelP50 = tunnelTemp(t50, tunnelP50, TUNNEL_ALPHA, avgDailyOffset)
-          tunnelP90 = tunnelTemp(t90, tunnelP90, TUNNEL_ALPHA, avgDailyOffset)
+          // Scenarios represent steady-state year types (P10=cold year, P90=warm year).
+          // The tunnel is already in equilibrium for that year — no inertia transition needed.
+          // Direct: tunnel = outdoor + offset (steady-state)
+          tunnelP10 = Math.min(t10 + avgDailyOffset, GDH_UPPER_TEMP)
+          tunnelP50 = Math.min(t50 + avgDailyOffset, GDH_UPPER_TEMP)
+          tunnelP90 = Math.min(t90 + avgDailyOffset, GDH_UPPER_TEMP)
 
           // Daily GDH for 24h at this tunnel temperature
           const gdhP10 = gdhForTemp(tunnelP10, 24, forecastBaseTemp)

@@ -246,31 +246,28 @@ export async function GET(request: Request) {
 
     if (lat && lon && forecastBaseTemp !== null) {
       try {
-        // === Cache check — tylko dla dynamic offset ===
-        if (!useStaticOffset) {
-          const cached = await prisma.forecastCache.findUnique({
-            where: { farmId: farm.id }
-          })
-          const cacheAgeMs = cached ? Date.now() - cached.cachedAt.getTime() : Infinity
-          const cacheValid = cacheAgeMs < 6 * 60 * 60 * 1000 // 6h — past_days muszą być świeże
+        // === Cache check — zawsze (cron zapisuje codziennie o 6:00) ===
+        const cached = await prisma.forecastCache.findUnique({
+          where: { farmId: farm.id }
+        })
+        const cacheAgeMs = cached ? Date.now() - cached.cachedAt.getTime() : Infinity
+        const cacheValid = cacheAgeMs < 6 * 60 * 60 * 1000 // 6h
 
-          if (cached && cacheValid) {
-            forecast = {
-              meteoDays: cached.meteoDays as { date: string; gdhTunnel: number; avgTunnelTemp: number }[],
-              scenarios: cached.scenarios as { p10: { date: string; gdhTunnel: number; avgTunnelTemp: number }[]; p50: { date: string; gdhTunnel: number; avgTunnelTemp: number }[]; p90: { date: string; gdhTunnel: number; avgTunnelTemp: number }[]; best?: { date: string; gdhTunnel: number; avgTunnelTemp: number }[] },
-              seasonalAnomaly: cached.seasonalAnomaly as { months: Array<{ month: string; anomaly: number }>; avgAnomaly: number; verdict: string } | null,
-              lastForecastDate: cached.lastForecastDate,
-              historicalYears: cached.historicalYears,
-              tunnelModel: {
-                alpha: TUNNEL_ALPHA,
-                offsetModel: 'dynamic',
-                staticOffset: null,
-                maxOffset: MAX_OFFSET,
-                radiationK: RADIATION_K,
-              },
-              fromCache: true,
-            }
-            // Pomiń cały fetch Open-Meteo — skocz do return
+        if (cached && cacheValid) {
+          forecast = {
+            meteoDays: cached.meteoDays as { date: string; gdhTunnel: number; avgTunnelTemp: number }[],
+            scenarios: cached.scenarios as { p10: { date: string; gdhTunnel: number; avgTunnelTemp: number }[]; p50: { date: string; gdhTunnel: number; avgTunnelTemp: number }[]; p90: { date: string; gdhTunnel: number; avgTunnelTemp: number }[]; best?: { date: string; gdhTunnel: number; avgTunnelTemp: number }[] },
+            seasonalAnomaly: cached.seasonalAnomaly as { months: Array<{ month: string; anomaly: number }>; avgAnomaly: number; verdict: string } | null,
+            lastForecastDate: cached.lastForecastDate,
+            historicalYears: cached.historicalYears,
+            tunnelModel: {
+              alpha: TUNNEL_ALPHA,
+              offsetModel: useStaticOffset ? 'static' : 'dynamic',
+              staticOffset: useStaticOffset ? staticOffsetParam : null,
+              maxOffset: MAX_OFFSET,
+              radiationK: RADIATION_K,
+            },
+            fromCache: true,
           }
         }
 
@@ -481,8 +478,8 @@ export async function GET(request: Request) {
           historicalYears,
         }
 
-        // Zapisz do cache jeśli dynamic offset
-        if (!useStaticOffset && forecast) {
+        // Zapisz do cache zawsze (cron też tu trafia gdy brak cache)
+        if (forecast) {
           await prisma.forecastCache.upsert({
             where: { farmId: farm.id },
             create: {

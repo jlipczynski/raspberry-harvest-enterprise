@@ -45,15 +45,15 @@ interface UploadResult {
   errors?: string[]
 }
 
-interface UploadHistoryEntry {
-  id: string
-  uploadedAt: string
-  fileName: string
-  blockName: string
-  sections: string[]
-  totalInFile: number
-  inserted: number
-  duplicates: number
+interface ImportHistoryEntry {
+  batchTime: string
+  importedAt: string
+  sourceFile: string
+  readingCount: number
+  dataFrom: string
+  dataTo: string
+  sectionNames: string[]
+  blockNames: string[]
 }
 
 interface SectionImpact {
@@ -165,16 +165,21 @@ export default function SettingsPage() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importResults, setImportResults] = useState<UploadResult[] | null>(null)
-  const [uploadHistory, setUploadHistory] = useState<UploadHistoryEntry[]>([])
+  const [uploadHistory, setUploadHistory] = useState<ImportHistoryEntry[]>([])
   const [uploadImpact, setUploadImpact] = useState<SectionImpact[] | null>(null)
   const [isDragging, setIsDragging] = useState(false)
 
-  useEffect(() => {
+  const fetchImportHistory = useCallback(async () => {
     try {
-      const stored = localStorage.getItem('temperatureUploadHistory')
-      if (stored) setUploadHistory(JSON.parse(stored))
+      const res = await fetch('/api/plantation/temperature-history')
+      if (res.ok) {
+        const data = await res.json()
+        setUploadHistory(data.history ?? [])
+      }
     } catch { /* ignore */ }
   }, [])
+
+  useEffect(() => { fetchImportHistory() }, [fetchImportHistory])
   const tempFileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { fetchFarm() }, [])
@@ -523,25 +528,9 @@ export default function SettingsPage() {
       } catch { /* ignoruj — import już się udał */ }
     }
 
-    // Zapisz udane importy do historii (localStorage)
-    const newEntries: UploadHistoryEntry[] = results
-      .filter(r => r.success)
-      .map(r => ({
-        id: crypto.randomUUID(),
-        uploadedAt: new Date().toISOString(),
-        fileName: r.fileName || '—',
-        blockName: r.blockName || r.sections?.[0]?.blockName || r.sections?.[0]?.sheetName || '—',
-        sections: (r.sections ?? []).map(s => s.sectionName || s.sectionId).filter(Boolean) as string[],
-        totalInFile: r.totalReadings ?? 0,
-        inserted: r.totalInserted ?? 0,
-        duplicates: (r.totalReadings ?? 0) - (r.totalInserted ?? 0),
-      }))
-    if (newEntries.length > 0) {
-      setUploadHistory(prev => {
-        const updated = [...newEntries, ...prev].slice(0, 100)
-        try { localStorage.setItem('temperatureUploadHistory', JSON.stringify(updated)) } catch { /* ignore */ }
-        return updated
-      })
+    // Odśwież historię z DB po udanym imporcie
+    if (results.some(r => r.success)) {
+      await fetchImportHistory()
     }
 
     setImporting(false)
@@ -1080,66 +1069,55 @@ export default function SettingsPage() {
           )}
 
           {/* Historia importów */}
-          {uploadHistory.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between text-base">
-                  <span className="flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-gray-500" />
-                    Historia importów
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-gray-400 text-xs"
-                    onClick={() => {
-                      setUploadHistory([])
-                      try { localStorage.removeItem('temperatureUploadHistory') } catch { /* ignore */ }
-                    }}
-                  >
-                    Wyczyść historię
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="w-5 h-5 text-gray-500" />
+                Historia importów temperatur
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {uploadHistory.length === 0 ? (
+                <p className="px-4 py-6 text-sm text-gray-400 text-center">Brak importów</p>
+              ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b bg-gray-50 text-gray-500 text-xs">
-                        <th className="text-left px-4 py-2 font-medium">Data i godzina</th>
+                        <th className="text-left px-4 py-2 font-medium">Data importu</th>
                         <th className="text-left px-4 py-2 font-medium">Plik</th>
                         <th className="text-left px-4 py-2 font-medium">Blok / Sekcja</th>
-                        <th className="text-right px-4 py-2 font-medium">W pliku</th>
-                        <th className="text-right px-4 py-2 font-medium">Nowych</th>
-                        <th className="text-right px-4 py-2 font-medium">Duplikatów</th>
+                        <th className="text-left px-4 py-2 font-medium">Dane od–do</th>
+                        <th className="text-right px-4 py-2 font-medium">Odczytów</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {uploadHistory.map(entry => (
-                        <tr key={entry.id} className="hover:bg-gray-50">
+                      {uploadHistory.map((entry, i) => (
+                        <tr key={`${entry.batchTime}-${i}`} className="hover:bg-gray-50">
                           <td className="px-4 py-2 text-gray-400 text-xs whitespace-nowrap">
-                            {new Date(entry.uploadedAt).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            {new Date(entry.importedAt).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </td>
-                          <td className="px-4 py-2 text-xs text-gray-500 max-w-[180px] truncate" title={entry.fileName}>
-                            {entry.fileName}
+                          <td className="px-4 py-2 text-xs text-gray-500 max-w-[180px] truncate" title={entry.sourceFile}>
+                            {entry.sourceFile}
                           </td>
                           <td className="px-4 py-2">
-                            <span className="font-medium">{entry.blockName}</span>
-                            {entry.sections.length > 0 && (
-                              <span className="text-gray-400 text-xs ml-1">→ {entry.sections.join(', ')}</span>
+                            <span className="font-medium">{entry.blockNames.join(', ')}</span>
+                            {entry.sectionNames.length > 0 && (
+                              <span className="text-gray-400 text-xs ml-1">→ {entry.sectionNames.join(', ')}</span>
                             )}
                           </td>
-                          <td className="px-4 py-2 text-right text-gray-500">{entry.totalInFile.toLocaleString('pl-PL')}</td>
-                          <td className="px-4 py-2 text-right font-medium text-green-700">{entry.inserted.toLocaleString('pl-PL')}</td>
-                          <td className="px-4 py-2 text-right text-gray-400">{entry.duplicates.toLocaleString('pl-PL')}</td>
+                          <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">
+                            {entry.dataFrom} – {entry.dataTo}
+                          </td>
+                          <td className="px-4 py-2 text-right font-medium text-green-700">{entry.readingCount.toLocaleString('pl-PL')}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

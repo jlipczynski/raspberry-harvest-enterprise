@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp, Thermometer, Loader2, TrendingUp } from 'lucide-react'
+import { Plus, Layers, X, Pencil, Trash2, ChevronDown, ChevronUp, Thermometer, Loader2, TrendingUp, FileText } from 'lucide-react'
+import Link from 'next/link'
 import GDHModule, { type ApiResponse as GdhApiResponse } from './gdh-module'
 import GDHMatrix from './gdh-matrix'
 
@@ -200,7 +201,12 @@ export default function PlantationPage() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-bold text-gray-900">Konfiguracja plantacji</h1><p className="text-gray-500">{farm?.name}</p></div>
-        <Button onClick={() => setShowBlockForm(true)} className="bg-green-600 hover:bg-green-700"><Plus className="w-4 h-4 mr-2" />Nowy blok</Button>
+        <div className="flex items-center gap-2">
+          <Link href="/dashboard/plantation/summary">
+            <Button variant="outline" className="border-green-600 text-green-700 hover:bg-green-50"><FileText className="w-4 h-4 mr-2" />Podsumowanie plantacji</Button>
+          </Link>
+          <Button onClick={() => setShowBlockForm(true)} className="bg-green-600 hover:bg-green-700"><Plus className="w-4 h-4 mr-2" />Nowy blok</Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-6 gap-3">

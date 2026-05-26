@@ -276,7 +276,7 @@ export async function GET(request: Request) {
 
         if (!forecast) {
         // === 1. Fetch 16-day hourly forecast from Open-Meteo (with radiation for dynamic offset) ===
-        const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,is_day,shortwave_radiation&forecast_days=16&past_days=30&timezone=Europe/Warsaw`
+        const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,is_day,shortwave_radiation&forecast_days=16&past_days=90&timezone=Europe/Warsaw`
         const forecastRes = await fetch(forecastUrl)
 
         let meteoHourly: Array<{ time: string; temp: number; isDay: number; radiation: number }> = []

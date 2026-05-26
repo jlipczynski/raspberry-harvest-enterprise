@@ -28,6 +28,7 @@ interface SectionGdh {
   dailyGdh: Array<{ date: string; dailyGdh: number; cumulativeGdh: number; readingCount: number }>
   currentGdh: number
   totalReadings: number
+  loggerGaps?: Array<{ from: string; to: string; days: number }>
   autumnShootDate: string | null
   autumnGdhStartDate: string | null
   autumnCurrentGdh: number
@@ -747,6 +748,15 @@ export default function GDHModule({ initialData, initialLoading }: Props) {
                 <p className="text-2xl font-bold text-green-800">{selectedSection.currentGdh.toLocaleString('pl-PL')}</p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── Ostrzeżenie o lukach w danych loggera ── */}
+        {selectedSection?.loggerGaps && selectedSection.loggerGaps.length > 0 && (
+          <div className="mx-4 mb-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+            <span className="font-semibold">⚠ Luki w danych loggera:</span>{' '}
+            {selectedSection.loggerGaps.map(g => `${g.from} – ${g.to} (${g.days} ${g.days === 1 ? 'dzień' : 'dni'})`).join(', ')}.{' '}
+            GDH za ten okres wynosi 0 — prognoza owocowania może być za późna.
           </div>
         )}
 

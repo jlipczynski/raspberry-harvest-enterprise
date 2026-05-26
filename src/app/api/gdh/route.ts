@@ -141,6 +141,22 @@ export async function GET(request: Request) {
           }
         })
 
+        // Wykryj luki w danych loggera (dni bez odczytów między pierwszym a ostatnim)
+        const loggerGaps: Array<{ from: string; to: string; days: number }> = []
+        for (let i = 1; i < dailyAgg.length; i++) {
+          const prev = new Date(String(dailyAgg[i - 1].date).slice(0, 10))
+          const curr = new Date(String(dailyAgg[i].date).slice(0, 10))
+          const diffDays = Math.round((curr.getTime() - prev.getTime()) / 86400000)
+          if (diffDays > 1) {
+            const gapFrom = new Date(prev); gapFrom.setDate(gapFrom.getDate() + 1)
+            loggerGaps.push({
+              from: gapFrom.toISOString().slice(0, 10),
+              to: new Date(String(dailyAgg[i].date).slice(0, 10)).toISOString().slice(0, 10),
+              days: diffDays - 1,
+            })
+          }
+        }
+
         // Determine thresholds based on section type — LATO + JESIEŃ
         let flowerThresholdSummer: number | null = null
         let fruitThresholdSummer: number | null = null
@@ -223,6 +239,7 @@ export async function GET(request: Request) {
           dailyGdh,
           currentGdh: Math.round(cumulative),
           totalReadings: dailyAgg.reduce((s, d) => s + d.cnt, 0),
+          loggerGaps,
         }
       })
     )

@@ -171,7 +171,7 @@ function SummaryTable({
                       key={row.section.id}
                       className={`px-2 py-2 text-xs whitespace-nowrap
                         ${isLastInTunnel ? `border-r-2 ${PALETTE[ci].divide}` : 'border-r border-gray-100'}
-                        ${numeric ? 'text-right tabular-nums font-medium' : 'text-center'}
+                        ${numeric ? 'text-center tabular-nums font-medium' : 'text-center'}
                         ${isEven ? 'bg-white' : 'bg-gray-50'}`}
                     >
                       {val}
@@ -179,7 +179,7 @@ function SummaryTable({
                   )
                 })}
                 {/* Total cell */}
-                <td className={`px-3 py-2 text-xs font-bold whitespace-nowrap ${numeric ? 'text-right tabular-nums text-amber-700 bg-amber-50' : 'text-center text-gray-300 bg-amber-50/40'}`}>
+                <td className={`px-3 py-2 text-xs font-bold whitespace-nowrap ${numeric ? 'text-center tabular-nums text-amber-700 bg-amber-50' : 'text-center text-gray-300 bg-amber-50/40'}`}>
                   {numeric ? (totals[key] ?? '—') : '—'}
                 </td>
               </tr>
@@ -195,8 +195,8 @@ function SummaryTable({
             {rows.map(() => (
               <td key={Math.random()} className="px-2 py-2.5 border-r border-amber-200" />
             ))}
-            <td className="px-3 py-2.5 bg-amber-200 text-right">
-              <div className="flex flex-col gap-0.5 items-end">
+            <td className="px-3 py-2.5 bg-amber-200 text-center">
+              <div className="flex flex-col gap-0.5 items-center">
                 <span className="text-[10px] text-amber-700 font-medium">{totals.meters} {isPl ? 'mb' : 'm'}</span>
                 <span className="text-[10px] text-amber-700 font-medium">{totals.pots} {isPl ? 'don.' : 'pots'}</span>
                 <span className="text-[10px] text-amber-700 font-medium">{totals.shoots} {isPl ? 'pędów' : 'shoots'}</span>

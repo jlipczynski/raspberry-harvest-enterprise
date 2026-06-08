@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "@/components/Header";
 import Modal from "@/components/Modal";
 import { api, jsonBody } from "@/lib/client";
@@ -19,15 +19,18 @@ export default function KlienciPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [edit, setEdit] = useState<CustomerRow | null>(null);
 
-  function load() {
-    setLoading(true);
-    api<CustomerRow[]>("/api/customers")
-      .then(setCustomers)
-      .catch((e) => setError(e instanceof Error ? e.message : "Błąd"))
-      .finally(() => setLoading(false));
-  }
+  const load = useCallback(
+    () =>
+      api<CustomerRow[]>("/api/customers")
+        .then(setCustomers)
+        .catch((e) => setError(e instanceof Error ? e.message : "Błąd"))
+        .finally(() => setLoading(false)),
+    []
+  );
 
-  useEffect(load, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();

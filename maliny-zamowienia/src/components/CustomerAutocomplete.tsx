@@ -19,13 +19,15 @@ export default function CustomerAutocomplete({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    const term = q.trim();
     if (timer.current) clearTimeout(timer.current);
-    if (q.trim().length < 1) {
-      setResults([]);
-      return;
-    }
     timer.current = setTimeout(() => {
-      api<Customer[]>(`/api/customers?q=${encodeURIComponent(q.trim())}`)
+      if (term.length < 1) {
+        setResults([]);
+        setOpen(false);
+        return;
+      }
+      api<Customer[]>(`/api/customers?q=${encodeURIComponent(term)}`)
         .then((d) => {
           setResults(d.slice(0, 20));
           setOpen(true);

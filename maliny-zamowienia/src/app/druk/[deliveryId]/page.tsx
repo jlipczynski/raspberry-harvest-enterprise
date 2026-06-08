@@ -8,7 +8,6 @@ import {
   formatKgNum,
   formatPhone,
   formatPLN,
-  fullName,
   weekday,
 } from "@/lib/format";
 

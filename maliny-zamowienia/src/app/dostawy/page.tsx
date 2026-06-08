@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
 import Modal from "@/components/Modal";
@@ -15,18 +15,21 @@ export default function DostawyPage() {
   const [error, setError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
-  function load() {
-    setLoading(true);
-    api<{ prices: Prices; summaries: DeliverySummary[] }>("/api/summary")
-      .then((d) => {
-        setSummaries(d.summaries);
-        setPrices(d.prices);
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : "Błąd"))
-      .finally(() => setLoading(false));
-  }
+  const load = useCallback(
+    () =>
+      api<{ prices: Prices; summaries: DeliverySummary[] }>("/api/summary")
+        .then((d) => {
+          setSummaries(d.summaries);
+          setPrices(d.prices);
+        })
+        .catch((e) => setError(e instanceof Error ? e.message : "Błąd"))
+        .finally(() => setLoading(false)),
+    []
+  );
 
-  useEffect(load, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   async function toggleStatus(s: DeliverySummary) {
     const next = s.delivery.status === "open" ? "closed" : "open";

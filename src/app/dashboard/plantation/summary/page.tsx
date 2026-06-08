@@ -192,8 +192,8 @@ function SummaryTable({
             <td className="px-3 py-2.5 font-bold text-xs text-amber-800 sticky left-0 bg-amber-50 uppercase tracking-wide">
               {totalLabel}
             </td>
-            {rows.map(() => (
-              <td key={Math.random()} className="px-2 py-2.5 border-r border-amber-200" />
+            {rows.map((_, i) => (
+              <td key={`total-${i}`} className="px-2 py-2.5 border-r border-amber-200" />
             ))}
             <td className="px-3 py-2.5 bg-amber-200 text-center">
               <div className="flex flex-col gap-0.5 items-center">

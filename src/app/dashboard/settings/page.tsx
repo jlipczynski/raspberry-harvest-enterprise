@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Settings, Download, Upload, Database, Bell, MapPin, Trash2, CheckCircle, Cloud, RefreshCw, Loader2, Thermometer, FileText, AlertTriangle, Plus, Cpu, FolderOpen, Search } from 'lucide-react'
+import { Settings, Download, Upload, Database, Bell, MapPin, Trash2, CheckCircle, Cloud, RefreshCw, Loader2, Thermometer, FileText, AlertTriangle, Plus, Cpu, FolderOpen, Search, Link2 } from 'lucide-react'
 import { parseCsvMetadata, type CsvMetadata } from '@/lib/csv-metadata-browser'
 
 interface Farm {
@@ -439,105 +439,100 @@ export default function SettingsPage() {
     } catch (e) { console.error(e) }
   }
 
-  // Folder scanning state
+  // Google Drive scanning state
   interface ScannedFile {
+    fileId: string
     fileName: string
-    file: File
     metadata: CsvMetadata
     matchedSections: Array<{ sectionId: string; sectionName: string; blockName: string }>
     alreadyImported: boolean
     selected: boolean
+    error?: string
   }
-  const [folderName, setFolderName] = useState<string | null>(null)
-  const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(null)
+  const [gdriveConnected, setGdriveConnected] = useState(false)
+  const [gdriveFolderId, setGdriveFolderId] = useState('')
+  const [gdriveFolderInput, setGdriveFolderInput] = useState('')
   const [scannedFiles, setScannedFiles] = useState<ScannedFile[]>([])
   const [scanning, setScanning] = useState(false)
   const [folderImporting, setFolderImporting] = useState(false)
 
-  const selectFolder = async () => {
-    try {
-      const handle = await window.showDirectoryPicker({ mode: 'read' })
-      setDirHandle(handle)
-      setFolderName(handle.name)
-      setScannedFiles([])
-    } catch {
-      // User cancelled picker
+  // Check Google Drive connection status
+  useEffect(() => {
+    if (activeTab !== 'sensors') return
+    fetch('/api/plantation/google-drive')
+      .then(r => r.json())
+      .then(data => {
+        setGdriveConnected(!!data.connected)
+        if (data.folderId) {
+          setGdriveFolderId(data.folderId)
+          setGdriveFolderInput(data.folderId)
+        }
+      })
+      .catch(() => {})
+  }, [activeTab])
+
+  // Check for OAuth callback result
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const gdrive = params.get('gdrive')
+    if (gdrive === 'success') {
+      setGdriveConnected(true)
+      setImportStatus('✓ Google Drive połączony pomyślnie')
+      setTimeout(() => setImportStatus(''), 3000)
+      // Clean URL
+      window.history.replaceState({}, '', '/dashboard/settings')
+    } else if (gdrive === 'error' || gdrive === 'no_refresh') {
+      setImportStatus('❌ Błąd połączenia z Google Drive')
+      setTimeout(() => setImportStatus(''), 5000)
+      window.history.replaceState({}, '', '/dashboard/settings')
     }
+  }, [])
+
+  const extractFolderId = (input: string): string => {
+    // Accept both raw folder ID and full Google Drive URL
+    const urlMatch = input.match(/folders\/([a-zA-Z0-9_-]+)/)
+    return urlMatch ? urlMatch[1] : input.trim()
   }
 
-  const scanFolder = useCallback(async () => {
-    if (!dirHandle) return
+  const scanDriveFolder = useCallback(async () => {
+    const folderId = extractFolderId(gdriveFolderInput)
+    if (!folderId) return
     setScanning(true)
     setScannedFiles([])
 
     try {
-      // Load sensor devices and already-imported files in parallel
-      const [devicesRes, importedRes] = await Promise.all([
-        fetch('/api/plantation/sensor-devices'),
-        fetch('/api/plantation/imported-files')
-      ])
-      const devices: SensorDeviceRow[] = devicesRes.ok ? (await devicesRes.json()).devices || [] : []
-      const importedFiles: string[] = importedRes.ok ? (await importedRes.json()).files || [] : []
-      const importedSet = new Set(importedFiles)
-
-      // Build serial → sections map
-      const serialMap = new Map<string, Array<{ sectionId: string; sectionName: string; blockName: string }>>()
-      for (const d of devices) {
-        const existing = serialMap.get(d.serialNumber) || []
-        existing.push({
-          sectionId: d.section.id,
-          sectionName: d.section.name || '(bez nazwy)',
-          blockName: d.section.block.name
-        })
-        serialMap.set(d.serialNumber, existing)
-      }
-
-      // Scan CSV files from folder
-      const results: ScannedFile[] = []
-      for await (const entry of dirHandle.values()) {
-        if (entry.kind !== 'file') continue
-        const name = entry.name.toLowerCase()
-        if (!name.endsWith('.csv')) continue
-
-        try {
-          const fileHandle = await dirHandle.getFileHandle(entry.name)
-          const file = await fileHandle.getFile()
-          const content = await file.text()
-          const metadata = parseCsvMetadata(content)
-
-          // Match by serial number
-          const matched = metadata.serialNumber ? (serialMap.get(metadata.serialNumber) || []) : []
-
-          results.push({
-            fileName: entry.name,
-            file,
-            metadata,
-            matchedSections: matched,
-            alreadyImported: importedSet.has(entry.name),
-            selected: !importedSet.has(entry.name) && matched.length > 0
-          })
-        } catch (e) {
-          console.error(`Error reading ${entry.name}:`, e)
-        }
-      }
-
-      // Sort: new unimported first, then imported
-      results.sort((a, b) => {
-        if (a.alreadyImported !== b.alreadyImported) return a.alreadyImported ? 1 : -1
-        return a.fileName.localeCompare(b.fileName)
+      const res = await fetch('/api/plantation/google-drive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId }),
       })
 
-      setScannedFiles(results)
+      if (!res.ok) {
+        const data = await res.json()
+        setImportStatus(`❌ ${data.error || 'Błąd skanowania'}`)
+        setTimeout(() => setImportStatus(''), 3000)
+        setScanning(false)
+        return
+      }
+
+      const data = await res.json()
+      setGdriveFolderId(data.folderId || folderId)
+
+      const files: ScannedFile[] = (data.files || []).map((f: ScannedFile) => ({
+        ...f,
+        selected: !f.alreadyImported && f.matchedSections.length > 0,
+      }))
+
+      setScannedFiles(files)
     } catch (e) {
-      console.error('Scan error:', e)
-      setImportStatus('❌ Błąd skanowania folderu')
+      console.error('Drive scan error:', e)
+      setImportStatus('❌ Błąd skanowania Google Drive')
       setTimeout(() => setImportStatus(''), 3000)
     }
     setScanning(false)
-  }, [dirHandle])
+  }, [gdriveFolderInput])
 
   const importScannedFiles = useCallback(async () => {
-    if (!farm) return
     const toImport = scannedFiles.filter(f => f.selected && !f.alreadyImported && f.matchedSections.length > 0)
     if (toImport.length === 0) return
 
@@ -547,13 +542,16 @@ export default function SettingsPage() {
 
     for (const scanned of toImport) {
       for (const section of scanned.matchedSections) {
-        const fd = new FormData()
-        fd.append('file', scanned.file)
-        fd.append('farmId', farm.id)
-        fd.append('targetSectionId', section.sectionId)
-
         try {
-          const res = await fetch('/api/plantation/temperature-upload', { method: 'POST', body: fd })
+          const res = await fetch('/api/plantation/google-drive/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileId: scanned.fileId,
+              fileName: scanned.fileName,
+              sectionId: section.sectionId,
+            }),
+          })
           if (res.ok) {
             const data = await res.json()
             if (data.success) successCount++
@@ -577,8 +575,8 @@ export default function SettingsPage() {
     setTimeout(() => setImportStatus(''), 5000)
 
     // Re-scan to update statuses
-    scanFolder()
-  }, [farm, scannedFiles, scanFolder])
+    scanDriveFolder()
+  }, [scannedFiles, scanDriveFolder])
 
   // Temperature import handlers
   const handleTempFilesSelected = useCallback(async (files: FileList | File[]) => {
@@ -1477,40 +1475,58 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Skanowanie folderu */}
+          {/* Google Drive */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <FolderOpen className="w-5 h-5 text-blue-600" />
-                Import z folderu Google Drive
+                <Cloud className="w-5 h-5 text-blue-600" />
+                Import z Google Drive
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-gray-600 mb-4">
-                Wskaż folder zsynchronizowany z Google Drive. System przeskanuje pliki CSV,
-                rozpozna urządzenia po numerze seryjnym i pokaże co jest nowe do importu.
-              </p>
+              {!gdriveConnected ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-600">
+                    Połącz konto Google, aby skanować pliki CSV bezpośrednio z Google Drive.
+                  </p>
+                  <Button
+                    onClick={() => { window.location.href = '/api/auth/google-drive' }}
+                    className="bg-blue-600 hover:bg-blue-700"
+                    size="sm"
+                  >
+                    <Link2 className="w-4 h-4 mr-1" />
+                    Połącz Google Drive
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    <CheckCircle className="w-4 h-4 inline-block text-green-500 mr-1" />
+                    Google Drive połączony. Wklej link do folderu lub ID folderu.
+                  </p>
 
-              <div className="flex items-center gap-3 mb-4">
-                <Button onClick={selectFolder} variant="outline" size="sm">
-                  <FolderOpen className="w-4 h-4 mr-1" />
-                  {folderName ? 'Zmień folder' : 'Wybierz folder'}
-                </Button>
-                {folderName && (
-                  <>
-                    <span className="text-sm text-gray-600">
-                      <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">{folderName}</span>
-                    </span>
-                    <Button onClick={scanFolder} disabled={scanning} size="sm" className="bg-green-600 hover:bg-green-700">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Input
+                      value={gdriveFolderInput}
+                      onChange={e => setGdriveFolderInput(e.target.value)}
+                      placeholder="https://drive.google.com/drive/folders/... lub ID folderu"
+                      className="flex-1 text-sm"
+                    />
+                    <Button
+                      onClick={scanDriveFolder}
+                      disabled={scanning || !gdriveFolderInput.trim()}
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700"
+                    >
                       {scanning ? (
                         <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Skanowanie...</>
                       ) : (
                         <><Search className="w-4 h-4 mr-1" />Skanuj</>
                       )}
                     </Button>
-                  </>
-                )}
-              </div>
+                  </div>
+                </>
+              )}
 
               {/* Wyniki skanowania */}
               {scannedFiles.length > 0 && (
@@ -1530,7 +1546,7 @@ export default function SettingsPage() {
                       </thead>
                       <tbody className="divide-y">
                         {scannedFiles.map((sf, i) => (
-                          <tr key={sf.fileName} className={`hover:bg-gray-50 ${sf.alreadyImported ? 'opacity-50' : ''}`}>
+                          <tr key={sf.fileId} className={`hover:bg-gray-50 ${sf.alreadyImported ? 'opacity-50' : ''}`}>
                             <td className="px-2 py-2 text-center">
                               {!sf.alreadyImported && sf.matchedSections.length > 0 && (
                                 <input
@@ -1619,16 +1635,10 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {scannedFiles.length === 0 && folderName && !scanning && (
+              {scannedFiles.length === 0 && gdriveConnected && gdriveFolderId && !scanning && (
                 <p className="text-sm text-gray-400 text-center py-4">
-                  Kliknij &quot;Skanuj&quot; aby przeszukać folder
+                  Kliknij &quot;Skanuj&quot; aby przeszukać folder na Google Drive
                 </p>
-              )}
-
-              {!folderName && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
-                  Wybierz folder z plikami CSV z rejestratorów Testo. Działa w Chrome i Edge.
-                </div>
               )}
             </CardContent>
           </Card>

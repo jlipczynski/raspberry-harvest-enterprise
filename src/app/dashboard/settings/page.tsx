@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Settings, Download, Upload, Database, Bell, MapPin, Trash2, CheckCircle, Cloud, RefreshCw, Loader2, Thermometer, FileText, AlertTriangle, Plus, Cpu } from 'lucide-react'
+import { Settings, Download, Upload, Database, Bell, MapPin, Trash2, CheckCircle, Cloud, RefreshCw, Loader2, Thermometer, FileText, AlertTriangle, Plus, Cpu, FolderOpen, Search } from 'lucide-react'
+import { parseCsvMetadata, type CsvMetadata } from '@/lib/csv-metadata-browser'
 
 interface Farm {
   id: string
@@ -437,6 +438,147 @@ export default function SettingsPage() {
       if (res.ok) fetchSensorDevices()
     } catch (e) { console.error(e) }
   }
+
+  // Folder scanning state
+  interface ScannedFile {
+    fileName: string
+    file: File
+    metadata: CsvMetadata
+    matchedSections: Array<{ sectionId: string; sectionName: string; blockName: string }>
+    alreadyImported: boolean
+    selected: boolean
+  }
+  const [folderName, setFolderName] = useState<string | null>(null)
+  const [dirHandle, setDirHandle] = useState<FileSystemDirectoryHandle | null>(null)
+  const [scannedFiles, setScannedFiles] = useState<ScannedFile[]>([])
+  const [scanning, setScanning] = useState(false)
+  const [folderImporting, setFolderImporting] = useState(false)
+
+  const selectFolder = async () => {
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'read' })
+      setDirHandle(handle)
+      setFolderName(handle.name)
+      setScannedFiles([])
+    } catch {
+      // User cancelled picker
+    }
+  }
+
+  const scanFolder = useCallback(async () => {
+    if (!dirHandle) return
+    setScanning(true)
+    setScannedFiles([])
+
+    try {
+      // Load sensor devices and already-imported files in parallel
+      const [devicesRes, importedRes] = await Promise.all([
+        fetch('/api/plantation/sensor-devices'),
+        fetch('/api/plantation/imported-files')
+      ])
+      const devices: SensorDeviceRow[] = devicesRes.ok ? (await devicesRes.json()).devices || [] : []
+      const importedFiles: string[] = importedRes.ok ? (await importedRes.json()).files || [] : []
+      const importedSet = new Set(importedFiles)
+
+      // Build serial → sections map
+      const serialMap = new Map<string, Array<{ sectionId: string; sectionName: string; blockName: string }>>()
+      for (const d of devices) {
+        const existing = serialMap.get(d.serialNumber) || []
+        existing.push({
+          sectionId: d.section.id,
+          sectionName: d.section.name || '(bez nazwy)',
+          blockName: d.section.block.name
+        })
+        serialMap.set(d.serialNumber, existing)
+      }
+
+      // Scan CSV files from folder
+      const results: ScannedFile[] = []
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind !== 'file') continue
+        const name = entry.name.toLowerCase()
+        if (!name.endsWith('.csv')) continue
+
+        try {
+          const fileHandle = await dirHandle.getFileHandle(entry.name)
+          const file = await fileHandle.getFile()
+          const content = await file.text()
+          const metadata = parseCsvMetadata(content)
+
+          // Match by serial number
+          const matched = metadata.serialNumber ? (serialMap.get(metadata.serialNumber) || []) : []
+
+          results.push({
+            fileName: entry.name,
+            file,
+            metadata,
+            matchedSections: matched,
+            alreadyImported: importedSet.has(entry.name),
+            selected: !importedSet.has(entry.name) && matched.length > 0
+          })
+        } catch (e) {
+          console.error(`Error reading ${entry.name}:`, e)
+        }
+      }
+
+      // Sort: new unimported first, then imported
+      results.sort((a, b) => {
+        if (a.alreadyImported !== b.alreadyImported) return a.alreadyImported ? 1 : -1
+        return a.fileName.localeCompare(b.fileName)
+      })
+
+      setScannedFiles(results)
+    } catch (e) {
+      console.error('Scan error:', e)
+      setImportStatus('❌ Błąd skanowania folderu')
+      setTimeout(() => setImportStatus(''), 3000)
+    }
+    setScanning(false)
+  }, [dirHandle])
+
+  const importScannedFiles = useCallback(async () => {
+    if (!farm) return
+    const toImport = scannedFiles.filter(f => f.selected && !f.alreadyImported && f.matchedSections.length > 0)
+    if (toImport.length === 0) return
+
+    setFolderImporting(true)
+    let successCount = 0
+    let errorCount = 0
+
+    for (const scanned of toImport) {
+      for (const section of scanned.matchedSections) {
+        const fd = new FormData()
+        fd.append('file', scanned.file)
+        fd.append('farmId', farm.id)
+        fd.append('targetSectionId', section.sectionId)
+
+        try {
+          const res = await fetch('/api/plantation/temperature-upload', { method: 'POST', body: fd })
+          if (res.ok) {
+            const data = await res.json()
+            if (data.success) successCount++
+            else errorCount++
+          } else {
+            errorCount++
+          }
+        } catch {
+          errorCount++
+        }
+      }
+    }
+
+    setFolderImporting(false)
+
+    if (successCount > 0) {
+      setImportStatus(`✓ Zaimportowano ${successCount} plik${successCount === 1 ? '' : 'ów'} pomyślnie${errorCount > 0 ? ` (${errorCount} błędów)` : ''}`)
+    } else {
+      setImportStatus(`❌ Nie udało się zaimportować plików (${errorCount} błędów)`)
+    }
+    setTimeout(() => setImportStatus(''), 5000)
+
+    // Re-scan to update statuses
+    scanFolder()
+  }, [farm, scannedFiles, scanFolder])
 
   // Temperature import handlers
   const handleTempFilesSelected = useCallback(async (files: FileList | File[]) => {
@@ -1330,6 +1472,162 @@ export default function SettingsPage() {
               ) : (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
                   Najpierw skonfiguruj plantację z blokami i sekcjami.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Skanowanie folderu */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FolderOpen className="w-5 h-5 text-blue-600" />
+                Import z folderu Google Drive
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-600 mb-4">
+                Wskaż folder zsynchronizowany z Google Drive. System przeskanuje pliki CSV,
+                rozpozna urządzenia po numerze seryjnym i pokaże co jest nowe do importu.
+              </p>
+
+              <div className="flex items-center gap-3 mb-4">
+                <Button onClick={selectFolder} variant="outline" size="sm">
+                  <FolderOpen className="w-4 h-4 mr-1" />
+                  {folderName ? 'Zmień folder' : 'Wybierz folder'}
+                </Button>
+                {folderName && (
+                  <>
+                    <span className="text-sm text-gray-600">
+                      <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">{folderName}</span>
+                    </span>
+                    <Button onClick={scanFolder} disabled={scanning} size="sm" className="bg-green-600 hover:bg-green-700">
+                      {scanning ? (
+                        <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Skanowanie...</>
+                      ) : (
+                        <><Search className="w-4 h-4 mr-1" />Skanuj</>
+                      )}
+                    </Button>
+                  </>
+                )}
+              </div>
+
+              {/* Wyniki skanowania */}
+              {scannedFiles.length > 0 && (
+                <div className="space-y-3">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-gray-50">
+                          <th className="w-8 px-2 py-2"></th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600">Plik</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600">Tunel</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600">Czujnik</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600">Sekcje</th>
+                          <th className="text-right px-3 py-2 font-medium text-gray-600">Pomiarów</th>
+                          <th className="text-center px-3 py-2 font-medium text-gray-600">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {scannedFiles.map((sf, i) => (
+                          <tr key={sf.fileName} className={`hover:bg-gray-50 ${sf.alreadyImported ? 'opacity-50' : ''}`}>
+                            <td className="px-2 py-2 text-center">
+                              {!sf.alreadyImported && sf.matchedSections.length > 0 && (
+                                <input
+                                  type="checkbox"
+                                  checked={sf.selected}
+                                  onChange={(e) => {
+                                    setScannedFiles(prev => prev.map((f, j) =>
+                                      j === i ? { ...f, selected: e.target.checked } : f
+                                    ))
+                                  }}
+                                  className="w-4 h-4 text-green-600 rounded"
+                                />
+                              )}
+                            </td>
+                            <td className="px-3 py-2 font-mono text-xs max-w-[200px] truncate" title={sf.fileName}>
+                              {sf.fileName}
+                            </td>
+                            <td className="px-3 py-2 text-gray-700 text-xs">
+                              {sf.metadata.tunnelName || '—'}
+                            </td>
+                            <td className="px-3 py-2 font-mono text-xs text-gray-500">
+                              {sf.metadata.serialNumber || '—'}
+                            </td>
+                            <td className="px-3 py-2 text-xs">
+                              {sf.matchedSections.length > 0 ? (
+                                sf.matchedSections.map((s, j) => (
+                                  <span key={j} className="inline-block bg-green-50 text-green-700 px-1.5 py-0.5 rounded mr-1">
+                                    {s.blockName} — {s.sectionName}
+                                  </span>
+                                ))
+                              ) : sf.metadata.serialNumber ? (
+                                <span className="text-amber-600">Nieznany czujnik</span>
+                              ) : (
+                                <span className="text-gray-400">Brak nr seryjnego</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-700 text-xs">
+                              {sf.metadata.readingCount > 0 ? sf.metadata.readingCount.toLocaleString('pl-PL') : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {sf.alreadyImported ? (
+                                <span className="text-xs text-gray-400">zaimportowany</span>
+                              ) : sf.matchedSections.length > 0 ? (
+                                <CheckCircle className="w-4 h-4 text-green-500 inline-block" />
+                              ) : (
+                                <AlertTriangle className="w-4 h-4 text-amber-500 inline-block" />
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Podsumowanie i przycisk importu */}
+                  {(() => {
+                    const newFiles = scannedFiles.filter(f => !f.alreadyImported && f.matchedSections.length > 0)
+                    const selectedFiles = scannedFiles.filter(f => f.selected && !f.alreadyImported && f.matchedSections.length > 0)
+                    const unknownFiles = scannedFiles.filter(f => !f.alreadyImported && f.matchedSections.length === 0 && f.metadata.serialNumber)
+                    const importedFiles = scannedFiles.filter(f => f.alreadyImported)
+
+                    return (
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <Button
+                          onClick={importScannedFiles}
+                          disabled={selectedFiles.length === 0 || folderImporting}
+                          className="bg-green-600 hover:bg-green-700"
+                          size="sm"
+                        >
+                          {folderImporting ? (
+                            <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Importowanie...</>
+                          ) : (
+                            <><Upload className="w-4 h-4 mr-1" />Importuj zaznaczone ({selectedFiles.length})</>
+                          )}
+                        </Button>
+                        <div className="text-xs text-gray-500 space-x-3">
+                          {newFiles.length > 0 && <span className="text-green-600">{newFiles.length} nowych</span>}
+                          {importedFiles.length > 0 && <span>{importedFiles.length} już zaimportowanych</span>}
+                          {unknownFiles.length > 0 && (
+                            <span className="text-amber-600">{unknownFiles.length} z nieznanym czujnikiem — dodaj urządzenie powyżej</span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+              )}
+
+              {scannedFiles.length === 0 && folderName && !scanning && (
+                <p className="text-sm text-gray-400 text-center py-4">
+                  Kliknij &quot;Skanuj&quot; aby przeszukać folder
+                </p>
+              )}
+
+              {!folderName && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+                  Wybierz folder z plikami CSV z rejestratorów Testo. Działa w Chrome i Edge.
                 </div>
               )}
             </CardContent>

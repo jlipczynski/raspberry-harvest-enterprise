@@ -55,6 +55,7 @@ model Farm {
   workers         Worker[]
   weatherData     WeatherData[]
   forecastCache   ForecastCache?
+  sensorDevices   SensorDevice[]
 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -178,6 +179,7 @@ model Section {
   harvestCurves         HarvestCurve[]
   
   temperatureReadings   TemperatureReading[]
+  sensorDevices         SensorDevice[]
   winteredInTunnel      Boolean   @default(false)
   templateAssignments   SectionTemplateAssignment[]
   sourceTemplates       ProductionCurveTemplate[] @relation("TemplateSource")
@@ -457,6 +459,24 @@ model SectionTemplateAssignment {
   @@map("section_template_assignments")
 }
 
+
+// ==================== SENSOR DEVICES (measurement device registry) ====================
+model SensorDevice {
+  id            String   @id @default(cuid())
+  serialNumber  String                        // full serial number e.g. "85520793"
+  name          String?                       // friendly name e.g. "Czujnik 793"
+
+  sectionId     String
+  section       Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  farmId        String
+  farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("sensor_devices")
+}
 
 // ==================== TEMPERATURE READINGS (from PDF loggers) ====================
 model TemperatureReading {

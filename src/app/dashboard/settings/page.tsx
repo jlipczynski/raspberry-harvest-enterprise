@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Settings, Download, Upload, Database, Bell, MapPin, Trash2, CheckCircle, Cloud, RefreshCw, Loader2, Thermometer, FileText, AlertTriangle } from 'lucide-react'
+import { Settings, Download, Upload, Database, Bell, MapPin, Trash2, CheckCircle, Cloud, RefreshCw, Loader2, Thermometer, FileText, AlertTriangle, Plus, Cpu } from 'lucide-react'
 
 interface Farm {
   id: string
@@ -141,7 +141,7 @@ function formatImpactDate(d: string | null): string {
 }
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'general' | 'temperature'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'temperature' | 'sensors'>('general')
   const [importStatus, setImportStatus] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -181,6 +181,23 @@ export default function SettingsPage() {
 
   useEffect(() => { fetchImportHistory() }, [fetchImportHistory])
   const tempFileInputRef = useRef<HTMLInputElement>(null)
+
+  // Sensor devices state
+  interface SensorDeviceRow {
+    id: string
+    serialNumber: string
+    name: string | null
+    section: { id: string; name: string | null; block: { id: string; name: string } }
+  }
+  interface BlockWithSections {
+    id: string
+    name: string
+    sections: Array<{ id: string; name: string | null }>
+  }
+  const [sensorDevices, setSensorDevices] = useState<SensorDeviceRow[]>([])
+  const [sensorBlocks, setSensorBlocks] = useState<BlockWithSections[]>([])
+  const [sensorsLoading, setSensorsLoading] = useState(false)
+  const [newSensor, setNewSensor] = useState({ serialNumber: '', name: '', blockId: '', sectionId: '' })
 
   useEffect(() => { fetchFarm() }, [])
 
@@ -361,6 +378,64 @@ export default function SettingsPage() {
       // TODO: API do czyszczenia danych
       alert('Funkcja w przygotowaniu')
     }
+  }
+
+  // Sensor devices handlers
+  const fetchSensorDevices = useCallback(async () => {
+    setSensorsLoading(true)
+    try {
+      const [devicesRes, plantationRes] = await Promise.all([
+        fetch('/api/plantation/sensor-devices'),
+        fetch('/api/plantation')
+      ])
+      if (devicesRes.ok) {
+        const data = await devicesRes.json()
+        setSensorDevices(data.devices || [])
+      }
+      if (plantationRes.ok) {
+        const data = await plantationRes.json()
+        const blocks: BlockWithSections[] = (data.blocks || []).map((b: { id: string; name: string; sections: Array<{ id: string; name: string | null }> }) => ({
+          id: b.id,
+          name: b.name,
+          sections: b.sections.map((s: { id: string; name: string | null }) => ({ id: s.id, name: s.name }))
+        }))
+        setSensorBlocks(blocks)
+      }
+    } catch (e) { console.error(e) }
+    finally { setSensorsLoading(false) }
+  }, [])
+
+  const addSensorDevice = async () => {
+    if (!newSensor.serialNumber.trim() || !newSensor.sectionId) return
+    try {
+      const res = await fetch('/api/plantation/sensor-devices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serialNumber: newSensor.serialNumber,
+          name: newSensor.name || undefined,
+          sectionId: newSensor.sectionId
+        })
+      })
+      if (res.ok) {
+        setNewSensor({ serialNumber: '', name: '', blockId: '', sectionId: '' })
+        fetchSensorDevices()
+      } else {
+        const err = await res.json()
+        setImportStatus(`❌ ${err.error || 'Błąd dodawania'}`)
+        setTimeout(() => setImportStatus(''), 3000)
+      }
+    } catch {
+      setImportStatus('❌ Błąd połączenia')
+      setTimeout(() => setImportStatus(''), 3000)
+    }
+  }
+
+  const deleteSensorDevice = async (id: string) => {
+    try {
+      const res = await fetch(`/api/plantation/sensor-devices?id=${id}`, { method: 'DELETE' })
+      if (res.ok) fetchSensorDevices()
+    } catch (e) { console.error(e) }
   }
 
   // Temperature import handlers
@@ -571,6 +646,13 @@ export default function SettingsPage() {
         >
           <Thermometer className="w-4 h-4 inline-block mr-1.5 -mt-0.5" />
           Import temperatur
+        </button>
+        <button
+          onClick={() => { setActiveTab('sensors'); fetchSensorDevices() }}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'sensors' ? 'border-green-600 text-green-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <Cpu className="w-4 h-4 inline-block mr-1.5 -mt-0.5" />
+          Ustawienia pomiarowe
         </button>
       </div>
 
@@ -1114,6 +1196,140 @@ export default function SettingsPage() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ========== TAB: Ustawienia pomiarowe ========== */}
+      {activeTab === 'sensors' && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Cpu className="w-5 h-5 text-orange-600" />
+                Urządzenia pomiarowe
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-600 mb-4">
+                Przypisz rejestratory temperatury do sekcji plantacji. Jedno urządzenie może być przypisane
+                do wielu sekcji — dodaj wtedy kilka wpisów z tym samym numerem seryjnym.
+              </p>
+
+              {/* Tabela urządzeń */}
+              {sensorsLoading ? (
+                <div className="flex items-center justify-center py-8 text-gray-400">
+                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                  Ładowanie...
+                </div>
+              ) : sensorDevices.length > 0 ? (
+                <div className="overflow-x-auto mb-6">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-gray-50">
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Nr seryjny</th>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Nazwa</th>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Blok</th>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Sekcja</th>
+                        <th className="px-3 py-2 w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {sensorDevices.map((device) => (
+                        <tr key={device.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 font-mono text-xs">{device.serialNumber}</td>
+                          <td className="px-3 py-2 text-gray-700">{device.name || '—'}</td>
+                          <td className="px-3 py-2 text-gray-700">{device.section?.block?.name || '—'}</td>
+                          <td className="px-3 py-2 text-gray-700">{device.section?.name || '(bez nazwy)'}</td>
+                          <td className="px-3 py-2">
+                            <button
+                              onClick={() => deleteSensorDevice(device.id)}
+                              className="p-1 text-red-500 hover:bg-red-50 rounded"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500 mb-6">
+                  Brak przypisanych urządzeń pomiarowych
+                </div>
+              )}
+
+              {/* Formularz dodawania */}
+              {sensorBlocks.length > 0 ? (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">Dodaj urządzenie</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <Label className="text-xs">Nr seryjny</Label>
+                      <Input
+                        value={newSensor.serialNumber}
+                        onChange={(e) => setNewSensor({ ...newSensor, serialNumber: e.target.value })}
+                        placeholder="np. 85520793"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Nazwa (opcjonalna)</Label>
+                      <Input
+                        value={newSensor.name}
+                        onChange={(e) => setNewSensor({ ...newSensor, name: e.target.value })}
+                        placeholder="np. Czujnik Tunel 3C"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Blok</Label>
+                      <select
+                        value={newSensor.blockId}
+                        onChange={(e) => setNewSensor({ ...newSensor, blockId: e.target.value, sectionId: '' })}
+                        className="mt-1 w-full h-9 border border-gray-200 rounded-md px-3 text-sm"
+                      >
+                        <option value="">Wybierz blok</option>
+                        {sensorBlocks.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Sekcja</Label>
+                      <select
+                        value={newSensor.sectionId}
+                        onChange={(e) => setNewSensor({ ...newSensor, sectionId: e.target.value })}
+                        disabled={!newSensor.blockId}
+                        className="mt-1 w-full h-9 border border-gray-200 rounded-md px-3 text-sm disabled:opacity-50"
+                      >
+                        <option value="">Wybierz sekcję</option>
+                        {sensorBlocks
+                          .find(b => b.id === newSensor.blockId)
+                          ?.sections.map(s => (
+                            <option key={s.id} value={s.id}>{s.name || '(bez nazwy)'}</option>
+                          ))
+                        }
+                      </select>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={addSensorDevice}
+                    disabled={!newSensor.serialNumber.trim() || !newSensor.sectionId}
+                    className="mt-3 bg-green-600 hover:bg-green-700"
+                    size="sm"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Dodaj urządzenie
+                  </Button>
+                </div>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                  Najpierw skonfiguruj plantację z blokami i sekcjami.
                 </div>
               )}
             </CardContent>

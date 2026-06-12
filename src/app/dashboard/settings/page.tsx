@@ -456,6 +456,21 @@ export default function SettingsPage() {
   const [scanning, setScanning] = useState(false)
   const [folderImporting, setFolderImporting] = useState(false)
 
+  interface DriveImportResult {
+    fileName: string
+    sectionName: string
+    blockName: string
+    totalReadings: number
+    totalInserted: number
+    skippedDuplicates: number
+    tunnelName: string | null
+    dateFrom: string | null
+    dateTo: string | null
+    error?: string
+  }
+  const [driveImportResults, setDriveImportResults] = useState<DriveImportResult[] | null>(null)
+  const [driveImportImpact, setDriveImportImpact] = useState<SectionImpact[] | null>(null)
+
   // Check Google Drive connection status
   useEffect(() => {
     if (activeTab !== 'sensors') return
@@ -537,8 +552,46 @@ export default function SettingsPage() {
     if (toImport.length === 0) return
 
     setFolderImporting(true)
-    let successCount = 0
-    let errorCount = 0
+    setDriveImportResults(null)
+    setDriveImportImpact(null)
+
+    // Collect target section IDs
+    const targetSectionIds = new Set<string>()
+    for (const scanned of toImport) {
+      for (const section of scanned.matchedSections) {
+        targetSectionIds.add(section.sectionId)
+      }
+    }
+
+    // Snapshot GDH before import
+    type GdhSnapshot = {
+      name: string
+      baseTemp: number
+      flowerThreshold: number | null
+      fruitThreshold: number | null
+      dailyGdh: Array<{ date: unknown; cumulativeGdh: number }>
+    }
+    const gdhBefore: Record<string, GdhSnapshot> = {}
+    try {
+      const res = await fetch('/api/gdh')
+      if (res.ok) {
+        const data = await res.json()
+        for (const s of (data.sections || [])) {
+          if (targetSectionIds.has(s.id)) {
+            gdhBefore[s.id] = {
+              name: s.name,
+              baseTemp: s.baseTemp,
+              flowerThreshold: s.flowerThresholdSummer ?? null,
+              fruitThreshold: s.fruitThresholdSummer ?? null,
+              dailyGdh: s.dailyGdh ?? [],
+            }
+          }
+        }
+      }
+    } catch { /* kontynuuj bez snapshotu */ }
+
+    // Import files
+    const results: DriveImportResult[] = []
 
     for (const scanned of toImport) {
       for (const section of scanned.matchedSections) {
@@ -552,30 +605,104 @@ export default function SettingsPage() {
               sectionId: section.sectionId,
             }),
           })
-          if (res.ok) {
-            const data = await res.json()
-            if (data.success) successCount++
-            else errorCount++
+          const data = await res.json()
+          if (res.ok && data.success) {
+            results.push({
+              fileName: scanned.fileName,
+              sectionName: section.sectionName,
+              blockName: section.blockName,
+              totalReadings: data.totalReadings ?? 0,
+              totalInserted: data.totalInserted ?? 0,
+              skippedDuplicates: data.skippedDuplicates ?? 0,
+              tunnelName: data.tunnelName ?? scanned.metadata.tunnelName,
+              dateFrom: scanned.metadata.dateFrom,
+              dateTo: scanned.metadata.dateTo,
+            })
           } else {
-            errorCount++
+            results.push({
+              fileName: scanned.fileName,
+              sectionName: section.sectionName,
+              blockName: section.blockName,
+              totalReadings: 0,
+              totalInserted: 0,
+              skippedDuplicates: 0,
+              tunnelName: scanned.metadata.tunnelName,
+              dateFrom: null,
+              dateTo: null,
+              error: data.error || 'Błąd importu',
+            })
           }
         } catch {
-          errorCount++
+          results.push({
+            fileName: scanned.fileName,
+            sectionName: section.sectionName,
+            blockName: section.blockName,
+            totalReadings: 0,
+            totalInserted: 0,
+            skippedDuplicates: 0,
+            tunnelName: scanned.metadata.tunnelName,
+            dateFrom: null,
+            dateTo: null,
+            error: 'Błąd połączenia',
+          })
         }
       }
     }
 
+    setDriveImportResults(results)
     setFolderImporting(false)
 
+    const successCount = results.filter(r => !r.error).length
+    const errorCount = results.filter(r => r.error).length
+    const totalInserted = results.reduce((sum, r) => sum + r.totalInserted, 0)
+
     if (successCount > 0) {
-      setImportStatus(`✓ Zaimportowano ${successCount} plik${successCount === 1 ? '' : 'ów'} pomyślnie${errorCount > 0 ? ` (${errorCount} błędów)` : ''}`)
+      setImportStatus(`✓ Zaimportowano ${totalInserted.toLocaleString('pl-PL')} pomiarów z ${successCount} plików${errorCount > 0 ? ` (${errorCount} błędów)` : ''}`)
     } else {
       setImportStatus(`❌ Nie udało się zaimportować plików (${errorCount} błędów)`)
     }
-    setTimeout(() => setImportStatus(''), 5000)
+
+    // Calculate GDH impact after import
+    if (successCount > 0 && targetSectionIds.size > 0) {
+      try {
+        const res = await fetch('/api/gdh')
+        if (res.ok) {
+          const data = await res.json()
+          const forecast: ForecastData = data.forecast ?? null
+          const impact: SectionImpact[] = []
+          for (const s of (data.sections || [])) {
+            if (!targetSectionIds.has(s.id)) continue
+            const before = gdhBefore[s.id]
+            const baseTemp = s.baseTemp
+            const flowerThr = s.flowerThresholdSummer ?? null
+            const fruitThr = s.fruitThresholdSummer ?? null
+            const insertedForSection = results
+              .filter(r => !r.error)
+              .filter(r => {
+                const matched = toImport.find(f => f.fileName === r.fileName)
+                return matched?.matchedSections.some(ms => ms.sectionId === s.id)
+              })
+              .reduce((sum, r) => sum + r.totalInserted, 0)
+            impact.push({
+              sectionId: s.id,
+              sectionName: s.name,
+              inserted: insertedForSection,
+              flowerThreshold: flowerThr,
+              fruitThreshold: fruitThr,
+              flowerDateBefore: before ? findThresholdDate(before.dailyGdh, forecast, flowerThr, baseTemp) : null,
+              fruitDateBefore: before ? findThresholdDate(before.dailyGdh, forecast, fruitThr, baseTemp) : null,
+              flowerDateAfter: findThresholdDate(s.dailyGdh ?? [], forecast, flowerThr, baseTemp),
+              fruitDateAfter: findThresholdDate(s.dailyGdh ?? [], forecast, fruitThr, baseTemp),
+            })
+          }
+          setDriveImportImpact(impact)
+        }
+      } catch { /* ignoruj — import już się udał */ }
+    }
 
     // Re-scan to update statuses
     scanDriveFolder()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scannedFiles, scanDriveFolder])
 
   // Temperature import handlers
@@ -1639,6 +1766,144 @@ export default function SettingsPage() {
                 <p className="text-sm text-gray-400 text-center py-4">
                   Kliknij &quot;Skanuj&quot; aby przeszukać folder na Google Drive
                 </p>
+              )}
+
+              {/* Raport z importu */}
+              {driveImportResults && driveImportResults.length > 0 && (
+                <div className="mt-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-gray-700">Raport importu</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-gray-50">
+                          <th className="text-left px-3 py-2 font-medium text-gray-600">Plik</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600">Tunel</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600">Sekcja</th>
+                          <th className="text-left px-3 py-2 font-medium text-gray-600">Okres</th>
+                          <th className="text-right px-3 py-2 font-medium text-gray-600">Wstawiono</th>
+                          <th className="text-right px-3 py-2 font-medium text-gray-600">Duplikaty</th>
+                          <th className="text-center px-3 py-2 font-medium text-gray-600">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {driveImportResults.map((r, i) => (
+                          <tr key={i} className={`hover:bg-gray-50 ${r.error ? 'bg-red-50' : ''}`}>
+                            <td className="px-3 py-2 font-mono text-xs max-w-[160px] truncate" title={r.fileName}>
+                              {r.fileName}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-700">{r.tunnelName || '—'}</td>
+                            <td className="px-3 py-2 text-xs">
+                              <span className="bg-green-50 text-green-700 px-1.5 py-0.5 rounded">
+                                {r.blockName} — {r.sectionName}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-600">
+                              {r.dateFrom && r.dateTo ? `${r.dateFrom} — ${r.dateTo}` : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right text-xs font-medium text-green-700">
+                              {r.totalInserted > 0 ? `+${r.totalInserted.toLocaleString('pl-PL')}` : '0'}
+                            </td>
+                            <td className="px-3 py-2 text-right text-xs text-gray-400">
+                              {r.skippedDuplicates > 0 ? r.skippedDuplicates.toLocaleString('pl-PL') : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {r.error ? (
+                                <span className="text-xs text-red-600">{r.error}</span>
+                              ) : (
+                                <CheckCircle className="w-4 h-4 text-green-500 inline-block" />
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t bg-gray-50 font-medium">
+                          <td colSpan={4} className="px-3 py-2 text-xs text-gray-600">Razem</td>
+                          <td className="px-3 py-2 text-right text-xs text-green-700">
+                            +{driveImportResults.reduce((s, r) => s + r.totalInserted, 0).toLocaleString('pl-PL')}
+                          </td>
+                          <td className="px-3 py-2 text-right text-xs text-gray-400">
+                            {driveImportResults.reduce((s, r) => s + r.skippedDuplicates, 0).toLocaleString('pl-PL')}
+                          </td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                  <Button variant="ghost" size="sm" className="text-gray-400" onClick={() => setDriveImportResults(null)}>Zamknij raport</Button>
+                </div>
+              )}
+
+              {/* Wpływ importu na daty GDH */}
+              {driveImportImpact && driveImportImpact.length > 0 && (
+                <Card className="mt-4 border-blue-200">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base text-blue-800">
+                      <Thermometer className="w-5 h-5 text-blue-600" />
+                      Wpływ importu na prognozę zbiorów
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {driveImportImpact.map(s => {
+                      const flowerDelta = daysDiff(s.flowerDateBefore, s.flowerDateAfter)
+                      const fruitDelta = daysDiff(s.fruitDateBefore, s.fruitDateAfter)
+                      const noThresholds = s.flowerThreshold === null && s.fruitThreshold === null
+                      return (
+                        <div key={s.sectionId} className="border rounded-lg p-3 bg-blue-50">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium text-sm text-blue-900">{s.sectionName}</span>
+                            <span className="text-xs text-gray-500">+{s.inserted.toLocaleString('pl-PL')} pomiarów</span>
+                          </div>
+                          {noThresholds ? (
+                            <p className="text-xs text-gray-500">Brak progów GDH w odmianie — uzupełnij dane odmiany</p>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-3">
+                              {s.flowerThreshold !== null && (
+                                <div className="bg-white rounded p-2 border">
+                                  <div className="text-xs text-gray-500 mb-1">Kwitnienie (próg {s.flowerThreshold} GDH)</div>
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <span className="text-gray-400">{formatImpactDate(s.flowerDateBefore)}</span>
+                                    <span className="text-gray-300">→</span>
+                                    <span className="font-semibold text-blue-800">{formatImpactDate(s.flowerDateAfter)}</span>
+                                    {flowerDelta !== null && flowerDelta !== 0 && (
+                                      <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${flowerDelta < 0 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                        {flowerDelta < 0 ? `${Math.abs(flowerDelta)} dni wcześniej` : `${flowerDelta} dni później`}
+                                      </span>
+                                    )}
+                                    {flowerDelta === 0 && <span className="text-xs text-gray-400">bez zmian</span>}
+                                    {flowerDelta === null && s.flowerDateBefore === null && s.flowerDateAfter === null && (
+                                      <span className="text-xs text-gray-400">brak danych</span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              {s.fruitThreshold !== null && (
+                                <div className="bg-white rounded p-2 border">
+                                  <div className="text-xs text-gray-500 mb-1">Owocowanie (próg {s.fruitThreshold} GDH)</div>
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <span className="text-gray-400">{formatImpactDate(s.fruitDateBefore)}</span>
+                                    <span className="text-gray-300">→</span>
+                                    <span className="font-semibold text-blue-800">{formatImpactDate(s.fruitDateAfter)}</span>
+                                    {fruitDelta !== null && fruitDelta !== 0 && (
+                                      <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${fruitDelta < 0 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                        {fruitDelta < 0 ? `${Math.abs(fruitDelta)} dni wcześniej` : `${fruitDelta} dni później`}
+                                      </span>
+                                    )}
+                                    {fruitDelta === 0 && <span className="text-xs text-gray-400">bez zmian</span>}
+                                    {fruitDelta === null && s.fruitDateBefore === null && s.fruitDateAfter === null && (
+                                      <span className="text-xs text-gray-400">brak danych</span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                    <Button variant="ghost" size="sm" className="text-gray-400" onClick={() => setDriveImportImpact(null)}>Zamknij</Button>
+                  </CardContent>
+                </Card>
               )}
             </CardContent>
           </Card>

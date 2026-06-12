@@ -80,7 +80,8 @@ export default function HarvestPage() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchData() }, [])
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]

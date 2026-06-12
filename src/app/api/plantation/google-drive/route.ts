@@ -82,7 +82,9 @@ export async function POST(request: NextRequest) {
     const importedSet = new Set(importedRows.map(r => r.source_file))
 
     // List CSV files from Google Drive
+    console.log('Scanning Drive folder:', folderId)
     const driveFiles = await listCsvFiles(farm.googleDriveRefreshToken, folderId)
+    console.log('Found files:', driveFiles.length, driveFiles.map(f => f.name))
 
     // Parse metadata for each file
     const results = []

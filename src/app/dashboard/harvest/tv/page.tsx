@@ -91,13 +91,13 @@ export default function HarvestTVPage() {
     }
   }, [])
 
-  useEffect(() => { fetchData() }, [fetchData])
-
-  // Auto-refresh data every 5 min
+  // Initial fetch + auto-refresh every 5 min
   useEffect(() => {
-    const interval = setInterval(fetchData, 5 * 60 * 1000)
+    fetchData()
+    const interval = setInterval(() => { fetchData() }, 5 * 60 * 1000)
     return () => clearInterval(interval)
-  }, [fetchData])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Auto-rotate slides
   useEffect(() => {

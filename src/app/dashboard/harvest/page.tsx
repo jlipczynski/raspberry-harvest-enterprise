@@ -209,16 +209,18 @@ export default function HarvestPage() {
     }
 
     const sorted = Array.from(dateMap.entries()).sort(([a], [b]) => a.localeCompare(b))
-    let cumulative = 0
-    return sorted.map(([date, kg]) => {
-      cumulative += kg
-      return {
+    const result: Array<{ date: string; kg: number; cumulative: number; plan: number }> = []
+    let runningTotal = 0
+    for (const [date, kg] of sorted) {
+      runningTotal += kg
+      result.push({
         date: new Date(date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
         kg: Math.round(kg * 10) / 10,
-        cumulative: Math.round(cumulative * 10) / 10,
+        cumulative: Math.round(runningTotal * 10) / 10,
         plan: Math.round(totalPlanned * 10) / 10,
-      }
-    })
+      })
+    }
+    return result
   }, [entries, totalPlanned])
 
   // Unique block names for chart bars

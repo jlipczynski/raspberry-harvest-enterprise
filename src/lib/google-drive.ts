@@ -3,9 +3,8 @@ import { google } from 'googleapis'
 const SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 function getRedirectUri() {
-  const base = process.env.NEXTAUTH_URL || process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : 'http://localhost:3000'
+  const base = process.env.NEXTAUTH_URL
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
   return `${base}/api/auth/google-drive/callback`
 }
 

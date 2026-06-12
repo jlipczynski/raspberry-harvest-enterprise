@@ -37,7 +37,8 @@ export async function GET() {
     if (!farm) return NextResponse.json({ blocks: [] })
 
     const blocks = farm.blocks.map(block => {
-      let plannedKg = 0
+      let plannedSummerKg = 0
+      let plannedAutumnKg = 0
 
       for (const section of block.sections) {
         const pots = (section.potsOverride && section.potsOverride > 0)
@@ -53,13 +54,16 @@ export async function GET() {
           ?? section.variety?.yieldAutumnPerShoot
           ?? 0
 
-        plannedKg += shoots * (yieldSummer + yieldAutumn)
+        plannedSummerKg += shoots * yieldSummer
+        plannedAutumnKg += shoots * yieldAutumn
       }
 
       return {
         blockId: block.id,
         blockName: block.name,
-        plannedKg: Math.round(plannedKg * 100) / 100,
+        plannedKg: Math.round((plannedSummerKg + plannedAutumnKg) * 100) / 100,
+        plannedSummerKg: Math.round(plannedSummerKg * 100) / 100,
+        plannedAutumnKg: Math.round(plannedAutumnKg * 100) / 100,
         sectionCount: block.sections.length,
       }
     })

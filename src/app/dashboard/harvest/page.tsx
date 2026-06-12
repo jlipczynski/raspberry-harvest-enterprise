@@ -477,6 +477,7 @@ export default function HarvestPage() {
         </div>
       )}
 
+
       {/* Per-block cards */}
       <Card>
         <CardHeader>

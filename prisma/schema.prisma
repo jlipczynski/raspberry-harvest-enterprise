@@ -56,6 +56,7 @@ model Farm {
   weatherData     WeatherData[]
   forecastCache   ForecastCache?
   sensorDevices   SensorDevice[]
+  harvestEntries  HarvestEntry[]
 
   googleDriveRefreshToken String?
   googleDriveFolderId     String?
@@ -71,16 +72,38 @@ model Block {
   id       String    @id @default(cuid())
   name     String
   areaHa   Float?
-  
+
   farmId   String
   farm     Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  
-  sections Section[]
-  
+
+  sections       Section[]
+  harvestEntries HarvestEntry[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   @@map("blocks")
+}
+
+// ==================== HARVEST DATA ====================
+model HarvestEntry {
+  id              String   @id @default(cuid())
+  date            DateTime @db.Date
+  areaName        String                    // oryginalna nazwa z MaxCrop
+  productClass    String                    // klasa produktu z MaxCrop
+  weightKg        Float                     // waga rzeczywista (kg)
+  quantity        Float?                    // ilość rzeczywista
+
+  blockId         String?
+  block           Block?   @relation(fields: [blockId], references: [id], onDelete: SetNull)
+  farmId          String
+  farm            Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  sourceFile      String?                   // nazwa pliku z importu
+
+  createdAt       DateTime @default(now())
+
+  @@unique([farmId, date, areaName, productClass])
+  @@map("harvest_entries")
 }
 
 // ==================== VARIETIES ====================

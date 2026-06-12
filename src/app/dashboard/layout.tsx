@@ -18,12 +18,14 @@ import {
   X,
   Database,
   LogOut,
-  Shield
+  Shield,
+  Target
 } from 'lucide-react'
 
 const menuItems = [
   { title: 'Panel główny', href: '/dashboard', icon: LayoutDashboard },
   { title: 'Planowanie', href: '/dashboard/planning', icon: Calendar },
+  { title: 'Zbiory', href: '/dashboard/harvest', icon: Target },
   { title: 'Plantacja', href: '/dashboard/plantation', icon: Map },
   { title: 'Odmiany', href: '/dashboard/varieties', icon: Leaf },
   { title: 'Pogoda & GDH', href: '/dashboard/weather', icon: Cloud },

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Target, Upload, Loader2, TrendingUp, AlertTriangle, Package } from 'lucide-react'
+import { Target, Upload, Loader2, TrendingUp, AlertTriangle, Package, Sun, CloudRain } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   AreaChart, Area, ReferenceLine,
@@ -25,12 +25,16 @@ interface BlockPlan {
   blockId: string
   blockName: string
   plannedKg: number
+  plannedSummerKg: number
+  plannedAutumnKg: number
 }
 
 interface BlockSummary {
   blockName: string
   harvestedKg: number
   plannedKg: number
+  plannedSummerKg: number
+  plannedAutumnKg: number
   percentage: number
   remainingKg: number
   dailyData: Array<{ date: string; kg: number; cumulative: number }>
@@ -122,9 +126,13 @@ export default function HarvestPage() {
       group.daily.set(dateKey, (group.daily.get(dateKey) || 0) + entry.weightKg)
     }
 
-    const planMap = new Map<string, number>()
+    const planMap = new Map<string, { total: number; summer: number; autumn: number }>()
     for (const bp of blockPlans) {
-      planMap.set(bp.blockName, (planMap.get(bp.blockName) || 0) + bp.plannedKg)
+      const existing = planMap.get(bp.blockName) || { total: 0, summer: 0, autumn: 0 }
+      existing.total += bp.plannedKg
+      existing.summer += bp.plannedSummerKg || 0
+      existing.autumn += bp.plannedAutumnKg || 0
+      planMap.set(bp.blockName, existing)
     }
 
     const summaries: BlockSummary[] = []
@@ -133,7 +141,8 @@ export default function HarvestPage() {
     for (const name of allBlockNames) {
       const group = blockGroups.get(name)
       const harvestedKg = group?.kg || 0
-      const plannedKg = planMap.get(name) || 0
+      const plan = planMap.get(name) || { total: 0, summer: 0, autumn: 0 }
+      const plannedKg = plan.total
 
       const dailyData: Array<{ date: string; kg: number; cumulative: number }> = []
       if (group) {
@@ -149,6 +158,8 @@ export default function HarvestPage() {
         blockName: name,
         harvestedKg: Math.round(harvestedKg * 100) / 100,
         plannedKg: Math.round(plannedKg * 100) / 100,
+        plannedSummerKg: Math.round(plan.summer * 100) / 100,
+        plannedAutumnKg: Math.round(plan.autumn * 100) / 100,
         percentage: plannedKg > 0 ? Math.round((harvestedKg / plannedKg) * 1000) / 10 : 0,
         remainingKg: Math.round(Math.max(0, plannedKg - harvestedKg) * 100) / 100,
         dailyData,
@@ -160,6 +171,8 @@ export default function HarvestPage() {
 
   const totalHarvested = blockSummaries.reduce((s, b) => s + b.harvestedKg, 0)
   const totalPlanned = blockSummaries.reduce((s, b) => s + b.plannedKg, 0)
+  const totalPlannedSummer = blockSummaries.reduce((s, b) => s + b.plannedSummerKg, 0)
+  const totalPlannedAutumn = blockSummaries.reduce((s, b) => s + b.plannedAutumnKg, 0)
   const totalPercentage = totalPlanned > 0 ? Math.round((totalHarvested / totalPlanned) * 1000) / 10 : 0
   const totalRemaining = Math.max(0, totalPlanned - totalHarvested)
 
@@ -385,6 +398,85 @@ export default function HarvestPage() {
         </>
       )}
 
+      {/* Season breakdown: Lato vs Jesień */}
+      {totalPlanned > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Lato */}
+          <Card className="border-amber-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Sun className="w-5 h-5 text-amber-500" />
+                Sezon letni
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-amber-700 mb-1">
+                {totalPlannedSummer.toLocaleString('pl-PL', { maximumFractionDigits: 0 })} kg
+                <span className="text-sm font-normal text-gray-500 ml-2">cel</span>
+              </div>
+              <div className="text-sm text-gray-500 mb-3">
+                Realizacja: {totalHarvested.toLocaleString('pl-PL', { maximumFractionDigits: 0 })} kg zebrano
+                {totalPlannedSummer > 0 && (
+                  <span className="ml-1 font-medium text-amber-600">
+                    ({Math.round((totalHarvested / totalPlannedSummer) * 1000) / 10}% celu letniego)
+                  </span>
+                )}
+              </div>
+              <div className="space-y-2">
+                {blockSummaries.filter(b => b.plannedSummerKg > 0).map(block => (
+                  <div key={block.blockName} className="flex items-center gap-2 text-sm">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: getBlockColor(block.blockName) }} />
+                    <span className="w-16 font-medium">{block.blockName}</span>
+                    <div className="flex-1 bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                      <div
+                        className="h-2.5 rounded-full"
+                        style={{
+                          width: `${Math.min(block.plannedSummerKg > 0 ? (block.harvestedKg / block.plannedSummerKg) * 100 : 0, 100)}%`,
+                          backgroundColor: getBlockColor(block.blockName),
+                          opacity: 0.7,
+                        }}
+                      />
+                    </div>
+                    <span className="text-gray-600 w-24 text-right">{block.plannedSummerKg.toLocaleString('pl-PL')} kg</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Jesień */}
+          <Card className="border-orange-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CloudRain className="w-5 h-5 text-orange-500" />
+                Sezon jesienny
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-orange-700 mb-1">
+                {totalPlannedAutumn.toLocaleString('pl-PL', { maximumFractionDigits: 0 })} kg
+                <span className="text-sm font-normal text-gray-500 ml-2">cel</span>
+              </div>
+              <div className="text-sm text-gray-500 mb-3">
+                Realizacja jesieni jeszcze nie rozpoczęta
+              </div>
+              <div className="space-y-2">
+                {blockSummaries.filter(b => b.plannedAutumnKg > 0).map(block => (
+                  <div key={block.blockName} className="flex items-center gap-2 text-sm">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: getBlockColor(block.blockName) }} />
+                    <span className="w-16 font-medium">{block.blockName}</span>
+                    <div className="flex-1 bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                      <div className="h-2.5 rounded-full bg-gray-200" style={{ width: '0%' }} />
+                    </div>
+                    <span className="text-gray-600 w-24 text-right">{block.plannedAutumnKg.toLocaleString('pl-PL')} kg</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Per-block cards */}
       <Card>
         <CardHeader>
@@ -437,10 +529,26 @@ export default function HarvestPage() {
                           }}
                         />
                       </div>
-                      <div className="flex justify-between text-xs text-gray-500">
+                      <div className="flex justify-between text-xs text-gray-500 mb-2">
                         <span>Plan: {block.plannedKg.toLocaleString('pl-PL')} kg</span>
                         <span>Pozostało: {block.remainingKg.toLocaleString('pl-PL')} kg</span>
                       </div>
+                      {(block.plannedSummerKg > 0 || block.plannedAutumnKg > 0) && (
+                        <div className="flex gap-3 text-xs text-gray-400 border-t pt-2">
+                          {block.plannedSummerKg > 0 && (
+                            <span className="flex items-center gap-1">
+                              <Sun className="w-3 h-3 text-amber-400" />
+                              Lato: {block.plannedSummerKg.toLocaleString('pl-PL')} kg
+                            </span>
+                          )}
+                          {block.plannedAutumnKg > 0 && (
+                            <span className="flex items-center gap-1">
+                              <CloudRain className="w-3 h-3 text-orange-400" />
+                              Jesień: {block.plannedAutumnKg.toLocaleString('pl-PL')} kg
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </>
                   )}
 

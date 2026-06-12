@@ -158,14 +158,16 @@ export default function HarvestTVPage() {
       dateMap.set(dateKey, (dateMap.get(dateKey) || 0) + entry.weightKg)
     }
     const sorted = Array.from(dateMap.entries()).sort(([a], [b]) => a.localeCompare(b))
-    let cumulative = 0
-    return sorted.map(([date, kg]) => {
-      cumulative += kg
-      return {
+    const result: Array<{ date: string; cumulative: number }> = []
+    let runningTotal = 0
+    for (const [date, kg] of sorted) {
+      runningTotal += kg
+      result.push({
         date: new Date(date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
-        cumulative: Math.round(cumulative * 10) / 10,
-      }
-    })
+        cumulative: Math.round(runningTotal * 10) / 10,
+      })
+    }
+    return result
   }, [entries])
 
   // Daily stacked bars

@@ -48,11 +48,14 @@ export async function listCsvFiles(refreshToken: string, folderId: string): Prom
 
   do {
     const res = await drive.files.list({
-      q: `'${folderId}' in parents and (mimeType='text/csv' or name contains '.csv') and trashed=false`,
+      q: `'${folderId}' in parents and trashed=false`,
       fields: 'nextPageToken, files(id, name, mimeType, modifiedTime)',
       pageSize: 100,
       pageToken,
       orderBy: 'name',
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true,
+      corpora: 'allDrives',
     })
 
     if (res.data.files) {
@@ -78,7 +81,7 @@ export async function getFileContent(refreshToken: string, fileId: string): Prom
   const drive = google.drive({ version: 'v3', auth })
 
   const res = await drive.files.get(
-    { fileId, alt: 'media' },
+    { fileId, alt: 'media', supportsAllDrives: true },
     { responseType: 'text' }
   )
 

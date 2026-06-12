@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     // Import with upsert (unique on farmId+date+areaName+productClass)
     let inserted = 0
-    let updated = 0
+    const updated = 0
     let unmapped = 0
     const unmappedAreas = new Set<string>()
 

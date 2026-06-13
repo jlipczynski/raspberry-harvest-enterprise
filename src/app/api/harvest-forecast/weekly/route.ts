@@ -48,7 +48,7 @@ export async function GET() {
 
     for (const section of allSections) {
       const v = section.variety
-      const baseTemp = section.baseTemp ?? v?.baseTemp ?? null
+      const baseTemp = v?.baseTemp ?? null
       if (baseTemp === null) continue
 
       // GDH start date for summer

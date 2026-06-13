@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 // GDH upper cap — above this, growth stops (heat stress)
 const GDH_UPPER_TEMP = 26.0 // °C
 // baseTemp pochodzi z ustawień odmiany/sekcji w bazie danych — nie jest stałą w kodzie.
-// Frontend liczy GDH per-section z avgTunnelTemp + section.baseTemp.
+// Frontend liczy GDH per-section z avgTunnelTemp + variety.baseTemp.
 
 // Tunnel inertia model defaults
 const TUNNEL_ALPHA = 0.3     // how fast tunnel reacts to outside temp (0=no reaction, 1=instant)
@@ -92,8 +92,8 @@ export async function GET(request: Request) {
       allSections.map(async (section) => {
         const v = section.variety
 
-        // baseTemp: sekcja override → odmiana → brak = pomiń sekcję
-        const baseTemp = section.baseTemp ?? v?.baseTemp ?? null
+        // baseTemp: zawsze z odmiany
+        const baseTemp = v?.baseTemp ?? null
         if (baseTemp === null) return null
 
         // If NOT wintered and has plantingDate → only count GDH from that date
@@ -248,10 +248,9 @@ export async function GET(request: Request) {
     const validSections = sectionResults.filter(s => s !== null)
 
     // ── Forecast: Meteo 16d + 3 climate scenarios ──
-    // Forecast GDH uses a reference baseTemp — median across all section varieties
-    // Each section applies its own baseTemp when consuming the forecast on frontend
+    // Forecast GDH uses a reference baseTemp — median across all varieties
     const allBaseTemps = allSections
-      .map(s => s.variety?.baseTemp ?? s.baseTemp)
+      .map(s => s.variety?.baseTemp)
       .filter((t): t is number => t != null)
     const forecastBaseTemp = allBaseTemps.length > 0
       ? allBaseTemps.sort((a, b) => a - b)[Math.floor(allBaseTemps.length / 2)]

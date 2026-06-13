@@ -19,7 +19,7 @@ export async function PATCH(
     const nullishFields = [
       'name', 'metersLength', 'potsPerMeter', 'shootsPerPot',
       'yieldSummerPerShoot', 'yieldAutumnPerShoot',
-      'baseTemp', 'varietyId',
+      'varietyId',
       // GDH progi — LATO
       'gdhWinteredFlowerSummer', 'gdhWinteredFruitSummer',
       'gdhPlantedFlowerSummer', 'gdhPlantedFruitSummer',

@@ -378,37 +378,11 @@ export default function PlanningPage() {
       // Yields from DB: section-level overrides variety-level
       // --- SUMMER ---
       const summerYield = section.yieldSummerPerShoot ?? v?.yieldSummerPerShoot ?? 0
-      // Priority: 1. SectionTemplateAssignment curve  2. Section curve  3. Variety curve  4. Flat
-      const summerAssignment = (section.templateAssignments || [])
-        .filter(a => a.season === 'summer' && a.isActive)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
-      const sectionSummerCurve = (section.harvestCurveSummer as number[] | undefined)
-      const varietySummerCurve = (v?.harvestCurveSummer as number[] | undefined)
-      // Weekly curves for fallback
-      const assignmentSummerWeeklyCurve = summerAssignment?.template?.weeklyCurveSummer
-      const summerWeeklyCurve = (assignmentSummerWeeklyCurve?.length ? assignmentSummerWeeklyCurve : null)
-        ?? (sectionSummerCurve?.length ? sectionSummerCurve : null)
-        ?? (varietySummerCurve?.length ? varietySummerCurve : null)
-        ?? null
-      // Daily curves from template assignment (% per day)
-      const summerDailyCurve = summerAssignment?.template?.dailyCurveSummer
-      const summerStartDate = summerAssignment?.template?.startDateSummer
-
+      // Krzywa zawsze z odmiany
+      const summerWeeklyCurve = (v?.harvestCurveSummer as number[] | null) ?? null
       // --- AUTUMN ---
       const autumnYield = section.yieldAutumnPerShoot ?? v?.yieldAutumnPerShoot ?? 0
-      const autumnAssignment = (section.templateAssignments || [])
-        .filter(a => a.season === 'autumn' && a.isActive)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
-      const sectionAutumnCurve = (section.harvestCurveAutumn as number[] | undefined)
-      const varietyAutumnCurve = (v?.harvestCurveAutumn as number[] | undefined)
-      const assignmentAutumnWeeklyCurve = autumnAssignment?.template?.weeklyCurveAutumn
-      const autumnWeeklyCurve = (assignmentAutumnWeeklyCurve?.length ? assignmentAutumnWeeklyCurve : null)
-        ?? (sectionAutumnCurve?.length ? sectionAutumnCurve : null)
-        ?? (varietyAutumnCurve?.length ? varietyAutumnCurve : null)
-        ?? null
-      const autumnDailyCurve = autumnAssignment?.template?.dailyCurveAutumn
-      const autumnStartDate = autumnAssignment?.template?.startDateAutumn
-
+      const autumnWeeklyCurve = (v?.harvestCurveAutumn as number[] | null) ?? null
       const summerKg = shoots * summerYield
       const autumnKg = (autumnFruitDate && autumnYield > 0) ? shoots * autumnYield : 0
       const totalKg = summerKg + autumnKg
@@ -419,75 +393,44 @@ export default function PlanningPage() {
       const rushWeeksSummer = v?.rushWeeksSummer ?? 0
       const rushWeeksAutumn = v?.rushWeeksAutumn ?? 0
 
-      // --- SUMMER daily distribution ---
+      // --- SUMMER daily distribution (krzywa tygodniowa z odmiany / 7 dni) ---
       if (summerKg > 0 && fruitDate && summerWeeklyCurve) {
-        // Pośpiech: cofamy start krzywej o rushWeeksSummer * 7 dni przed fruitDate
         const adjustedSummerStart = new Date(fruitDate)
         adjustedSummerStart.setDate(adjustedSummerStart.getDate() - rushWeeksSummer * 7)
 
-        if (summerDailyCurve?.length && fruitDate) {
-          // Use daily curve from template — real per-day distribution
-          summerDailyCurve.forEach((pct, i) => {
-            const d = new Date(adjustedSummerStart)
-            d.setDate(d.getDate() + i)
-            const dateStr = d.toISOString().slice(0, 10)
-            const kg = Math.round(summerKg * pct / 100)
+        summerWeeklyCurve.forEach((pct: number, i: number) => {
+          const weekStart = new Date(adjustedSummerStart)
+          weekStart.setDate(weekStart.getDate() + i * 7)
+          const weekKg = Math.round(summerKg * pct / 100)
+          const dayKg = Math.round(weekKg / 7)
+          for (let d = 0; d < 7; d++) {
+            const day = new Date(weekStart)
+            day.setDate(day.getDate() + d)
+            const dateStr = day.toISOString().slice(0, 10)
             const existing = dailyKgMap.get(dateStr)
-            if (existing) { existing.summerKg += kg } else { dailyKgMap.set(dateStr, { summerKg: kg, autumnKg: 0 }) }
-          })
-        } else {
-          // Fallback: weekly curve divided by 7
-          summerWeeklyCurve.forEach((pct, i) => {
-            const weekStart = new Date(adjustedSummerStart)
-            weekStart.setDate(weekStart.getDate() + i * 7)
-            const weekKg = Math.round(summerKg * pct / 100)
-            const dayKg = Math.round(weekKg / 7)
-            for (let d = 0; d < 7; d++) {
-              const day = new Date(weekStart)
-              day.setDate(day.getDate() + d)
-              const dateStr = day.toISOString().slice(0, 10)
-              const existing = dailyKgMap.get(dateStr)
-              if (existing) { existing.summerKg += dayKg } else { dailyKgMap.set(dateStr, { summerKg: dayKg, autumnKg: 0 }) }
-            }
-          })
-        }
+            if (existing) { existing.summerKg += dayKg } else { dailyKgMap.set(dateStr, { summerKg: dayKg, autumnKg: 0 }) }
+          }
+        })
       }
 
-      // --- AUTUMN daily distribution ---
-      if (autumnKg > 0 && autumnWeeklyCurve) {
-        const baseAutumnDate = autumnFruitDate ?? autumnStartDate ?? null
-        const adjustedAutumnStart = baseAutumnDate ? (() => {
-          const d = new Date(baseAutumnDate)
-          d.setDate(d.getDate() - rushWeeksAutumn * 7)
-          return d
-        })() : null
+      // --- AUTUMN daily distribution (krzywa tygodniowa z odmiany / 7 dni) ---
+      if (autumnKg > 0 && autumnFruitDate && autumnWeeklyCurve) {
+        const adjustedAutumnStart = new Date(autumnFruitDate)
+        adjustedAutumnStart.setDate(adjustedAutumnStart.getDate() - rushWeeksAutumn * 7)
 
-        if (autumnDailyCurve?.length && adjustedAutumnStart) {
-          // Use daily curve from template
-          autumnDailyCurve.forEach((pct, i) => {
-            const d = new Date(adjustedAutumnStart)
-            d.setDate(d.getDate() + i)
-            const dateStr = d.toISOString().slice(0, 10)
-            const kg = Math.round(autumnKg * pct / 100)
+        autumnWeeklyCurve.forEach((pct: number, i: number) => {
+          const weekStart = new Date(adjustedAutumnStart)
+          weekStart.setDate(weekStart.getDate() + i * 7)
+          const weekKg = Math.round(autumnKg * pct / 100)
+          const dayKg = Math.round(weekKg / 7)
+          for (let d = 0; d < 7; d++) {
+            const day = new Date(weekStart)
+            day.setDate(day.getDate() + d)
+            const dateStr = day.toISOString().slice(0, 10)
             const existing = dailyKgMap.get(dateStr)
-            if (existing) { existing.autumnKg += kg } else { dailyKgMap.set(dateStr, { summerKg: 0, autumnKg: kg }) }
-          })
-        } else if (adjustedAutumnStart) {
-          // Fallback: weekly curve divided by 7
-          autumnWeeklyCurve.forEach((pct, i) => {
-            const weekStart = new Date(adjustedAutumnStart)
-            weekStart.setDate(weekStart.getDate() + i * 7)
-            const weekKg = Math.round(autumnKg * pct / 100)
-            const dayKg = Math.round(weekKg / 7)
-            for (let d = 0; d < 7; d++) {
-              const day = new Date(weekStart)
-              day.setDate(day.getDate() + d)
-              const dateStr = day.toISOString().slice(0, 10)
-              const existing = dailyKgMap.get(dateStr)
-              if (existing) { existing.autumnKg += dayKg } else { dailyKgMap.set(dateStr, { summerKg: 0, autumnKg: dayKg }) }
-            }
-          })
-        }
+            if (existing) { existing.autumnKg += dayKg } else { dailyKgMap.set(dateStr, { summerKg: 0, autumnKg: dayKg }) }
+          }
+        })
       }
 
       // Convert dailyKgMap to sorted array
@@ -497,7 +440,7 @@ export default function PlanningPage() {
 
       // Pośpiech week ranges (ISO week numbers before fruitDate / autumnFruitDate)
       const summerPospiechEndDate = fruitDate ? fruitDate : null
-      const autumnBaseDate = autumnFruitDate ?? autumnStartDate ?? null
+      const autumnBaseDate = autumnFruitDate ?? null
       const autumnPospiechEndDate = autumnBaseDate
 
       // Aggregate dailyKg → weeklyKg
@@ -533,18 +476,12 @@ export default function PlanningPage() {
         if (!weekMap[wk.week].sections.includes(section.name)) weekMap[wk.week].sections.push(section.name)
       }
 
-      const hasSummerAssignment = !!summerAssignment
-      const hasAutumnAssignment = !!autumnAssignment
-      const curveSource = hasSummerAssignment || hasAutumnAssignment ? 'assignment' as const
-        : (sectionSummerCurve?.length || sectionAutumnCurve?.length) ? 'section' as const
-        : (varietySummerCurve?.length || varietyAutumnCurve?.length) ? 'variety' as const
-        : 'none' as const
-      // Diagnostyka — oblicz sumy krzywych i źródła
+      const curveSource = 'variety' as const
       const gdhSection = gdhData?.sections?.find(g => g.id === section.id)
-      const usedSummerCurve = summerDailyCurve?.length ? summerDailyCurve : summerWeeklyCurve
-      const usedAutumnCurve = autumnDailyCurve?.length ? autumnDailyCurve : autumnWeeklyCurve
-      const summerCurveSrc = summerDailyCurve?.length ? 'dailyCurve (assignment)' : summerWeeklyCurve ? (assignmentSummerWeeklyCurve?.length ? 'weeklyCurve (assignment)' : sectionSummerCurve?.length ? 'sekcja' : varietySummerCurve?.length ? 'odmiana' : 'brak') : 'brak'
-      const autumnCurveSrc = autumnDailyCurve?.length ? 'dailyCurve (assignment)' : autumnWeeklyCurve ? (assignmentAutumnWeeklyCurve?.length ? 'weeklyCurve (assignment)' : sectionAutumnCurve?.length ? 'sekcja' : varietyAutumnCurve?.length ? 'odmiana' : 'brak') : 'brak'
+      const usedSummerCurve = summerWeeklyCurve
+      const usedAutumnCurve = autumnWeeklyCurve
+      const summerCurveSrc = summerWeeklyCurve ? 'odmiana' : 'brak'
+      const autumnCurveSrc = autumnWeeklyCurve ? 'odmiana' : 'brak'
 
       // Daty jesiennego rozkładu
       const autumnDailyEntries = dailyKgArr.filter(d => d.autumnKg > 0)
@@ -570,7 +507,7 @@ export default function PlanningPage() {
         autumnLastDate,
       }
 
-      sectionDetails.push({ section, fruitStartDate: fruitDate ?? null, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg, dailyKg: dailyKgArr, eff, curveSource, summerAssignment: summerAssignment || null, autumnAssignment: autumnAssignment || null, diag, rushWeeksSummer, rushWeeksAutumn })
+      sectionDetails.push({ section, fruitStartDate: fruitDate ?? null, startWeek, totalKg, totalSummerKg: summerKg, totalAutumnKg: autumnKg, weeklyKg, dailyKg: dailyKgArr, eff, curveSource, summerAssignment: null, autumnAssignment: null, diag, rushWeeksSummer, rushWeeksAutumn })
     }
 
     const weeks = Object.entries(weekMap)

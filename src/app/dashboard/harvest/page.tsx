@@ -249,29 +249,15 @@ export default function HarvestPage() {
 
     // If API returned dailyPlanVsActual, use it (has both plan and actual)
     if (dailyPlanVsActual.length > 0) {
-      // Recalculate cumulative only within season range
-      let cumPlan = 0
-      let cumActual = 0
-      // Sum up everything before season start (so cumulative starts from the right point)
-      for (const d of dailyPlanVsActual) {
-        if (d.date < seasonStart) {
-          cumPlan += d.planKg
-          cumActual += d.actualKg
-        }
-      }
       return dailyPlanVsActual
         .filter(d => d.date >= seasonStart && d.date <= seasonEnd)
-        .map(d => {
-          cumPlan += d.planKg
-          cumActual += d.actualKg
-          return {
-            date: new Date(d.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
-            dateRaw: d.date,
-            plan: Math.round(cumPlan),
-            actual: d.date <= today ? Math.round(cumActual) : null,
-          }
-        })
-        .filter(d => d.plan > 0 || (d.actual !== null && d.actual > 0))
+        .filter(d => d.cumPlan > 0 || d.cumActual > 0)
+        .map(d => ({
+          date: new Date(d.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
+          dateRaw: d.date,
+          plan: Math.round(d.cumPlan),
+          actual: d.date <= today ? Math.round(d.cumActual) : null,
+        }))
     }
 
     // Fallback: build from entries only (no plan line)

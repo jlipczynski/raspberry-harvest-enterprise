@@ -7,6 +7,14 @@ export const dynamic = 'force-dynamic'
 
 const GDH_UPPER_TEMP = 26.0
 
+// Prisma $queryRaw returns DATE() as a JS Date object at midnight UTC.
+// String(date).slice(0,10) gives "Sun Jun 07" (WRONG — parses to year 2001).
+// This helper gives proper ISO "2026-06-07" format.
+function toISODate(d: Date | string): string {
+  if (d instanceof Date) return d.toISOString().slice(0, 10)
+  return String(d).slice(0, 10)
+}
+
 interface DailyAgg {
   date: Date
   cnt: number
@@ -78,7 +86,7 @@ export async function GET() {
       for (const d of dailyAgg) {
         const daily = d.cnt > 0 ? (Number(d.sum_gdh) * 24.0) / d.cnt : 0
         cumGdh += daily
-        lastLoggerDate = String(d.date).slice(0, 10)
+        lastLoggerDate = toISODate(d.date)
       }
 
       // Determine fruit threshold (summer)
@@ -99,7 +107,7 @@ export async function GET() {
           const daily = d.cnt > 0 ? (Number(d.sum_gdh) * 24.0) / d.cnt : 0
           cumCheck += daily
           if (cumCheck >= fruitThresholdSummer) {
-            fruitDateSummer = String(d.date).slice(0, 10)
+            fruitDateSummer = toISODate(d.date)
             break
           }
         }
@@ -145,7 +153,7 @@ export async function GET() {
           const daily = d.cnt > 0 ? (Number(d.sum_gdh) * 24.0) / d.cnt : 0
           autumnCum += daily
           if (autumnCum >= fruitThresholdAutumn) {
-            fruitDateAutumn = String(d.date).slice(0, 10)
+            fruitDateAutumn = toISODate(d.date)
             break
           }
         }
@@ -154,7 +162,7 @@ export async function GET() {
           const meteoDays = (forecastCache.meteoDays as Array<{ date: string; avgTunnelTemp?: number }>) || []
           const scenarios = forecastCache.scenarios as { p50?: Array<{ date: string; avgTunnelTemp?: number }> } | null
           const forecastDays = [...meteoDays, ...(scenarios?.p50 || [])]
-          const autumnLastDate = autumnAgg.length > 0 ? String(autumnAgg[autumnAgg.length - 1].date).slice(0, 10) : ''
+          const autumnLastDate = autumnAgg.length > 0 ? toISODate(autumnAgg[autumnAgg.length - 1].date) : ''
           let projGdh = autumnCum
           for (const day of forecastDays) {
             if (day.date <= autumnLastDate) continue

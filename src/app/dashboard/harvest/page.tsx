@@ -7,7 +7,7 @@ import { Target, Upload, Loader2, TrendingUp, AlertTriangle, Package, Sun, Cloud
 import Link from 'next/link'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area, Line, ComposedChart,
+  AreaChart, Area, Line, ComposedChart, ReferenceLine,
 } from 'recharts'
 
 interface HarvestEntry {
@@ -241,21 +241,42 @@ export default function HarvestPage() {
 
   // Cumulative plan vs actual chart data from API
   const cumulativeChartData = useMemo(() => {
-    if (dailyPlanVsActual.length === 0) return []
-
     const today = new Date().toISOString().slice(0, 10)
 
-    return dailyPlanVsActual
-      .filter(d => d.cumPlan > 0 || d.cumActual > 0)
-      .map(d => ({
-        date: new Date(d.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
-        dateRaw: d.date,
-        plan: Math.round(d.cumPlan),
-        actual: d.date <= today ? Math.round(d.cumActual) : null,
-        dailyPlan: Math.round(d.planKg),
-        dailyActual: d.date <= today ? Math.round(d.actualKg) : null,
-      }))
-  }, [dailyPlanVsActual])
+    // If API returned dailyPlanVsActual, use it (has both plan and actual)
+    if (dailyPlanVsActual.length > 0) {
+      return dailyPlanVsActual
+        .filter(d => d.cumPlan > 0 || d.cumActual > 0)
+        .map(d => ({
+          date: new Date(d.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
+          dateRaw: d.date,
+          plan: Math.round(d.cumPlan),
+          actual: d.date <= today ? Math.round(d.cumActual) : null,
+        }))
+    }
+
+    // Fallback: build from entries only (no plan line)
+    if (entries.length > 0) {
+      const dateMap = new Map<string, number>()
+      for (const entry of entries) {
+        const dateKey = entry.date.slice(0, 10)
+        dateMap.set(dateKey, (dateMap.get(dateKey) || 0) + entry.weightKg)
+      }
+      const sorted = Array.from(dateMap.entries()).sort(([a], [b]) => a.localeCompare(b))
+      let runningTotal = 0
+      return sorted.map(([date, kg]) => {
+        runningTotal += kg
+        return {
+          date: new Date(date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
+          dateRaw: date,
+          plan: null as number | null,
+          actual: Math.round(runningTotal),
+        }
+      })
+    }
+
+    return []
+  }, [dailyPlanVsActual, entries])
 
   // Trend analysis
   const trendInfo = useMemo(() => {
@@ -444,6 +465,15 @@ export default function HarvestPage() {
                 <Legend
                   formatter={(value) => value === 'plan' ? 'Plan (GDH + krzywa)' : value === 'actual' ? 'Realne zbiory' : value}
                 />
+                {totalPlanned > 0 && (
+                  <ReferenceLine
+                    y={totalPlanned}
+                    stroke="#ef4444"
+                    strokeDasharray="8 4"
+                    strokeWidth={2}
+                    label={{ value: `Cel: ${(totalPlanned / 1000).toFixed(1)}t`, position: 'insideTopRight', fill: '#ef4444', fontSize: 12 }}
+                  />
+                )}
                 <Line
                   type="monotone"
                   dataKey="plan"

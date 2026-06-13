@@ -34,6 +34,7 @@ interface SectionGdh {
   flowerThreshold: number | null
   fruitThreshold: number | null
   gdhStartDate: string | null
+  rushWeeksSummer?: number
   dailyGdh: Array<{ date: string; cumulativeGdh: number }>
 }
 interface ForecastDay { date: string; gdhTunnel: number; avgTunnelTemp?: number }
@@ -225,7 +226,15 @@ export default function DashboardPage() {
     return gdhData.sections
       .map(s => {
         const dates = sectionDates.get(s.id)
-        return { id: s.id, name: s.name, blockName: s.blockName, varietyName: s.varietyName, fruitDate: dates?.fruitDate ?? null, summerKg: summerKgMap.get(s.id) ?? 0 }
+        const fruitDate = dates?.fruitDate ?? null
+        const rushWeeks = s.rushWeeksSummer ?? 0
+        let rushStartDate: string | null = null
+        if (fruitDate && rushWeeks > 0) {
+          const d = new Date(fruitDate)
+          d.setDate(d.getDate() - rushWeeks * 7)
+          rushStartDate = d.toISOString().slice(0, 10)
+        }
+        return { id: s.id, name: s.name, blockName: s.blockName, varietyName: s.varietyName, fruitDate, rushStartDate, summerKg: summerKgMap.get(s.id) ?? 0 }
       })
       .sort((a, b) => {
         if (!a.fruitDate && !b.fruitDate) return 0
@@ -423,14 +432,26 @@ export default function DashboardPage() {
                 <tbody>
                   {fruitSections.map(s => {
                     const cd = s.fruitDate ? countdown(s.fruitDate) : null
-                    const past = s.fruitDate && new Date(s.fruitDate).getTime() <= now
+                    const fruitPast = s.fruitDate && new Date(s.fruitDate).getTime() <= now
+                    const inRush = s.rushStartDate && new Date(s.rushStartDate).getTime() <= now && !fruitPast
+                    const rushCd = s.rushStartDate && !inRush && !fruitPast ? countdown(s.rushStartDate) : null
                     return (
-                      <tr key={s.id} className="border-b last:border-0">
+                      <tr key={s.id} className={`border-b last:border-0 ${inRush ? 'bg-amber-50' : ''}`}>
                         <td className="py-2 px-3 font-medium">{s.blockName} / {s.name}</td>
                         <td className="py-2 px-3">{s.varietyName}</td>
                         <td className="py-2 px-3">{s.fruitDate ? new Date(s.fruitDate).toLocaleDateString('pl-PL') : '—'}</td>
                         <td className="py-2 px-3">
-                          {past ? <span className="text-green-600">✓ W trakcie zbiorów</span> : cd ? `${cd.days} dni` : <span className="text-gray-400">— Uzupełnij dane</span>}
+                          {fruitPast ? (
+                            <span className="text-green-600 font-medium">Zbiory komercyjne</span>
+                          ) : inRush ? (
+                            <span className="text-amber-600 font-medium">Pospiechy</span>
+                          ) : rushCd ? (
+                            <span>posp. za {rushCd.days} dni</span>
+                          ) : cd ? (
+                            `${cd.days} dni`
+                          ) : (
+                            <span className="text-gray-400">— Uzupelnij dane</span>
+                          )}
                         </td>
                         <td className="py-2 px-3 text-right">{s.summerKg > 0 ? `${Math.round(s.summerKg).toLocaleString('pl-PL')} kg` : '—'}</td>
                       </tr>

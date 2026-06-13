@@ -236,6 +236,7 @@ export async function GET(request: Request) {
           flowerThreshold: flowerThresholdSummer,
           fruitThreshold: fruitThresholdSummer,
           thresholdType,
+          rushWeeksSummer: v?.rushWeeksSummer ?? 0,
           dailyGdh,
           currentGdh: Math.round(cumulative),
           totalReadings: dailyAgg.reduce((s, d) => s + d.cnt, 0),

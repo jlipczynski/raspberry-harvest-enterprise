@@ -7,7 +7,7 @@ import { Target, Upload, Loader2, TrendingUp, AlertTriangle, Package, Sun, Cloud
 import Link from 'next/link'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area, ReferenceLine,
+  AreaChart, Area, Line, ComposedChart,
 } from 'recharts'
 
 interface HarvestEntry {
@@ -61,6 +61,14 @@ interface WeeklyBlockForecast {
   calibrationFactor: number
 }
 
+interface DailyPlanPoint {
+  date: string
+  planKg: number
+  actualKg: number
+  cumPlan: number
+  cumActual: number
+}
+
 const BLOCK_COLORS: Record<string, string> = {
   'Blok A': '#3b82f6',
   'Blok B': '#ef4444',
@@ -76,6 +84,8 @@ export default function HarvestPage() {
   const [entries, setEntries] = useState<HarvestEntry[]>([])
   const [blockPlans, setBlockPlans] = useState<BlockPlan[]>([])
   const [weeklyForecasts, setWeeklyForecasts] = useState<WeeklyBlockForecast[]>([])
+  const [dailyPlanVsActual, setDailyPlanVsActual] = useState<DailyPlanPoint[]>([])
+  const [totalPlannedFromApi, setTotalPlannedFromApi] = useState(0)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<string | null>(null)
@@ -100,6 +110,8 @@ export default function HarvestPage() {
       if (weeklyRes.ok) {
         const data = await weeklyRes.json()
         setWeeklyForecasts(data.blocks || [])
+        setDailyPlanVsActual(data.dailyPlanVsActual || [])
+        setTotalPlannedFromApi(data.totalPlannedKg || 0)
       }
     } catch (e) {
       console.error('Error fetching harvest data:', e)
@@ -227,29 +239,38 @@ export default function HarvestPage() {
       }))
   }, [entries])
 
-  // Cumulative chart data: total cumulative over time
+  // Cumulative plan vs actual chart data from API
   const cumulativeChartData = useMemo(() => {
-    const dateMap = new Map<string, number>()
+    if (dailyPlanVsActual.length === 0) return []
 
-    for (const entry of entries) {
-      const dateKey = entry.date.slice(0, 10)
-      dateMap.set(dateKey, (dateMap.get(dateKey) || 0) + entry.weightKg)
-    }
+    const today = new Date().toISOString().slice(0, 10)
 
-    const sorted = Array.from(dateMap.entries()).sort(([a], [b]) => a.localeCompare(b))
-    const result: Array<{ date: string; kg: number; cumulative: number; plan: number }> = []
-    let runningTotal = 0
-    for (const [date, kg] of sorted) {
-      runningTotal += kg
-      result.push({
-        date: new Date(date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
-        kg: Math.round(kg * 10) / 10,
-        cumulative: Math.round(runningTotal * 10) / 10,
-        plan: Math.round(totalPlanned * 10) / 10,
-      })
-    }
-    return result
-  }, [entries, totalPlanned])
+    return dailyPlanVsActual
+      .filter(d => d.cumPlan > 0 || d.cumActual > 0)
+      .map(d => ({
+        date: new Date(d.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
+        dateRaw: d.date,
+        plan: Math.round(d.cumPlan),
+        actual: d.date <= today ? Math.round(d.cumActual) : null,
+        dailyPlan: Math.round(d.planKg),
+        dailyActual: d.date <= today ? Math.round(d.actualKg) : null,
+      }))
+  }, [dailyPlanVsActual])
+
+  // Trend analysis
+  const trendInfo = useMemo(() => {
+    if (dailyPlanVsActual.length === 0) return null
+    const today = new Date().toISOString().slice(0, 10)
+    const todayPoint = dailyPlanVsActual.filter(d => d.date <= today).pop()
+    if (!todayPoint || todayPoint.cumPlan === 0) return null
+
+    const deviation = todayPoint.cumActual - todayPoint.cumPlan
+    const deviationPct = Math.round((deviation / todayPoint.cumPlan) * 1000) / 10
+    const status: 'ahead' | 'behind' | 'on-track' =
+      deviationPct > 10 ? 'ahead' : deviationPct < -10 ? 'behind' : 'on-track'
+
+    return { deviation: Math.round(deviation), deviationPct, status, cumPlan: Math.round(todayPoint.cumPlan), cumActual: Math.round(todayPoint.cumActual) }
+  }, [dailyPlanVsActual])
 
   // Unique block names for chart bars
   const blockNames = useMemo(() => {
@@ -274,7 +295,7 @@ export default function HarvestPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Zbiory</h1>
-          <p className="text-gray-500">Realizacja zbiorów vs plan — sezon 2026</p>
+          <p className="text-gray-500">Realizacja zbiorów vs plan — sezon {new Date().getFullYear()}</p>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/dashboard/harvest/tv">
@@ -358,52 +379,115 @@ export default function HarvestPage() {
         </Card>
       </div>
 
+      {/* Cumulative plan vs actual chart */}
+      {cumulativeChartData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Zbiory narastająco — plan vs realizacja</CardTitle>
+              {trendInfo && (
+                <div className={`flex items-center gap-2 text-sm px-3 py-1 rounded-full ${
+                  trendInfo.status === 'ahead' ? 'bg-green-50 text-green-700' :
+                  trendInfo.status === 'behind' ? 'bg-red-50 text-red-700' :
+                  'bg-blue-50 text-blue-700'
+                }`}>
+                  {trendInfo.status === 'ahead' ? <ArrowUpRight className="w-4 h-4" /> :
+                   trendInfo.status === 'behind' ? <ArrowDownRight className="w-4 h-4" /> :
+                   <Minus className="w-4 h-4" />}
+                  <span className="font-medium">
+                    {trendInfo.deviationPct > 0 ? '+' : ''}{trendInfo.deviationPct}% vs plan
+                  </span>
+                  <span className="text-xs opacity-75">
+                    ({trendInfo.deviation > 0 ? '+' : ''}{trendInfo.deviation.toLocaleString('pl-PL')} kg)
+                  </span>
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={350}>
+              <ComposedChart data={cumulativeChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                <defs>
+                  <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(1)}t` : `${v} kg`} />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null
+                    const plan = payload.find(p => p.dataKey === 'plan')
+                    const actual = payload.find(p => p.dataKey === 'actual')
+                    const planVal = Number(plan?.value ?? 0)
+                    const actualVal = Number(actual?.value ?? 0)
+                    const diff = actualVal - planVal
+                    const diffPct = planVal > 0 ? Math.round((diff / planVal) * 1000) / 10 : 0
+                    return (
+                      <div className="bg-white border rounded-lg shadow-lg p-3 text-sm">
+                        <p className="font-semibold mb-1">{label}</p>
+                        <p className="text-blue-600">Plan: {planVal.toLocaleString('pl-PL')} kg</p>
+                        {actual?.value != null && (
+                          <>
+                            <p className="text-green-600">Realne: {actualVal.toLocaleString('pl-PL')} kg</p>
+                            <p className={`font-medium ${diff >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                              Odchylenie: {diff >= 0 ? '+' : ''}{diff.toLocaleString('pl-PL')} kg ({diffPct >= 0 ? '+' : ''}{diffPct}%)
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    )
+                  }}
+                />
+                <Legend
+                  formatter={(value) => value === 'plan' ? 'Plan (GDH + krzywa)' : value === 'actual' ? 'Realne zbiory' : value}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="plan"
+                  stroke="#3b82f6"
+                  strokeWidth={2.5}
+                  strokeDasharray="6 3"
+                  dot={false}
+                  name="plan"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="actual"
+                  stroke="#10b981"
+                  strokeWidth={3}
+                  fill="url(#colorActual)"
+                  name="actual"
+                  connectNulls={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+            {trendInfo && (
+              <div className="mt-3 grid grid-cols-3 gap-4 text-center text-sm border-t pt-3">
+                <div>
+                  <div className="text-gray-500">Plan na dzisiaj</div>
+                  <div className="font-bold text-blue-600">{trendInfo.cumPlan.toLocaleString('pl-PL')} kg</div>
+                </div>
+                <div>
+                  <div className="text-gray-500">Zebrano realnie</div>
+                  <div className="font-bold text-green-600">{trendInfo.cumActual.toLocaleString('pl-PL')} kg</div>
+                </div>
+                <div>
+                  <div className="text-gray-500">Odchylenie</div>
+                  <div className={`font-bold ${trendInfo.deviation >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {trendInfo.deviation >= 0 ? '+' : ''}{trendInfo.deviation.toLocaleString('pl-PL')} kg
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {entries.length > 0 && (
         <>
-          {/* Cumulative chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Zbiory narastająco vs cel</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={cumulativeChartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                  <defs>
-                    <linearGradient id="colorCumulative" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${v} kg`} />
-                  <Tooltip
-                    formatter={(value?: number, name?: string) => [
-                      `${(value ?? 0).toLocaleString('pl-PL')} kg`,
-                      name === 'cumulative' ? 'Zebrano narastająco' : name === 'plan' ? 'Cel sezonu' : 'Dziennie'
-                    ]}
-                    labelStyle={{ fontWeight: 'bold' }}
-                  />
-                  <ReferenceLine
-                    y={totalPlanned}
-                    stroke="#ef4444"
-                    strokeDasharray="8 4"
-                    strokeWidth={2}
-                    label={{ value: `Cel: ${totalPlanned.toLocaleString('pl-PL')} kg`, position: 'right', fill: '#ef4444', fontSize: 12 }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="cumulative"
-                    stroke="#10b981"
-                    strokeWidth={3}
-                    fill="url(#colorCumulative)"
-                    name="cumulative"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
           {/* Daily stacked bar chart */}
           <Card>
             <CardHeader>
@@ -608,7 +692,7 @@ export default function HarvestPage() {
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-indigo-600" />
               Prognoza tygodniowa vs realne zbiory
-              <span className="text-xs text-gray-400 font-normal ml-2">GDH z czujnikow + krzywa odmiany</span>
+              <span className="text-xs text-gray-400 font-normal ml-2">plan (GDH + krzywa odmiany) vs MaxCrop</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -635,10 +719,10 @@ export default function HarvestPage() {
                         <thead>
                           <tr className="border-b text-left text-gray-500 text-xs">
                             <th className="py-2 px-2">Tydzien</th>
-                            <th className="py-2 px-2 text-right">Prognoza (GDH)</th>
-                            <th className="py-2 px-2 text-right">Skorygowana</th>
-                            <th className="py-2 px-2 text-right">Realne</th>
-                            <th className="py-2 px-2 text-right">Roznica</th>
+                            <th className="py-2 px-2 text-right">Plan</th>
+                            <th className="py-2 px-2 text-right">Skorygowany</th>
+                            <th className="py-2 px-2 text-right">Realne (MaxCrop)</th>
+                            <th className="py-2 px-2 text-right">Odchylenie</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -657,7 +741,7 @@ export default function HarvestPage() {
                                 {week.isPast || week.isCurrent ? `${week.actualKg.toLocaleString('pl-PL')} kg` : <span className="text-gray-300">—</span>}
                               </td>
                               <td className="py-1.5 px-2 text-right">
-                                {week.isPast && week.forecastKg > 0 ? (
+                                {(week.isPast || week.isCurrent) && week.forecastKg > 0 ? (
                                   <span className={`inline-flex items-center gap-0.5 ${week.diffKg > 0 ? 'text-green-600' : week.diffKg < 0 ? 'text-red-600' : 'text-gray-400'}`}>
                                     {week.diffKg > 0 ? <ArrowUpRight className="w-3 h-3" /> : week.diffKg < 0 ? <ArrowDownRight className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
                                     {week.diffPct > 0 ? '+' : ''}{week.diffPct}%

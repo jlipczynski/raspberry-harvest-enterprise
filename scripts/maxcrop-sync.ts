@@ -18,9 +18,15 @@ import { mapAreaToBlockName } from '../src/lib/maxcrop-harvest-parser'
 const MAXCROP_URL = 'https://www.maxcropdata.com/'
 const MAXCROP_USER = process.env.MAXCROP_USER
 const MAXCROP_PASS = process.env.MAXCROP_PASS
+const MAXCROP_FARM_ID = process.env.MAXCROP_FARM_ID
 
 if (!MAXCROP_USER || !MAXCROP_PASS) {
   console.error('Brak MAXCROP_USER lub MAXCROP_PASS w .env.local')
+  process.exit(1)
+}
+
+if (!MAXCROP_FARM_ID) {
+  console.error('Brak MAXCROP_FARM_ID w .env.local')
   process.exit(1)
 }
 
@@ -157,11 +163,12 @@ async function main() {
     }
 
     // 5. Get farm and blocks for mapping
-    const farm = await prisma.farm.findFirst({
+    const farm = await prisma.farm.findUnique({
+      where: { id: MAXCROP_FARM_ID! },
       include: { blocks: { select: { id: true, name: true } } },
     })
     if (!farm) {
-      console.error('[MaxCrop Sync] Brak farmy w bazie!')
+      console.error(`[MaxCrop Sync] Brak farmy o ID ${MAXCROP_FARM_ID} w bazie!`)
       return
     }
 

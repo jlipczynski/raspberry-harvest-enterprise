@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Target, Upload, Loader2, TrendingUp, AlertTriangle, Package, Sun, CloudRain } from 'lucide-react'
+import { Target, Upload, Loader2, TrendingUp, AlertTriangle, Package, Sun, CloudRain, Tv, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
+import Link from 'next/link'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   AreaChart, Area, ReferenceLine,
@@ -40,6 +41,26 @@ interface BlockSummary {
   dailyData: Array<{ date: string; kg: number; cumulative: number }>
 }
 
+interface WeekRow {
+  weekStart: string
+  weekLabel: string
+  forecastKg: number
+  calibratedKg: number
+  actualKg: number
+  diffKg: number
+  diffPct: number
+  isPast: boolean
+  isCurrent: boolean
+}
+
+interface WeeklyBlockForecast {
+  blockName: string
+  weeks: WeekRow[]
+  totalPlannedKg: number
+  totalHarvestedKg: number
+  calibrationFactor: number
+}
+
 const BLOCK_COLORS: Record<string, string> = {
   'Blok A': '#3b82f6',
   'Blok B': '#ef4444',
@@ -54,6 +75,7 @@ function getBlockColor(name: string): string {
 export default function HarvestPage() {
   const [entries, setEntries] = useState<HarvestEntry[]>([])
   const [blockPlans, setBlockPlans] = useState<BlockPlan[]>([])
+  const [weeklyForecasts, setWeeklyForecasts] = useState<WeeklyBlockForecast[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<string | null>(null)
@@ -61,9 +83,10 @@ export default function HarvestPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [harvestRes, planRes] = await Promise.all([
+      const [harvestRes, planRes, weeklyRes] = await Promise.all([
         fetch('/api/plantation/harvest'),
         fetch('/api/plantation/harvest/plan'),
+        fetch('/api/harvest-forecast/weekly'),
       ])
 
       if (harvestRes.ok) {
@@ -73,6 +96,10 @@ export default function HarvestPage() {
       if (planRes.ok) {
         const data = await planRes.json()
         setBlockPlans(data.blocks || [])
+      }
+      if (weeklyRes.ok) {
+        const data = await weeklyRes.json()
+        setWeeklyForecasts(data.blocks || [])
       }
     } catch (e) {
       console.error('Error fetching harvest data:', e)
@@ -249,24 +276,32 @@ export default function HarvestPage() {
           <h1 className="text-2xl font-bold text-gray-900">Zbiory</h1>
           <p className="text-gray-500">Realizacja zbiorów vs plan — sezon 2026</p>
         </div>
-        <label className="cursor-pointer">
-          <input
-            type="file"
-            accept=".xls,.xlsx"
-            className="hidden"
-            onChange={handleUpload}
-            disabled={uploading}
-          />
-          <Button asChild variant="outline" size="sm" disabled={uploading}>
-            <span>
-              {uploading ? (
-                <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Importowanie...</>
-              ) : (
-                <><Upload className="w-4 h-4 mr-1" />Import z MaxCrop (XLS)</>
-              )}
-            </span>
-          </Button>
-        </label>
+        <div className="flex items-center gap-2">
+          <Link href="/dashboard/harvest/tv">
+            <Button variant="outline" size="sm">
+              <Tv className="w-4 h-4 mr-1" />
+              Widok TV
+            </Button>
+          </Link>
+          <label className="cursor-pointer">
+            <input
+              type="file"
+              accept=".xls,.xlsx"
+              className="hidden"
+              onChange={handleUpload}
+              disabled={uploading}
+            />
+            <Button asChild variant="outline" size="sm" disabled={uploading}>
+              <span>
+                {uploading ? (
+                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Importowanie...</>
+                ) : (
+                  <><Upload className="w-4 h-4 mr-1" />Import z MaxCrop (XLS)</>
+                )}
+              </span>
+            </Button>
+          </label>
+        </div>
       </div>
 
       {uploadResult && (
@@ -565,6 +600,82 @@ export default function HarvestPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Weekly Forecast vs Actual — GDH-driven comparison */}
+      {weeklyForecasts.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-indigo-600" />
+              Prognoza tygodniowa vs realne zbiory
+              <span className="text-xs text-gray-400 font-normal ml-2">GDH z czujnikow + krzywa odmiany</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              {weeklyForecasts.map(block => {
+                const visibleWeeks = block.weeks.filter(w => w.forecastKg > 0 || w.actualKg > 0)
+                if (visibleWeeks.length === 0) return null
+
+                return (
+                  <div key={block.blockName} className="border rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getBlockColor(block.blockName) }} />
+                        <span className="font-semibold">{block.blockName}</span>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                        <span>Kalibracja: <strong className={block.calibrationFactor > 1.1 ? 'text-green-600' : block.calibrationFactor < 0.9 ? 'text-red-600' : 'text-gray-700'}>{block.calibrationFactor.toFixed(2)}x</strong></span>
+                        <span>Zebrano: {block.totalHarvestedKg.toLocaleString('pl-PL')} / {block.totalPlannedKg.toLocaleString('pl-PL')} kg</span>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-gray-500 text-xs">
+                            <th className="py-2 px-2">Tydzien</th>
+                            <th className="py-2 px-2 text-right">Prognoza (GDH)</th>
+                            <th className="py-2 px-2 text-right">Skorygowana</th>
+                            <th className="py-2 px-2 text-right">Realne</th>
+                            <th className="py-2 px-2 text-right">Roznica</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleWeeks.map(week => (
+                            <tr
+                              key={week.weekStart}
+                              className={`border-b last:border-0 ${week.isCurrent ? 'bg-indigo-50 font-medium' : week.isPast ? '' : 'text-gray-400'}`}
+                            >
+                              <td className="py-1.5 px-2">
+                                {week.weekLabel}
+                                {week.isCurrent && <span className="ml-1 text-xs text-indigo-600">(teraz)</span>}
+                              </td>
+                              <td className="py-1.5 px-2 text-right">{week.forecastKg.toLocaleString('pl-PL')} kg</td>
+                              <td className="py-1.5 px-2 text-right font-medium">{week.calibratedKg.toLocaleString('pl-PL')} kg</td>
+                              <td className="py-1.5 px-2 text-right">
+                                {week.isPast || week.isCurrent ? `${week.actualKg.toLocaleString('pl-PL')} kg` : <span className="text-gray-300">—</span>}
+                              </td>
+                              <td className="py-1.5 px-2 text-right">
+                                {week.isPast && week.forecastKg > 0 ? (
+                                  <span className={`inline-flex items-center gap-0.5 ${week.diffKg > 0 ? 'text-green-600' : week.diffKg < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                                    {week.diffKg > 0 ? <ArrowUpRight className="w-3 h-3" /> : week.diffKg < 0 ? <ArrowDownRight className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+                                    {week.diffPct > 0 ? '+' : ''}{week.diffPct}%
+                                  </span>
+                                ) : <span className="text-gray-300">—</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

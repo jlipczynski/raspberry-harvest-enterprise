@@ -10,6 +10,13 @@ const GDH_UPPER_TEMP = 26.0 // °C
 // baseTemp pochodzi z ustawień odmiany/sekcji w bazie danych — nie jest stałą w kodzie.
 // Frontend liczy GDH per-section z avgTunnelTemp + variety.baseTemp.
 
+// Prisma $queryRaw returns DATE() as a JS Date at midnight UTC.
+// String(date).slice(0,10) gives "Sun Jun 07" (WRONG). This gives "2026-06-07".
+function toISODate(d: Date | string): string {
+  if (d instanceof Date) return d.toISOString().slice(0, 10)
+  return String(d).slice(0, 10)
+}
+
 // Tunnel inertia model defaults
 const TUNNEL_ALPHA = 0.3     // how fast tunnel reacts to outside temp (0=no reaction, 1=instant)
 
@@ -144,14 +151,14 @@ export async function GET(request: Request) {
         // Wykryj luki w danych loggera (dni bez odczytów między pierwszym a ostatnim)
         const loggerGaps: Array<{ from: string; to: string; days: number }> = []
         for (let i = 1; i < dailyAgg.length; i++) {
-          const prev = new Date(String(dailyAgg[i - 1].date).slice(0, 10))
-          const curr = new Date(String(dailyAgg[i].date).slice(0, 10))
+          const prev = new Date(toISODate(dailyAgg[i - 1].date))
+          const curr = new Date(toISODate(dailyAgg[i].date))
           const diffDays = Math.round((curr.getTime() - prev.getTime()) / 86400000)
           if (diffDays > 1) {
             const gapFrom = new Date(prev); gapFrom.setDate(gapFrom.getDate() + 1)
             loggerGaps.push({
               from: gapFrom.toISOString().slice(0, 10),
-              to: new Date(String(dailyAgg[i].date).slice(0, 10)).toISOString().slice(0, 10),
+              to: toISODate(dailyAgg[i].date),
               days: diffDays - 1,
             })
           }
@@ -197,7 +204,7 @@ export async function GET(request: Request) {
             ORDER BY date
           `
           if (autumnDailyAgg.length > 0) {
-            autumnLastLoggerDate = String(autumnDailyAgg[autumnDailyAgg.length - 1].date).slice(0, 10)
+            autumnLastLoggerDate = toISODate(autumnDailyAgg[autumnDailyAgg.length - 1].date)
           }
           const autumnThreshold = fruitThresholdAutumn
           if (autumnThreshold) {
@@ -205,7 +212,7 @@ export async function GET(request: Request) {
               const daily = d.cnt > 0 ? (Number(d.sum_gdh) * 24.0) / d.cnt : 0
               autumnCurrentGdh += daily
               if (autumnFruitDate === null && autumnCurrentGdh >= autumnThreshold) {
-                autumnFruitDate = String(d.date).slice(0, 10)
+                autumnFruitDate = toISODate(d.date)
               }
             }
             autumnCurrentGdh = Math.round(autumnCurrentGdh)

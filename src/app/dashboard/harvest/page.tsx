@@ -240,19 +240,38 @@ export default function HarvestPage() {
   }, [entries])
 
   // Cumulative plan vs actual chart data from API
+  // Season range: June 1 → November 30
   const cumulativeChartData = useMemo(() => {
+    const year = new Date().getFullYear()
+    const seasonStart = `${year}-06-01`
+    const seasonEnd = `${year}-11-30`
     const today = new Date().toISOString().slice(0, 10)
 
     // If API returned dailyPlanVsActual, use it (has both plan and actual)
     if (dailyPlanVsActual.length > 0) {
+      // Recalculate cumulative only within season range
+      let cumPlan = 0
+      let cumActual = 0
+      // Sum up everything before season start (so cumulative starts from the right point)
+      for (const d of dailyPlanVsActual) {
+        if (d.date < seasonStart) {
+          cumPlan += d.planKg
+          cumActual += d.actualKg
+        }
+      }
       return dailyPlanVsActual
-        .filter(d => d.cumPlan > 0 || d.cumActual > 0)
-        .map(d => ({
-          date: new Date(d.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
-          dateRaw: d.date,
-          plan: Math.round(d.cumPlan),
-          actual: d.date <= today ? Math.round(d.cumActual) : null,
-        }))
+        .filter(d => d.date >= seasonStart && d.date <= seasonEnd)
+        .map(d => {
+          cumPlan += d.planKg
+          cumActual += d.actualKg
+          return {
+            date: new Date(d.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
+            dateRaw: d.date,
+            plan: Math.round(cumPlan),
+            actual: d.date <= today ? Math.round(cumActual) : null,
+          }
+        })
+        .filter(d => d.plan > 0 || (d.actual !== null && d.actual > 0))
     }
 
     // Fallback: build from entries only (no plan line)
@@ -260,7 +279,9 @@ export default function HarvestPage() {
       const dateMap = new Map<string, number>()
       for (const entry of entries) {
         const dateKey = entry.date.slice(0, 10)
-        dateMap.set(dateKey, (dateMap.get(dateKey) || 0) + entry.weightKg)
+        if (dateKey >= seasonStart && dateKey <= seasonEnd) {
+          dateMap.set(dateKey, (dateMap.get(dateKey) || 0) + entry.weightKg)
+        }
       }
       const sorted = Array.from(dateMap.entries()).sort(([a], [b]) => a.localeCompare(b))
       let runningTotal = 0
@@ -278,20 +299,22 @@ export default function HarvestPage() {
     return []
   }, [dailyPlanVsActual, entries])
 
-  // Trend analysis
+  // Trend analysis — based on chart data (season-filtered)
   const trendInfo = useMemo(() => {
-    if (dailyPlanVsActual.length === 0) return null
+    if (cumulativeChartData.length === 0) return null
     const today = new Date().toISOString().slice(0, 10)
-    const todayPoint = dailyPlanVsActual.filter(d => d.date <= today).pop()
-    if (!todayPoint || todayPoint.cumPlan === 0) return null
+    const todayPoint = cumulativeChartData.filter(d => d.dateRaw <= today).pop()
+    if (!todayPoint || !todayPoint.plan || todayPoint.plan === 0) return null
 
-    const deviation = todayPoint.cumActual - todayPoint.cumPlan
-    const deviationPct = Math.round((deviation / todayPoint.cumPlan) * 1000) / 10
+    const cumPlan = todayPoint.plan
+    const cumActual = todayPoint.actual ?? 0
+    const deviation = cumActual - cumPlan
+    const deviationPct = Math.round((deviation / cumPlan) * 1000) / 10
     const status: 'ahead' | 'behind' | 'on-track' =
       deviationPct > 10 ? 'ahead' : deviationPct < -10 ? 'behind' : 'on-track'
 
-    return { deviation: Math.round(deviation), deviationPct, status, cumPlan: Math.round(todayPoint.cumPlan), cumActual: Math.round(todayPoint.cumActual) }
-  }, [dailyPlanVsActual])
+    return { deviation: Math.round(deviation), deviationPct, status, cumPlan: Math.round(cumPlan), cumActual: Math.round(cumActual) }
+  }, [cumulativeChartData])
 
   // Unique block names for chart bars
   const blockNames = useMemo(() => {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Target, Upload, Loader2, TrendingUp, AlertTriangle, Package, Sun, CloudRain, Tv, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
+import { Target, Upload, Loader2, TrendingUp, AlertTriangle, Package, Sun, CloudRain, Tv, ArrowUpRight, ArrowDownRight, Minus, FileDown } from 'lucide-react'
 import Link from 'next/link'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -447,7 +447,7 @@ export default function HarvestPage() {
       {dailyForecasts.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 flex-wrap">
               <TrendingUp className="w-5 h-5 text-purple-600" />
               Prognoza dzienna — najbliższe 7 dni
               <span className="text-xs text-gray-400 font-normal ml-2">
@@ -456,6 +456,20 @@ export default function HarvestPage() {
                   <> × korekcja z historii ({dailyForecasts[0]?.correctionFactor.toFixed(2)}x)</>
                 )}
               </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto"
+                onClick={() => {
+                  const a = document.createElement('a')
+                  a.href = '/api/harvest-forecast/report'
+                  a.download = `prognoza-zbiorow-${new Date().toISOString().slice(0, 10)}.pdf`
+                  a.click()
+                }}
+              >
+                <FileDown className="w-4 h-4 mr-1" />
+                Pobierz PDF
+              </Button>
             </CardTitle>
           </CardHeader>
           <CardContent>

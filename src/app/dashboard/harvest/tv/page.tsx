@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area, ReferenceLine,
+  AreaChart, Area, ReferenceLine, ComposedChart, Line,
 } from 'recharts'
 
 // Hide dashboard layout (sidebar, padding) when TV page is mounted
@@ -170,7 +170,7 @@ export default function HarvestTVPage() {
   const totalPlanned = blockSummaries.reduce((s, b) => s + b.plannedKg, 0)
   const totalPercentage = totalPlanned > 0 ? Math.round((totalHarvested / totalPlanned) * 1000) / 10 : 0
 
-  // Cumulative chart data
+  // Cumulative chart data with target at end of November
   const cumulativeChartData = useMemo(() => {
     const dateMap = new Map<string, number>()
     for (const entry of entries) {
@@ -178,17 +178,34 @@ export default function HarvestTVPage() {
       dateMap.set(dateKey, (dateMap.get(dateKey) || 0) + entry.weightKg)
     }
     const sorted = Array.from(dateMap.entries()).sort(([a], [b]) => a.localeCompare(b))
-    const result: Array<{ date: string; cumulative: number }> = []
+    const result: Array<{ date: string; dateRaw: string; cumulative: number; target: number | null }> = []
     let runningTotal = 0
     for (const [date, kg] of sorted) {
       runningTotal += kg
       result.push({
         date: new Date(date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }),
+        dateRaw: date,
         cumulative: Math.round(runningTotal * 10) / 10,
+        target: null,
       })
     }
+
+    // Add target point at end of November
+    if (totalPlanned > 0) {
+      const year = new Date().getFullYear()
+      const seasonEnd = `${year}-11-30`
+      const lastDate = sorted.length > 0 ? sorted[sorted.length - 1][0] : ''
+      if (lastDate < seasonEnd) {
+        result.push({
+          date: '30 lis',
+          dateRaw: seasonEnd,
+          cumulative: null as unknown as number,
+          target: Math.round(totalPlanned),
+        })
+      }
+    }
     return result
-  }, [entries])
+  }, [entries, totalPlanned])
 
   // Daily stacked bars
   const { dailyChartData, blockNames } = useMemo(() => {
@@ -303,7 +320,7 @@ export default function HarvestTVPage() {
             <h2 className="text-3xl font-bold text-gray-200 mb-6">Zbiory narastajaco</h2>
             <div className="flex-1">
               <ResponsiveContainer width="100%" height={600}>
-                <AreaChart data={cumulativeChartData} margin={{ top: 10, right: 40, left: 40, bottom: 10 }}>
+                <ComposedChart data={cumulativeChartData} margin={{ top: 10, right: 40, left: 40, bottom: 10 }}>
                   <defs>
                     <linearGradient id="tvGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
@@ -312,11 +329,26 @@ export default function HarvestTVPage() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
                   <XAxis dataKey="date" tick={{ fontSize: 14, fill: '#9ca3af' }} />
-                  <YAxis tick={{ fontSize: 14, fill: '#9ca3af' }} tickFormatter={v => `${v} kg`} />
+                  <YAxis
+                    tick={{ fontSize: 14, fill: '#9ca3af' }}
+                    tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(1)}t` : `${v} kg`}
+                    domain={[0, totalPlanned > 0 ? Math.ceil(totalPlanned * 1.05) : 'auto']}
+                  />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '8px' }}
                     labelStyle={{ color: '#d1d5db', fontWeight: 'bold' }}
-                    formatter={(value?: number) => [`${(value ?? 0).toLocaleString('pl-PL')} kg`, 'Zebrano']}
+                    formatter={(value?: number, name?: string) => {
+                      if (value == null) return ['', '']
+                      return [`${value.toLocaleString('pl-PL')} kg`, name === 'cumulative' ? 'Zebrano' : 'Cel sezonu']
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="cumulative"
+                    stroke="#10b981"
+                    strokeWidth={3}
+                    fill="url(#tvGradient)"
+                    connectNulls={false}
                   />
                   {totalPlanned > 0 && (
                     <ReferenceLine
@@ -324,17 +356,19 @@ export default function HarvestTVPage() {
                       stroke="#ef4444"
                       strokeDasharray="8 4"
                       strokeWidth={2}
-                      label={{ value: `Cel: ${totalPlanned.toLocaleString('pl-PL')} kg`, position: 'right', fill: '#ef4444', fontSize: 14 }}
+                      label={{ value: `Cel: ${(totalPlanned / 1000).toFixed(1)}t`, position: 'insideTopRight', fill: '#ef4444', fontSize: 16, fontWeight: 'bold' }}
                     />
                   )}
-                  <Area
+                  <Line
                     type="monotone"
-                    dataKey="cumulative"
-                    stroke="#10b981"
-                    strokeWidth={3}
-                    fill="url(#tvGradient)"
+                    dataKey="target"
+                    stroke="#ef4444"
+                    strokeWidth={0}
+                    dot={{ r: 8, fill: '#ef4444', stroke: '#ef4444' }}
+                    connectNulls={false}
+                    legendType="none"
                   />
-                </AreaChart>
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           </div>

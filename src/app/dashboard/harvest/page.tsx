@@ -462,15 +462,10 @@ export default function HarvestPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                const a = document.createElement('a')
-                a.href = '/api/harvest-forecast/report'
-                a.download = `prognoza-zbiorow-${new Date().toISOString().slice(0, 10)}.pdf`
-                a.click()
-              }}
+              onClick={() => window.open('/api/harvest-forecast/report', '_blank')}
             >
               <FileDown className="w-4 h-4 mr-1" />
-              Pobierz PDF
+              Raport PDF
             </Button>
           </CardHeader>
           <CardContent>

@@ -42,16 +42,10 @@ function formatDate(d: Date): string {
   return `${yyyy}-${mm}-${dd}`
 }
 
-function getSeasonStartDate(): string {
-  const now = new Date()
-  return formatDate(new Date(now.getFullYear(), 4, 1)) // 1 maja
-}
-
 async function main() {
-  const seasonStart = getSeasonStartDate()
   const today = formatDate(new Date())
 
-  console.log(`[MaxCrop Sync] Zakres dat: ${seasonStart} → ${today}`)
+  console.log(`[MaxCrop Sync] Pobieram dane za: ${today}`)
 
   const tmpDir = path.resolve('tmp')
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
@@ -87,50 +81,21 @@ async function main() {
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(2000)
 
-    // 3. Set date range: "Data od" and "Data do"
-    // Vaadin date fields — dump all to find the right ones
+    // 3. Click "Bieżący" — sets both dates to today, shows today's data
+    console.log('[MaxCrop Sync] Klikam Bieżący...')
+    await page.click('text=Bieżący')
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(2000)
+
+    // 4. No need to change dates — "Bieżący" already shows today's data
+    //    Just verify what dates are set
     const dateInputs = await page.locator('.v-datefield-textfield').all()
-    console.log(`[MaxCrop Sync] Znaleziono ${dateInputs.length} pól daty`)
     for (let i = 0; i < dateInputs.length; i++) {
       const val = await dateInputs[i].inputValue().catch(() => '')
       console.log(`[MaxCrop Sync]   input[${i}] value="${val}"`)
     }
 
-    // Fields: [0]=Rok (just year), [1]=Data od, [2]=Data do
-    // But screenshot showed 3 fields and dates got swapped — find by current value
-    let dataOdIdx = -1
-    let dataDoIdx = -1
-    for (let i = 0; i < dateInputs.length; i++) {
-      const val = await dateInputs[i].inputValue().catch(() => '')
-      // Rok field has just a year like "2026" or is short
-      if (val.length <= 4) continue
-      if (dataOdIdx === -1) {
-        dataOdIdx = i
-      } else if (dataDoIdx === -1) {
-        dataDoIdx = i
-      }
-    }
-
-    // If we couldn't detect by value, use last two fields
-    if (dataOdIdx === -1 || dataDoIdx === -1) {
-      dataOdIdx = dateInputs.length - 2
-      dataDoIdx = dateInputs.length - 1
-    }
-
-    console.log(`[MaxCrop Sync] Data od: input[${dataOdIdx}], Data do: input[${dataDoIdx}]`)
-
-    // Fill "Data od" first, then "Data do"
-    await dateInputs[dataOdIdx].click({ clickCount: 3 })
-    await dateInputs[dataOdIdx].fill(seasonStart)
-    await dateInputs[dataOdIdx].press('Tab')
-    await page.waitForTimeout(500)
-
-    await dateInputs[dataDoIdx].click({ clickCount: 3 })
-    await dateInputs[dataDoIdx].fill(today)
-    await dateInputs[dataDoIdx].press('Tab')
-    await page.waitForTimeout(500)
-
-    // 4. Click "Szukaj"
+    // 5. Click "Szukaj" to confirm
     console.log('[MaxCrop Sync] Klikam Szukaj...')
     await page.click('text=Szukaj')
     await page.waitForLoadState('networkidle')

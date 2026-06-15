@@ -18,7 +18,10 @@ interface DailyAgg {
   sum_gdh: number
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const url = new URL(request.url)
+  const daysParam = parseInt(url.searchParams.get('days') || '14', 10)
+  const daysAhead = Math.min(Math.max(daysParam, 7), 30)
   try {
     const tenantId = await requireTenantId()
     const farm = await prisma.farm.findFirst({
@@ -224,7 +227,7 @@ export async function GET() {
       baseTemp,
       entries,
       corrections,
-      7,
+      daysAhead,
       today,
     )
 
@@ -257,7 +260,7 @@ export async function GET() {
     // --- 7. Build forecast temperatures for display ---
     const forecastTemps: Array<{ date: string; avgTunnelTemp: number }> = []
     const targetDates: string[] = []
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < daysAhead; i++) {
       const d = new Date(today)
       d.setDate(d.getDate() + i)
       targetDates.push(d.toISOString().slice(0, 10))

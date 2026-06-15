@@ -446,31 +446,32 @@ export default function HarvestPage() {
       {/* 7-day daily prediction */}
       {dailyForecasts.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 flex-wrap">
-              <TrendingUp className="w-5 h-5 text-purple-600" />
-              Prognoza dzienna — najbliższe 7 dni
-              <span className="text-xs text-gray-400 font-normal ml-2">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-purple-600" />
+                Prognoza dzienna — najbliższe 7 dni
+              </CardTitle>
+              <p className="text-xs text-gray-400 mt-1">
                 predykcja na podstawie GDH z prognozy pogody × krzywa odmiany
                 {dailyForecasts[0]?.correctionFactor !== 1.0 && (
                   <> × korekcja z historii ({dailyForecasts[0]?.correctionFactor.toFixed(2)}x)</>
                 )}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="ml-auto"
-                onClick={() => {
-                  const a = document.createElement('a')
-                  a.href = '/api/harvest-forecast/report'
-                  a.download = `prognoza-zbiorow-${new Date().toISOString().slice(0, 10)}.pdf`
-                  a.click()
-                }}
-              >
-                <FileDown className="w-4 h-4 mr-1" />
-                Pobierz PDF
-              </Button>
-            </CardTitle>
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const a = document.createElement('a')
+                a.href = '/api/harvest-forecast/report'
+                a.download = `prognoza-zbiorow-${new Date().toISOString().slice(0, 10)}.pdf`
+                a.click()
+              }}
+            >
+              <FileDown className="w-4 h-4 mr-1" />
+              Pobierz PDF
+            </Button>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">

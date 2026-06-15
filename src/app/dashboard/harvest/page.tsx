@@ -104,146 +104,133 @@ function getBlockColor(name: string): string {
   return BLOCK_COLORS[name] || '#6b7280'
 }
 
-const REPORT_BLOCK_COLORS: Record<string, string> = {
-  'Blok A': '#2563eb',
-  'Blok B': '#dc2626',
-  'Blok C': '#16a34a',
-  'Blok D': '#d97706',
-}
-
-function openForecastReport(
+function buildForecastRows(
   forecasts: DailyForecastBlock[],
   temps: Array<{ date: string; avgTunnelTemp: number }>,
 ) {
   const blockNames = forecasts.map(b => b.blockName).sort()
   const days = forecasts[0]?.days || []
   const todayStr = new Date().toISOString().slice(0, 10)
-  const reportDate = new Date().toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })
 
-  const dayRows = days.map(day => {
+  const rows = days.map(day => {
     const dt = new Date(day.date + 'T12:00:00')
-    const dow = dt.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })
-    const total = forecasts.reduce((s, b) => {
-      const d = b.days.find(dd => dd.date === day.date)
-      return s + (d?.predictedKg || 0)
-    }, 0)
-    const gdh = day.gdhDaily
+    const dow = dt.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })
+    const dowLong = dt.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })
+    const total = forecasts.reduce((s, b) => s + (b.days.find(d => d.date === day.date)?.predictedKg || 0), 0)
     const temp = temps.find(t => t.date === day.date)?.avgTunnelTemp
     const blocks: Record<string, number> = {}
-    for (const b of forecasts) {
-      const d = b.days.find(dd => dd.date === day.date)
-      blocks[b.blockName] = d?.predictedKg || 0
-    }
-    return { date: day.date, dow, total, gdh, temp, blocks }
+    for (const b of forecasts) blocks[b.blockName] = b.days.find(d => d.date === day.date)?.predictedKg || 0
+    return { date: day.date, dow, dowLong, total, gdh: day.gdhDaily, temp, blocks, isToday: day.date === todayStr }
   })
 
-  const totalAll = dayRows.reduce((s, d) => s + d.total, 0)
-  const maxTotal = Math.max(...dayRows.map(d => d.total))
+  const totalAll = rows.reduce((s, d) => s + d.total, 0)
+  return { blockNames, rows, totalAll }
+}
+
+function openForecastReport(
+  forecasts: DailyForecastBlock[],
+  temps: Array<{ date: string; avgTunnelTemp: number }>,
+) {
+  const { blockNames, rows, totalAll } = buildForecastRows(forecasts, temps)
+  const reportDate = new Date().toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })
+  const maxTotal = Math.max(...rows.map(d => d.total))
 
   const html = `<!DOCTYPE html>
 <html lang="pl"><head><meta charset="UTF-8">
 <title>Prognoza zbiorów malin — ${reportDate}</title>
 <style>
+@page{size:A4 portrait;margin:12mm}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#1e293b;padding:32px}
-.container{max-width:780px;margin:0 auto}
-.print-bar{text-align:center;margin-bottom:20px}
-.print-bar button{background:#15803d;color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer}
+body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#1e293b;padding:0;width:170mm;margin:0 auto}
+.print-bar{text-align:center;padding:16px 0}
+.print-bar button{background:#15803d;color:#fff;border:none;padding:10px 32px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer}
 .print-bar button:hover{background:#166534}
-.header{text-align:center;margin-bottom:28px;padding:24px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-radius:12px;border:1px solid #bbf7d0}
-.header h1{font-size:22px;font-weight:800;color:#14532d;margin-bottom:2px}
-.header .subtitle{font-size:12px;color:#16a34a;font-weight:500}
-.header .big-total{font-size:60px;font-weight:900;color:#15803d;margin:12px 0 2px;letter-spacing:-2px;line-height:1}
-.header .big-total-label{font-size:14px;color:#6b7280;font-weight:500}
-.legend{display:flex;justify-content:center;gap:20px;margin-bottom:16px}
-.legend-item{display:flex;align-items:center;gap:5px;font-size:12px;color:#6b7280;font-weight:500}
-.legend-dot{width:10px;height:10px;border-radius:50%}
-.day-card{background:#fff;border-radius:10px;padding:16px 20px;margin-bottom:8px;border:1px solid #e5e7eb}
-.day-card.today{border-color:#22c55e;border-width:2px;background:#fafffe}
-.day-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-.day-name{font-size:13px;font-weight:600;color:#374151;text-transform:capitalize;display:flex;align-items:center;gap:6px}
-.today-badge{background:#22c55e;color:#fff;font-size:8px;font-weight:700;padding:1px 6px;border-radius:3px;text-transform:uppercase}
-.day-meta{display:flex;gap:10px;align-items:center}
-.day-temp{font-size:11px;color:#d97706;font-weight:600;background:#fffbeb;padding:1px 6px;border-radius:4px;border:1px solid #fde68a}
-.day-gdh{font-size:11px;color:#2563eb;font-weight:600;background:#eff6ff;padding:1px 6px;border-radius:4px;border:1px solid #bfdbfe}
-.day-total-row{display:flex;align-items:center;gap:14px;margin-bottom:10px}
-.day-total-kg{font-size:36px;font-weight:900;color:#111827;letter-spacing:-1.5px;min-width:120px;line-height:1}
-.day-total-kg span{font-size:14px;font-weight:500;color:#9ca3af}
-.day-bar{flex:1;height:24px;background:#f3f4f6;border-radius:6px;overflow:hidden}
-.day-bar-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,#4ade80,#16a34a)}
-.blocks-grid{display:flex;gap:6px}
-.block-item{flex:1;display:flex;align-items:center;gap:5px;padding:4px 8px;background:#f9fafb;border-radius:6px;border:1px solid #f3f4f6}
-.block-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.block-name{font-size:10px;color:#9ca3af;font-weight:500}
-.block-kg{font-size:12px;font-weight:700;color:#374151;margin-left:auto}
-.footer{text-align:center;margin-top:20px;padding:10px;color:#d1d5db;font-size:10px}
-@media print{.print-bar{display:none}body{padding:16px}.day-card{break-inside:avoid}}
-</style></head><body><div class="container">
+.header{text-align:center;padding:18px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-radius:10px;border:1px solid #bbf7d0;margin-bottom:14px}
+.header h1{font-size:18px;font-weight:800;color:#14532d}
+.header .sub{font-size:11px;color:#16a34a;margin-top:1px}
+.header .big{font-size:52px;font-weight:900;color:#15803d;margin:8px 0 0;letter-spacing:-2px;line-height:1}
+.header .big span{font-size:18px;font-weight:500;color:#6b7280;letter-spacing:0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#f8fafc;color:#64748b;font-weight:600;padding:6px 8px;text-align:right;border-bottom:2px solid #e2e8f0}
+th:first-child{text-align:left}
+td{padding:6px 8px;text-align:right;border-bottom:1px solid #f1f5f9}
+td:first-child{text-align:left;font-weight:500;color:#374151}
+tr.today td{background:#f0fdf4;font-weight:600}
+tr.total td{border-top:2px solid #16a34a;font-weight:800;font-size:13px;background:#f0fdf4;color:#15803d}
+tr.total td:first-child{color:#14532d}
+.bar-cell{width:120px}
+.bar-bg{height:14px;background:#f1f5f9;border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#4ade80,#16a34a)}
+.badge{background:#22c55e;color:#fff;font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px;vertical-align:middle}
+.footer{text-align:center;margin-top:10px;color:#cbd5e1;font-size:9px}
+@media print{.print-bar{display:none}}
+</style></head><body>
 <div class="print-bar"><button onclick="window.print()">Zapisz jako PDF / Drukuj</button></div>
 <div class="header">
 <h1>PROGNOZA ZBIORÓW MALIN</h1>
-<div class="subtitle">Raport wygenerowany ${reportDate}</div>
-<div class="big-total">${Math.round(totalAll).toLocaleString('pl-PL')}</div>
-<div class="big-total-label">kg w ciągu 7 dni</div>
+<div class="sub">Raport z ${reportDate}</div>
+<div class="big">${Math.round(totalAll).toLocaleString('pl-PL')} <span>kg / 7 dni</span></div>
 </div>
-<div class="legend">${blockNames.map(n => `<div class="legend-item"><div class="legend-dot" style="background:${REPORT_BLOCK_COLORS[n] || '#94a3b8'}"></div>${n}</div>`).join('')}</div>
-${dayRows.map(day => {
-    const isToday = day.date === todayStr
-    const barW = Math.max(8, Math.round((day.total / maxTotal) * 100))
-    return `<div class="day-card${isToday ? ' today' : ''}">
-<div class="day-header"><div class="day-name">${day.dow}${isToday ? ' <span class="today-badge">dzisiaj</span>' : ''}</div>
-<div class="day-meta">${day.temp != null ? `<div class="day-temp">${day.temp.toFixed(1)} °C</div>` : ''}<div class="day-gdh">GDH ${Math.round(day.gdh)}</div></div></div>
-<div class="day-total-row"><div class="day-total-kg">${Math.round(day.total)} <span>kg</span></div>
-<div class="day-bar"><div class="day-bar-fill" style="width:${barW}%"></div></div></div>
-<div class="blocks-grid">${blockNames.map(n => `<div class="block-item"><div class="block-dot" style="background:${REPORT_BLOCK_COLORS[n] || '#94a3b8'}"></div><span class="block-name">${n}</span><span class="block-kg">${(day.blocks[n] || 0).toFixed(1)}</span></div>`).join('')}</div></div>`
+<table>
+<thead><tr><th>Dzień</th>${blockNames.map(n => `<th>${n}</th>`).join('')}<th>Razem</th><th>Temp</th><th>GDH</th><th class="bar-cell"></th></tr></thead>
+<tbody>
+${rows.map(day => {
+    const barW = Math.max(6, Math.round((day.total / maxTotal) * 100))
+    return `<tr class="${day.isToday ? 'today' : ''}">
+<td>${day.dowLong}${day.isToday ? '<span class="badge">dziś</span>' : ''}</td>
+${blockNames.map(n => `<td>${(day.blocks[n] || 0).toFixed(1)}</td>`).join('')}
+<td style="font-weight:800;font-size:14px">${Math.round(day.total)}</td>
+<td style="color:#d97706">${day.temp != null ? day.temp.toFixed(1) + '°' : '—'}</td>
+<td style="color:#2563eb">${Math.round(day.gdh)}</td>
+<td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:${barW}%"></div></div></td></tr>`
   }).join('\n')}
-<div class="footer">Raspberry Harvest Enterprise — prognoza oparta na modelu GDH i krzywych zbiorów</div>
-</div></body></html>`
+<tr class="total"><td>RAZEM 7 DNI</td>${blockNames.map(n => {
+    const sum = rows.reduce((s, d) => s + (d.blocks[n] || 0), 0)
+    return `<td>${Math.round(sum)}</td>`
+  }).join('')}<td style="font-size:16px">${Math.round(totalAll).toLocaleString('pl-PL')} kg</td><td></td><td></td><td></td></tr>
+</tbody></table>
+<div class="footer">Raspberry Harvest Enterprise — prognoza GDH × krzywe zbiorów</div>
+</body></html>`
 
   const w = window.open('', '_blank')
-  if (w) {
-    w.document.write(html)
-    w.document.close()
-  }
+  if (w) { w.document.write(html); w.document.close() }
 }
 
-function downloadForecastCSV(
+async function downloadForecastExcel(
   forecasts: DailyForecastBlock[],
   temps: Array<{ date: string; avgTunnelTemp: number }>,
 ) {
-  const blockNames = forecasts.map(b => b.blockName).sort()
-  const days = forecasts[0]?.days || []
+  const XLSX = await import('xlsx')
+  const { blockNames, rows, totalAll } = buildForecastRows(forecasts, temps)
 
-  const lines: string[] = []
-  lines.push(['Data', 'Dzień', ...blockNames, 'RAZEM', 'Temp °C', 'GDH'].join(';'))
+  const header = ['Data', 'Dzień', ...blockNames, 'RAZEM (kg)', 'Temp °C', 'GDH']
+  const data = rows.map(day => [
+    day.date,
+    day.dowLong,
+    ...blockNames.map(n => Math.round((day.blocks[n] || 0) * 10) / 10),
+    Math.round(day.total * 10) / 10,
+    day.temp != null ? Math.round(day.temp * 10) / 10 : '',
+    Math.round(day.gdh),
+  ])
+  const totalRow = [
+    '', 'RAZEM 7 DNI',
+    ...blockNames.map(n => Math.round(rows.reduce((s, d) => s + (d.blocks[n] || 0), 0) * 10) / 10),
+    Math.round(totalAll * 10) / 10, '', '',
+  ]
+  data.push(totalRow)
 
-  let totalAll = 0
-  for (const day of days) {
-    const dt = new Date(day.date + 'T12:00:00')
-    const dow = dt.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })
-    const blocks = blockNames.map(n => {
-      const b = forecasts.find(f => f.blockName === n)
-      const d = b?.days.find(dd => dd.date === day.date)
-      return (d?.predictedKg || 0).toFixed(1)
-    })
-    const total = forecasts.reduce((s, b) => {
-      const d = b.days.find(dd => dd.date === day.date)
-      return s + (d?.predictedKg || 0)
-    }, 0)
-    totalAll += total
-    const temp = temps.find(t => t.date === day.date)?.avgTunnelTemp
-    lines.push([day.date, dow, ...blocks, Math.round(total).toString(), temp != null ? temp.toFixed(1) : '', Math.round(day.gdhDaily).toString()].join(';'))
-  }
-  lines.push(['', 'RAZEM', ...blockNames.map(() => ''), Math.round(totalAll).toString(), '', ''].join(';'))
+  const ws = XLSX.utils.aoa_to_sheet([header, ...data])
 
-  const bom = '\uFEFF'
-  const blob = new Blob([bom + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `prognoza-zbiorow-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+  // Column widths
+  ws['!cols'] = [
+    { wch: 12 }, { wch: 28 },
+    ...blockNames.map(() => ({ wch: 10 })),
+    { wch: 12 }, { wch: 8 }, { wch: 6 },
+  ]
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Prognoza 7 dni')
+  XLSX.writeFile(wb, `prognoza-zbiorow-${new Date().toISOString().slice(0, 10)}.xlsx`)
 }
 
 export default function HarvestPage() {
@@ -608,12 +595,12 @@ export default function HarvestPage() {
                 onClick={() => openForecastReport(dailyForecasts, forecastTemps)}
               >
                 <FileDown className="w-4 h-4 mr-1" />
-                Raport PDF
+                PDF
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => downloadForecastCSV(dailyForecasts, forecastTemps)}
+                onClick={() => downloadForecastExcel(dailyForecasts, forecastTemps)}
               >
                 <FileDown className="w-4 h-4 mr-1" />
                 Excel

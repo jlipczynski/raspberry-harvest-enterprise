@@ -254,7 +254,22 @@ export async function GET() {
       gdhDaily: p.gdhDaily,
     }))
 
-    return NextResponse.json({ blocks, history, todayStr })
+    // --- 7. Build forecast temperatures for display ---
+    const forecastTemps: Array<{ date: string; avgTunnelTemp: number }> = []
+    const targetDates: string[] = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today)
+      d.setDate(d.getDate() + i)
+      targetDates.push(d.toISOString().slice(0, 10))
+    }
+    for (const dateStr of targetDates) {
+      const fd = forecastDays.find(f => f.date === dateStr)
+      if (fd) {
+        forecastTemps.push({ date: dateStr, avgTunnelTemp: Math.round(fd.avgTunnelTemp * 10) / 10 })
+      }
+    }
+
+    return NextResponse.json({ blocks, history, todayStr, forecastTemps })
   } catch (error) {
     console.error('Daily forecast error:', error)
     return NextResponse.json({ error: 'Failed to calculate daily forecast' }, { status: 500 })

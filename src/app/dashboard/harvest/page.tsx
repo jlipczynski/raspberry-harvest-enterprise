@@ -69,6 +69,30 @@ interface DailyPlanPoint {
   cumActual: number
 }
 
+interface DailyForecastBlock {
+  blockName: string
+  days: Array<{
+    date: string
+    blockName: string
+    predictedKg: number
+    actualKg: number
+    gdhDaily: number
+    correctionFactor: number
+    isPast: boolean
+  }>
+  totalPredicted7d: number
+  correctionFactor: number
+}
+
+interface PredictionHistory {
+  date: string
+  blockName: string
+  predictedKg: number
+  actualKg: number | null
+  ratio: number | null
+  gdhDaily: number | null
+}
+
 const BLOCK_COLORS: Record<string, string> = {
   'Blok A': '#3b82f6',
   'Blok B': '#ef4444',
@@ -86,6 +110,8 @@ export default function HarvestPage() {
   const [weeklyForecasts, setWeeklyForecasts] = useState<WeeklyBlockForecast[]>([])
   const [dailyPlanVsActual, setDailyPlanVsActual] = useState<DailyPlanPoint[]>([])
   const [totalPlannedFromApi, setTotalPlannedFromApi] = useState(0)
+  const [dailyForecasts, setDailyForecasts] = useState<DailyForecastBlock[]>([])
+  const [predictionHistory, setPredictionHistory] = useState<PredictionHistory[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<string | null>(null)
@@ -93,10 +119,11 @@ export default function HarvestPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const [harvestRes, planRes, weeklyRes] = await Promise.all([
+      const [harvestRes, planRes, weeklyRes, dailyRes] = await Promise.all([
         fetch('/api/plantation/harvest'),
         fetch('/api/plantation/harvest/plan'),
         fetch('/api/harvest-forecast/weekly'),
+        fetch('/api/harvest-forecast/daily'),
       ])
 
       if (harvestRes.ok) {
@@ -112,6 +139,11 @@ export default function HarvestPage() {
         setWeeklyForecasts(data.blocks || [])
         setDailyPlanVsActual(data.dailyPlanVsActual || [])
         setTotalPlannedFromApi(data.totalPlannedKg || 0)
+      }
+      if (dailyRes.ok) {
+        const data = await dailyRes.json()
+        setDailyForecasts(data.blocks || [])
+        setPredictionHistory(data.history || [])
       }
     } catch (e) {
       console.error('Error fetching harvest data:', e)
@@ -408,6 +440,154 @@ export default function HarvestPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 7-day daily prediction */}
+      {dailyForecasts.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-purple-600" />
+              Prognoza dzienna — najbliższe 7 dni
+              <span className="text-xs text-gray-400 font-normal ml-2">
+                predykcja na podstawie GDH z prognozy pogody × krzywa odmiany
+                {dailyForecasts[0]?.correctionFactor !== 1.0 && (
+                  <> × korekcja z historii ({dailyForecasts[0]?.correctionFactor.toFixed(2)}x)</>
+                )}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-gray-500 text-xs">
+                    <th className="py-2 px-2">Data</th>
+                    {dailyForecasts.map(b => (
+                      <th key={b.blockName} className="py-2 px-2 text-right">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: getBlockColor(b.blockName) }} />
+                          {b.blockName}
+                        </span>
+                      </th>
+                    ))}
+                    <th className="py-2 px-2 text-right font-semibold">Razem</th>
+                    <th className="py-2 px-2 text-right text-gray-400">GDH</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailyForecasts[0]?.days.map((day, dayIdx) => {
+                    const dayTotal = dailyForecasts.reduce((s, b) => s + b.days[dayIdx].predictedKg, 0)
+                    const actualTotal = dailyForecasts.reduce((s, b) => s + b.days[dayIdx].actualKg, 0)
+                    const isToday = day.date === new Date().toISOString().slice(0, 10)
+                    const hasActual = actualTotal > 0
+
+                    return (
+                      <tr key={day.date} className={`border-b last:border-0 ${isToday ? 'bg-purple-50 font-medium' : ''}`}>
+                        <td className="py-2 px-2">
+                          {new Date(day.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          {isToday && <span className="ml-1 text-xs text-purple-600">(dziś)</span>}
+                        </td>
+                        {dailyForecasts.map(b => {
+                          const d = b.days[dayIdx]
+                          return (
+                            <td key={b.blockName} className="py-2 px-2 text-right">
+                              <span className="font-medium">{d.predictedKg.toLocaleString('pl-PL')} kg</span>
+                              {d.actualKg > 0 && (
+                                <div className="text-xs text-green-600">
+                                  real: {d.actualKg.toLocaleString('pl-PL')}
+                                </div>
+                              )}
+                            </td>
+                          )
+                        })}
+                        <td className="py-2 px-2 text-right font-bold">
+                          {Math.round(dayTotal).toLocaleString('pl-PL')} kg
+                          {hasActual && (
+                            <div className="text-xs text-green-600 font-normal">
+                              real: {Math.round(actualTotal).toLocaleString('pl-PL')}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2 px-2 text-right text-gray-400 text-xs">
+                          {day.gdhDaily.toFixed(0)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {/* Totals row */}
+                  <tr className="border-t-2 font-bold bg-gray-50">
+                    <td className="py-2 px-2">Razem 7 dni</td>
+                    {dailyForecasts.map(b => (
+                      <td key={b.blockName} className="py-2 px-2 text-right">
+                        {b.totalPredicted7d.toLocaleString('pl-PL')} kg
+                      </td>
+                    ))}
+                    <td className="py-2 px-2 text-right">
+                      {Math.round(dailyForecasts.reduce((s, b) => s + b.totalPredicted7d, 0)).toLocaleString('pl-PL')} kg
+                    </td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Prediction history — last 7 days accuracy */}
+      {predictionHistory.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Trafność predykcji — ostatnie 7 dni</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-gray-500 text-xs">
+                    <th className="py-2 px-2">Data</th>
+                    <th className="py-2 px-2">Blok</th>
+                    <th className="py-2 px-2 text-right">Predykcja</th>
+                    <th className="py-2 px-2 text-right">Realne</th>
+                    <th className="py-2 px-2 text-right">Trafność</th>
+                    <th className="py-2 px-2 text-right">GDH</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {predictionHistory.map((h, i) => {
+                    const accuracy = h.ratio != null ? Math.round(h.ratio * 100) : null
+                    return (
+                      <tr key={i} className="border-b last:border-0">
+                        <td className="py-1.5 px-2">
+                          {new Date(h.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })}
+                        </td>
+                        <td className="py-1.5 px-2">
+                          <span className="inline-flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: getBlockColor(h.blockName) }} />
+                            {h.blockName}
+                          </span>
+                        </td>
+                        <td className="py-1.5 px-2 text-right">{h.predictedKg.toLocaleString('pl-PL')} kg</td>
+                        <td className="py-1.5 px-2 text-right">
+                          {h.actualKg != null ? `${h.actualKg.toLocaleString('pl-PL')} kg` : '—'}
+                        </td>
+                        <td className="py-1.5 px-2 text-right">
+                          {accuracy != null ? (
+                            <span className={`font-medium ${accuracy >= 80 && accuracy <= 120 ? 'text-green-600' : 'text-amber-600'}`}>
+                              {accuracy}%
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="py-1.5 px-2 text-right text-gray-400">{h.gdhDaily?.toFixed(0) ?? '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Cumulative plan vs actual chart */}
       {cumulativeChartData.length > 0 && (

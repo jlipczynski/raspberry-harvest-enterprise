@@ -1,16 +1,8 @@
 import { prisma } from '@/lib/prisma'
 import { NextResponse } from 'next/server'
 import { requireTenantId } from '@/lib/tenant'
-import { chromium } from 'playwright'
 
 export const dynamic = 'force-dynamic'
-
-interface PredRow {
-  date: Date
-  blockName: string
-  predictedKg: number
-  gdhDaily: number | null
-}
 
 export async function GET() {
   try {
@@ -26,23 +18,16 @@ export async function GET() {
       orderBy: [{ date: 'asc' }, { block: { name: 'asc' } }],
     })
 
-    const rows: PredRow[] = preds.map(p => ({
-      date: p.date,
-      blockName: p.block.name,
-      predictedKg: p.predictedKg,
-      gdhDaily: p.gdhDaily,
-    }))
-
     // Group by date
     const byDate = new Map<string, Array<{ block: string; kg: number; gdh: number }>>()
-    for (const r of rows) {
-      const d = r.date.toISOString().slice(0, 10)
+    for (const p of preds) {
+      const d = p.date.toISOString().slice(0, 10)
       const arr = byDate.get(d) || []
-      arr.push({ block: r.blockName, kg: r.predictedKg, gdh: r.gdhDaily || 0 })
+      arr.push({ block: p.block.name, kg: p.predictedKg, gdh: p.gdhDaily || 0 })
       byDate.set(d, arr)
     }
 
-    const blockNames = [...new Set(rows.map(r => r.blockName))].sort()
+    const blockNames = [...new Set(preds.map(p => p.block.name))].sort()
 
     const days: Array<{
       date: string
@@ -93,6 +78,7 @@ export async function GET() {
 <html lang="pl">
 <head>
   <meta charset="UTF-8">
+  <title>Prognoza zbiorów malin — ${reportDate}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -102,6 +88,15 @@ export async function GET() {
       padding: 32px;
     }
     .container { max-width: 780px; margin: 0 auto; }
+
+    .print-bar {
+      text-align: center; margin-bottom: 20px;
+    }
+    .print-bar button {
+      background: #15803d; color: #fff; border: none; padding: 10px 28px;
+      border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer;
+    }
+    .print-bar button:hover { background: #166534; }
 
     .header {
       text-align: center;
@@ -119,18 +114,13 @@ export async function GET() {
     }
     .header .big-total-label { font-size: 14px; color: #6b7280; font-weight: 500; }
 
-    .legend {
-      display: flex; justify-content: center; gap: 20px; margin-bottom: 16px;
-    }
+    .legend { display: flex; justify-content: center; gap: 20px; margin-bottom: 16px; }
     .legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #6b7280; font-weight: 500; }
     .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
 
     .day-card {
-      background: #ffffff;
-      border-radius: 10px;
-      padding: 16px 20px;
-      margin-bottom: 8px;
-      border: 1px solid #e5e7eb;
+      background: #ffffff; border-radius: 10px; padding: 16px 20px;
+      margin-bottom: 8px; border: 1px solid #e5e7eb;
     }
     .day-card.today { border-color: #22c55e; border-width: 2px; background: #fafffe; }
 
@@ -166,10 +156,20 @@ export async function GET() {
     .block-kg { font-size: 12px; font-weight: 700; color: #374151; margin-left: auto; }
 
     .footer { text-align: center; margin-top: 20px; padding: 10px; color: #d1d5db; font-size: 10px; }
+
+    @media print {
+      .print-bar { display: none; }
+      body { padding: 16px; }
+      .day-card { break-inside: avoid; }
+    }
   </style>
 </head>
 <body>
   <div class="container">
+    <div class="print-bar">
+      <button onclick="window.print()">Zapisz jako PDF / Drukuj</button>
+    </div>
+
     <div class="header">
       <h1>PROGNOZA ZBIORÓW MALIN</h1>
       <div class="subtitle">Raport wygenerowany ${reportDate}</div>
@@ -225,21 +225,9 @@ export async function GET() {
 </body>
 </html>`
 
-    // Generate PDF
-    const browser = await chromium.launch()
-    const page = await browser.newPage()
-    await page.setContent(html, { waitUntil: 'networkidle' })
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '16px', bottom: '16px', left: '16px', right: '16px' },
-    })
-    await browser.close()
-
-    return new NextResponse(Buffer.from(pdfBuffer) as unknown as BodyInit, {
+    return new NextResponse(html, {
       headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="prognoza-zbiorow-${todayStr}.pdf"`,
+        'Content-Type': 'text/html; charset=utf-8',
       },
     })
   } catch (error) {

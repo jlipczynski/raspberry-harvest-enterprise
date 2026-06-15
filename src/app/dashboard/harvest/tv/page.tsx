@@ -80,6 +80,7 @@ export default function HarvestTVPage() {
   const [entries, setEntries] = useState<HarvestEntry[]>([])
   const [blockPlans, setBlockPlans] = useState<BlockPlan[]>([])
   const [dailyForecasts, setDailyForecasts] = useState<DailyForecastBlock[]>([])
+  const [forecastTemps, setForecastTemps] = useState<Array<{ date: string; avgTunnelTemp: number }>>([])
   const [slide, setSlide] = useState(0)
   const [paused, setPaused] = useState(false)
   const [now, setNow] = useState(new Date())
@@ -103,6 +104,7 @@ export default function HarvestTVPage() {
       if (dailyRes.ok) {
         const data = await dailyRes.json()
         setDailyForecasts(data.blocks || [])
+        setForecastTemps(data.forecastTemps || [])
       }
     } catch (e) {
       console.error('TV fetch error:', e)
@@ -387,12 +389,14 @@ export default function HarvestTVPage() {
                       </th>
                     ))}
                     <th className="py-4 px-4 text-right text-xl font-bold text-white">Razem</th>
+                    <th className="py-4 px-4 text-right text-lg text-gray-400">Temp</th>
                   </tr>
                 </thead>
                 <tbody>
                   {dailyForecasts[0]?.days.map((day, dayIdx) => {
                     const dayTotal = dailyForecasts.reduce((s, b) => s + b.days[dayIdx].predictedKg, 0)
                     const isToday = day.date === new Date().toISOString().slice(0, 10)
+                    const temp = forecastTemps.find(f => f.date === day.date)?.avgTunnelTemp
                     return (
                       <tr
                         key={day.date}
@@ -411,6 +415,9 @@ export default function HarvestTVPage() {
                           {Math.round(dayTotal).toLocaleString('pl-PL')}
                           <span className="text-sm text-gray-400 ml-1">kg</span>
                         </td>
+                        <td className="py-3 px-4 text-right text-lg text-amber-400">
+                          {temp != null ? `${temp.toFixed(1)}°` : '—'}
+                        </td>
                       </tr>
                     )
                   })}
@@ -425,6 +432,7 @@ export default function HarvestTVPage() {
                       {Math.round(dailyForecasts.reduce((s, b) => s + b.totalPredicted7d, 0)).toLocaleString('pl-PL')}
                       <span className="text-lg text-green-500 ml-1">kg</span>
                     </td>
+                    <td />
                   </tr>
                 </tbody>
               </table>

@@ -112,6 +112,7 @@ export default function HarvestPage() {
   const [totalPlannedFromApi, setTotalPlannedFromApi] = useState(0)
   const [dailyForecasts, setDailyForecasts] = useState<DailyForecastBlock[]>([])
   const [predictionHistory, setPredictionHistory] = useState<PredictionHistory[]>([])
+  const [forecastTemps, setForecastTemps] = useState<Array<{ date: string; avgTunnelTemp: number }>>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<string | null>(null)
@@ -144,6 +145,7 @@ export default function HarvestPage() {
         const data = await dailyRes.json()
         setDailyForecasts(data.blocks || [])
         setPredictionHistory(data.history || [])
+        setForecastTemps(data.forecastTemps || [])
       }
     } catch (e) {
       console.error('Error fetching harvest data:', e)
@@ -471,6 +473,7 @@ export default function HarvestPage() {
                       </th>
                     ))}
                     <th className="py-2 px-2 text-right font-semibold">Razem</th>
+                    <th className="py-2 px-2 text-right text-gray-400">Temp °C</th>
                     <th className="py-2 px-2 text-right text-gray-400">GDH</th>
                   </tr>
                 </thead>
@@ -507,6 +510,9 @@ export default function HarvestPage() {
                               real: {Math.round(actualTotal).toLocaleString('pl-PL')}
                             </div>
                           )}
+                        </td>
+                        <td className="py-2 px-2 text-right text-gray-400 text-xs">
+                          {forecastTemps.find(f => f.date === day.date)?.avgTunnelTemp.toFixed(1) ?? '—'}°
                         </td>
                         <td className="py-2 px-2 text-right text-gray-400 text-xs">
                           {day.gdhDaily.toFixed(0)}

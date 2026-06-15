@@ -107,9 +107,11 @@ function getBlockColor(name: string): string {
 function buildForecastRows(
   forecasts: DailyForecastBlock[],
   temps: Array<{ date: string; avgTunnelTemp: number }>,
+  daysCount?: number,
 ) {
   const blockNames = forecasts.map(b => b.blockName).sort()
-  const days = forecasts[0]?.days || []
+  const allDays = forecasts[0]?.days || []
+  const days = daysCount ? allDays.slice(0, daysCount) : allDays
   const todayStr = new Date().toISOString().slice(0, 10)
 
   const rows = days.map(day => {
@@ -130,8 +132,9 @@ function buildForecastRows(
 function openForecastReport(
   forecasts: DailyForecastBlock[],
   temps: Array<{ date: string; avgTunnelTemp: number }>,
+  daysCount: number = 7,
 ) {
-  const { blockNames, rows, totalAll } = buildForecastRows(forecasts, temps)
+  const { blockNames, rows, totalAll } = buildForecastRows(forecasts, temps, daysCount)
   const reportDate = new Date().toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })
   const maxTotal = Math.max(...rows.map(d => d.total))
 
@@ -169,7 +172,7 @@ tr.total td:first-child{color:#14532d}
 <div class="header">
 <h1>PROGNOZA ZBIORÓW MALIN</h1>
 <div class="sub">Raport z ${reportDate}</div>
-<div class="big">${Math.round(totalAll).toLocaleString('pl-PL')} <span>kg / 7 dni</span></div>
+<div class="big">${Math.round(totalAll).toLocaleString('pl-PL')} <span>kg / ${daysCount} dni</span></div>
 </div>
 <table>
 <thead><tr><th>Dzień</th>${blockNames.map(n => `<th>${n}</th>`).join('')}<th>Razem</th><th>Temp</th><th>GDH</th><th class="bar-cell"></th></tr></thead>
@@ -184,7 +187,7 @@ ${blockNames.map(n => `<td>${(day.blocks[n] || 0).toFixed(1)}</td>`).join('')}
 <td style="color:#2563eb">${Math.round(day.gdh)}</td>
 <td class="bar-cell"><div class="bar-bg"><div class="bar-fill" style="width:${barW}%"></div></div></td></tr>`
   }).join('\n')}
-<tr class="total"><td>RAZEM 7 DNI</td>${blockNames.map(n => {
+<tr class="total"><td>RAZEM ${daysCount} DNI</td>${blockNames.map(n => {
     const sum = rows.reduce((s, d) => s + (d.blocks[n] || 0), 0)
     return `<td>${Math.round(sum)}</td>`
   }).join('')}<td style="font-size:16px">${Math.round(totalAll).toLocaleString('pl-PL')} kg</td><td></td><td></td><td></td></tr>
@@ -199,9 +202,10 @@ ${blockNames.map(n => `<td>${(day.blocks[n] || 0).toFixed(1)}</td>`).join('')}
 async function downloadForecastExcel(
   forecasts: DailyForecastBlock[],
   temps: Array<{ date: string; avgTunnelTemp: number }>,
+  daysCount: number = 7,
 ) {
   const XLSX = await import('xlsx')
-  const { blockNames, rows, totalAll } = buildForecastRows(forecasts, temps)
+  const { blockNames, rows, totalAll } = buildForecastRows(forecasts, temps, daysCount)
 
   const header = ['Data', 'Dzień', ...blockNames, 'RAZEM (kg)', 'Temp °C', 'GDH']
   const data = rows.map(day => [
@@ -213,7 +217,7 @@ async function downloadForecastExcel(
     Math.round(day.gdh),
   ])
   const totalRow = [
-    '', 'RAZEM 7 DNI',
+    '', `RAZEM ${daysCount} DNI`,
     ...blockNames.map(n => Math.round(rows.reduce((s, d) => s + (d.blocks[n] || 0), 0) * 10) / 10),
     Math.round(totalAll * 10) / 10, '', '',
   ]
@@ -229,7 +233,7 @@ async function downloadForecastExcel(
   ]
 
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Prognoza 7 dni')
+  XLSX.utils.book_append_sheet(wb, ws, `Prognoza ${daysCount} dni`)
   XLSX.writeFile(wb, `prognoza-zbiorow-${new Date().toISOString().slice(0, 10)}.xlsx`)
 }
 
@@ -253,7 +257,7 @@ export default function HarvestPage() {
         fetch('/api/plantation/harvest'),
         fetch('/api/plantation/harvest/plan'),
         fetch('/api/harvest-forecast/weekly'),
-        fetch('/api/harvest-forecast/daily'),
+        fetch('/api/harvest-forecast/daily?days=14'),
       ])
 
       if (harvestRes.ok) {
@@ -588,22 +592,18 @@ export default function HarvestPage() {
                 )}
               </p>
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openForecastReport(dailyForecasts, forecastTemps)}
-              >
-                <FileDown className="w-4 h-4 mr-1" />
-                PDF
+            <div className="flex gap-1.5 flex-wrap">
+              <Button variant="outline" size="sm" onClick={() => openForecastReport(dailyForecasts, forecastTemps, 7)}>
+                <FileDown className="w-3.5 h-3.5 mr-1" />7 dni PDF
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => downloadForecastExcel(dailyForecasts, forecastTemps)}
-              >
-                <FileDown className="w-4 h-4 mr-1" />
-                Excel
+              <Button variant="outline" size="sm" onClick={() => downloadForecastExcel(dailyForecasts, forecastTemps, 7)}>
+                <FileDown className="w-3.5 h-3.5 mr-1" />7 dni Excel
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => openForecastReport(dailyForecasts, forecastTemps, 14)}>
+                <FileDown className="w-3.5 h-3.5 mr-1" />14 dni PDF
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => downloadForecastExcel(dailyForecasts, forecastTemps, 14)}>
+                <FileDown className="w-3.5 h-3.5 mr-1" />14 dni Excel
               </Button>
             </div>
           </CardHeader>
@@ -627,7 +627,7 @@ export default function HarvestPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dailyForecasts[0]?.days.map((day, dayIdx) => {
+                  {dailyForecasts[0]?.days.slice(0, 7).map((day, dayIdx) => {
                     const dayTotal = dailyForecasts.reduce((s, b) => s + b.days[dayIdx].predictedKg, 0)
                     const actualTotal = dailyForecasts.reduce((s, b) => s + b.days[dayIdx].actualKg, 0)
                     const isToday = day.date === new Date().toISOString().slice(0, 10)

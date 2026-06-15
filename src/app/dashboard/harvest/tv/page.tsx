@@ -60,13 +60,26 @@ function getBlockColor(name: string): string {
   return BLOCK_COLORS[name] || '#6b7280'
 }
 
-const SLIDE_COUNT = 4
+interface DailyForecastBlock {
+  blockName: string
+  days: Array<{
+    date: string
+    predictedKg: number
+    actualKg: number
+    gdhDaily: number
+  }>
+  totalPredicted7d: number
+  correctionFactor: number
+}
+
+const SLIDE_COUNT = 5
 const DEFAULT_INTERVAL = 12000 // 12s per slide
 
 export default function HarvestTVPage() {
   useHideDashboardLayout()
   const [entries, setEntries] = useState<HarvestEntry[]>([])
   const [blockPlans, setBlockPlans] = useState<BlockPlan[]>([])
+  const [dailyForecasts, setDailyForecasts] = useState<DailyForecastBlock[]>([])
   const [slide, setSlide] = useState(0)
   const [paused, setPaused] = useState(false)
   const [now, setNow] = useState(new Date())
@@ -74,9 +87,10 @@ export default function HarvestTVPage() {
   // Fetch data
   const fetchData = useCallback(async () => {
     try {
-      const [harvestRes, planRes] = await Promise.all([
+      const [harvestRes, planRes, dailyRes] = await Promise.all([
         fetch('/api/plantation/harvest'),
         fetch('/api/plantation/harvest/plan'),
+        fetch('/api/harvest-forecast/daily'),
       ])
       if (harvestRes.ok) {
         const data = await harvestRes.json()
@@ -85,6 +99,10 @@ export default function HarvestTVPage() {
       if (planRes.ok) {
         const data = await planRes.json()
         setBlockPlans(data.blocks || [])
+      }
+      if (dailyRes.ok) {
+        const data = await dailyRes.json()
+        setDailyForecasts(data.blocks || [])
       }
     } catch (e) {
       console.error('TV fetch error:', e)
@@ -351,8 +369,71 @@ export default function HarvestTVPage() {
           </div>
         )}
 
-        {/* Slide 3: Per-block detail cards */}
-        {slide === 3 && (
+        {/* Slide 3: 7-day daily forecast */}
+        {slide === 3 && dailyForecasts.length > 0 && (
+          <div className="min-h-[calc(100vh-120px)] flex flex-col">
+            <h2 className="text-3xl font-bold text-gray-200 mb-6">Prognoza zbiorów — 7 dni</h2>
+            <div className="flex-1 flex flex-col justify-center">
+              <table className="w-full text-lg">
+                <thead>
+                  <tr className="border-b border-gray-700 text-gray-400">
+                    <th className="py-4 px-4 text-left text-xl">Dzień</th>
+                    {dailyForecasts.map(b => (
+                      <th key={b.blockName} className="py-4 px-4 text-right text-xl">
+                        <span className="inline-flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: getBlockColor(b.blockName) }} />
+                          {b.blockName}
+                        </span>
+                      </th>
+                    ))}
+                    <th className="py-4 px-4 text-right text-xl font-bold text-white">Razem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dailyForecasts[0]?.days.map((day, dayIdx) => {
+                    const dayTotal = dailyForecasts.reduce((s, b) => s + b.days[dayIdx].predictedKg, 0)
+                    const isToday = day.date === new Date().toISOString().slice(0, 10)
+                    return (
+                      <tr
+                        key={day.date}
+                        className={`border-b border-gray-800 ${isToday ? 'bg-green-900/30' : ''}`}
+                      >
+                        <td className="py-3 px-4 text-gray-300">
+                          {new Date(day.date).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          {isToday && <span className="ml-2 text-green-400 text-sm">(dziś)</span>}
+                        </td>
+                        {dailyForecasts.map(b => (
+                          <td key={b.blockName} className="py-3 px-4 text-right font-bold" style={{ color: getBlockColor(b.blockName) }}>
+                            {b.days[dayIdx].predictedKg.toLocaleString('pl-PL')} kg
+                          </td>
+                        ))}
+                        <td className="py-3 px-4 text-right font-black text-2xl text-white">
+                          {Math.round(dayTotal).toLocaleString('pl-PL')}
+                          <span className="text-sm text-gray-400 ml-1">kg</span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  <tr className="border-t-2 border-gray-600 bg-gray-900">
+                    <td className="py-4 px-4 text-xl font-bold text-gray-200">Razem 7 dni</td>
+                    {dailyForecasts.map(b => (
+                      <td key={b.blockName} className="py-4 px-4 text-right text-xl font-bold" style={{ color: getBlockColor(b.blockName) }}>
+                        {b.totalPredicted7d.toLocaleString('pl-PL')} kg
+                      </td>
+                    ))}
+                    <td className="py-4 px-4 text-right text-3xl font-black text-green-400">
+                      {Math.round(dailyForecasts.reduce((s, b) => s + b.totalPredicted7d, 0)).toLocaleString('pl-PL')}
+                      <span className="text-lg text-green-500 ml-1">kg</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Slide 4: Per-block detail cards */}
+        {slide === 4 && (
           <div className="min-h-[calc(100vh-120px)]">
             <h2 className="text-3xl font-bold text-gray-200 mb-8">Realizacja per blok</h2>
             <div className="grid grid-cols-2 gap-8">

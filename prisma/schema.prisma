@@ -57,6 +57,7 @@ model Farm {
   forecastCache   ForecastCache?
   sensorDevices   SensorDevice[]
   harvestEntries  HarvestEntry[]
+  harvestPredictions HarvestPrediction[]
 
   googleDriveRefreshToken String?
   googleDriveFolderId     String?
@@ -78,6 +79,7 @@ model Block {
 
   sections       Section[]
   harvestEntries HarvestEntry[]
+  harvestPredictions HarvestPrediction[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -518,6 +520,29 @@ model TemperatureReading {
   @@unique([sectionId, timestamp])
   @@index([sectionId, timestamp])
   @@map("temperature_readings")
+}
+
+// ==================== HARVEST PREDICTIONS ====================
+model HarvestPrediction {
+  id              String   @id @default(cuid())
+  date            DateTime @db.Date
+
+  blockId         String
+  block           Block    @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  farmId          String
+  farm            Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  predictedKg     Float            // what we predicted for this day
+  actualKg        Float?           // filled after MaxCrop sync (null = future)
+  ratio           Float?           // actual / predicted (null = future or predictedKg=0)
+  gdhDaily        Float?           // GDH forecast for this day (for analysis)
+  correctionFactor Float @default(1.0) // rolling avg ratio applied when making this prediction
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([farmId, date, blockId])
+  @@map("harvest_predictions")
 }
 
 // ==================== FEEDBACK ====================

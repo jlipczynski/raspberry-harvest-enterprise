@@ -1,8 +1,8 @@
 /**
  * MaxCrop Harvest Sync Agent
  *
- * Loguje się do maxcropdata.com, scrapuje tabelę "Suma zbiorów" dzień po dniu
- * (od dziś do startu sezonu), i robi upsert do harvest_entries.
+ * Loguje się do maxcropdata.com, ustawia zakres dat (sezon → dziś),
+ * pobiera Excel, parsuje go i robi upsert do harvest_entries.
  *
  * Uruchamianie: npx tsx scripts/maxcrop-sync.ts
  * Cron: codziennie o 21:00
@@ -13,7 +13,10 @@ dotenv.config({ path: '.env.local' })
 
 import { chromium } from 'playwright'
 import { PrismaClient } from '@prisma/client'
-import { mapAreaToBlockName } from '../src/lib/maxcrop-harvest-parser'
+import { mapAreaToBlockName, parseHarvestRows } from '../src/lib/maxcrop-harvest-parser'
+import * as XLSX from 'xlsx'
+import * as fs from 'fs'
+import * as path from 'path'
 
 const MAXCROP_URL = 'https://www.maxcropdata.com/'
 const MAXCROP_USER = process.env.MAXCROP_USER
@@ -32,29 +35,30 @@ if (!MAXCROP_FARM_ID) {
 
 const prisma = new PrismaClient()
 
-function getSeasonStartDate(): Date {
-  const now = new Date()
-  return new Date(now.getFullYear(), 4, 1) // 1 maja
+function formatDate(d: Date): string {
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
 }
 
-interface HarvestRow {
-  date: string
-  areaName: string
-  productClass: string
-  weightKg: number
-  quantity: number
+function getSeasonStartDate(): string {
+  const now = new Date()
+  return formatDate(new Date(now.getFullYear(), 4, 1)) // 1 maja
 }
 
 async function main() {
   const seasonStart = getSeasonStartDate()
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const today = formatDate(new Date())
 
-  const totalDays = Math.ceil((today.getTime() - seasonStart.getTime()) / 86400000) + 1
-  console.log(`[MaxCrop Sync] Sezon: ${seasonStart.toISOString().slice(0, 10)} → ${today.toISOString().slice(0, 10)} (${totalDays} dni)`)
+  console.log(`[MaxCrop Sync] Zakres dat: ${seasonStart} → ${today}`)
+
+  const tmpDir = path.resolve('tmp')
+  if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
+  const downloadPath = tmpDir
 
   const browser = await chromium.launch({ headless: true })
-  const context = await browser.newContext()
+  const context = await browser.newContext({ acceptDownloads: true })
   const page = await context.newPage()
 
   try {
@@ -78,91 +82,100 @@ async function main() {
     await page.waitForTimeout(3000)
     console.log('[MaxCrop Sync] Zalogowano.')
 
-    // 2. Navigate to "Suma zbiorów"
+    // 2. Navigate to "Suma zbiorow"
     await page.click('text=Suma zbiorów')
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(2000)
 
-    // 3. Click "Bieżący" to start from today
-    await page.click('text=Bieżący')
-    await page.waitForTimeout(1500)
+    // 3. Set date range: "Data od" and "Data do"
+    // Vaadin date fields — dump all to find the right ones
+    const dateInputs = await page.locator('.v-datefield-textfield').all()
+    console.log(`[MaxCrop Sync] Znaleziono ${dateInputs.length} pól daty`)
+    for (let i = 0; i < dateInputs.length; i++) {
+      const val = await dateInputs[i].inputValue().catch(() => '')
+      console.log(`[MaxCrop Sync]   input[${i}] value="${val}"`)
+    }
 
-    // 4. Scrape day by day, going back with "<" button
-    const allRows: HarvestRow[] = []
-    let emptyDays = 0
-
-    for (let dayOffset = 0; dayOffset < totalDays; dayOffset++) {
-      // Scrape first Vaadin table ("Dzienne informacje o zbiorach")
-      const firstTable = page.locator('.v-table').first()
-      const tableRows = await firstTable.locator('.v-table-row, .v-table-row-odd').all()
-
-      let dayRows = 0
-      for (const tr of tableRows) {
-        const cells = await tr.locator('.v-table-cell-content').all()
-        if (cells.length < 4) continue
-
-        const cellTexts = await Promise.all(cells.map(c => c.textContent()))
-        const dateCell = (cellTexts[0] || '').trim()
-        const areaName = (cellTexts[1] || '').trim()
-        const productClass = (cellTexts[2] || '').trim()
-        const weightStr = (cellTexts[3] || '').trim().replace(',', '.')
-        const quantityStr = cells.length > 4 ? (cellTexts[4] || '').trim().replace(',', '.') : '0'
-
-        if (!dateCell || dateCell === 'Data' || !areaName) continue
-        if (areaName.toLowerCase().includes('suma')) continue
-
-        const weightKg = parseFloat(weightStr)
-        const quantity = parseFloat(quantityStr)
-        if (isNaN(weightKg) || weightKg <= 0) continue
-
-        allRows.push({ date: dateCell, areaName, productClass, weightKg, quantity: isNaN(quantity) ? 0 : quantity })
-        dayRows++
-      }
-
-      if (dayRows > 0) {
-        emptyDays = 0
-      } else {
-        emptyDays++
-      }
-
-      // Log progress
-      if (dayOffset % 7 === 0) {
-        const currentDate = new Date(today)
-        currentDate.setDate(currentDate.getDate() - dayOffset)
-        console.log(`[MaxCrop Sync] ${currentDate.toISOString().slice(0, 10)}: ${dayRows} wierszy (łącznie ${allRows.length})`)
-      }
-
-      // Stop if we're past season start or 10+ empty days in a row
-      if (emptyDays >= 10) {
-        console.log('[MaxCrop Sync] 10 pustych dni z rzędu — stop.')
-        break
-      }
-
-      if (dayOffset < totalDays - 1) {
-        // Click "<" to go to previous day
-        const prevButtons = await page.locator('.v-button-caption').all()
-        let clicked = false
-        for (const btn of prevButtons) {
-          const text = await btn.textContent()
-          if (text?.trim() === '<') {
-            await btn.click()
-            clicked = true
-            break
-          }
-        }
-        if (!clicked) break
-        await page.waitForTimeout(1000)
+    // Fields: [0]=Rok (just year), [1]=Data od, [2]=Data do
+    // But screenshot showed 3 fields and dates got swapped — find by current value
+    let dataOdIdx = -1
+    let dataDoIdx = -1
+    for (let i = 0; i < dateInputs.length; i++) {
+      const val = await dateInputs[i].inputValue().catch(() => '')
+      // Rok field has just a year like "2026" or is short
+      if (val.length <= 4) continue
+      if (dataOdIdx === -1) {
+        dataOdIdx = i
+      } else if (dataDoIdx === -1) {
+        dataDoIdx = i
       }
     }
 
-    console.log(`[MaxCrop Sync] Scrapowano ${allRows.length} wierszy`)
+    // If we couldn't detect by value, use last two fields
+    if (dataOdIdx === -1 || dataDoIdx === -1) {
+      dataOdIdx = dateInputs.length - 2
+      dataDoIdx = dateInputs.length - 1
+    }
 
-    if (allRows.length === 0) {
-      console.log('[MaxCrop Sync] Brak danych.')
+    console.log(`[MaxCrop Sync] Data od: input[${dataOdIdx}], Data do: input[${dataDoIdx}]`)
+
+    // Fill "Data od" first, then "Data do"
+    await dateInputs[dataOdIdx].click({ clickCount: 3 })
+    await dateInputs[dataOdIdx].fill(seasonStart)
+    await dateInputs[dataOdIdx].press('Tab')
+    await page.waitForTimeout(500)
+
+    await dateInputs[dataDoIdx].click({ clickCount: 3 })
+    await dateInputs[dataDoIdx].fill(today)
+    await dateInputs[dataDoIdx].press('Tab')
+    await page.waitForTimeout(500)
+
+    // 4. Click "Szukaj"
+    console.log('[MaxCrop Sync] Klikam Szukaj...')
+    await page.click('text=Szukaj')
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(3000)
+
+    // Take screenshot for debugging
+    await page.screenshot({ path: path.join(tmpDir, 'maxcrop-after-search.png'), fullPage: true })
+    console.log('[MaxCrop Sync] Screenshot: tmp/maxcrop-after-search.png')
+
+    // 5. Click "Excel" to download
+    console.log('[MaxCrop Sync] Pobieram Excel...')
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: 30000 }),
+      page.click('text=Excel'),
+    ])
+
+    const fileName = `maxcrop_${today}.xls`
+    const filePath = path.join(downloadPath, fileName)
+    await download.saveAs(filePath)
+    console.log(`[MaxCrop Sync] Pobrano: ${filePath}`)
+
+    // 6. Parse Excel
+    const wb = XLSX.readFile(filePath)
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as Array<Array<string | number>>
+
+    // Skip title row and header row
+    const dataRows = rawRows.filter(row => {
+      if (row.length < 4) return false
+      const first = String(row[0] || '')
+      if (first === 'Data' || first.includes('Suma zbiorów') || first === '') return false
+      return true
+    })
+
+    console.log(`[MaxCrop Sync] Excel: ${rawRows.length} wierszy surowych, ${dataRows.length} wierszy danych`)
+
+    const parsedRows = parseHarvestRows(dataRows)
+    console.log(`[MaxCrop Sync] Sparsowano ${parsedRows.length} wierszy`)
+
+    if (parsedRows.length === 0) {
+      console.log('[MaxCrop Sync] Brak danych do importu.')
       return
     }
 
-    // 5. Get farm and blocks for mapping
+    // 7. Get farm and blocks for mapping
     const farm = await prisma.farm.findUnique({
       where: { id: MAXCROP_FARM_ID! },
       include: { blocks: { select: { id: true, name: true } } },
@@ -174,12 +187,11 @@ async function main() {
 
     const blockMap = new Map(farm.blocks.map(b => [b.name, b.id]))
 
-    // 6. Upsert to harvest_entries
-    let inserted = 0
-    let updated = 0
+    // 8. Upsert to harvest_entries
+    let upserted = 0
     let errors = 0
 
-    for (const row of allRows) {
+    for (const row of parsedRows) {
       const blockName = mapAreaToBlockName(row.areaName)
       const blockId = blockName ? blockMap.get(blockName) ?? null : null
 
@@ -197,7 +209,7 @@ async function main() {
             weightKg: row.weightKg,
             quantity: row.quantity,
             blockId,
-            sourceFile: 'maxcrop-sync',
+            sourceFile: fileName,
           },
           create: {
             date: new Date(row.date),
@@ -207,23 +219,21 @@ async function main() {
             quantity: row.quantity,
             blockId,
             farmId: farm.id,
-            sourceFile: 'maxcrop-sync',
+            sourceFile: fileName,
           },
         })
-        inserted++ // upsert — can't easily tell insert vs update
+        upserted++
       } catch (e) {
         console.error(`[MaxCrop Sync] Upsert error: ${row.date} ${row.areaName}:`, e)
         errors++
       }
     }
 
-    console.log(`[MaxCrop Sync] Gotowe: ${inserted} upserted, ${errors} błędów`)
+    console.log(`[MaxCrop Sync] Gotowe: ${upserted} upserted, ${errors} błędów`)
 
   } catch (error) {
     console.error('[MaxCrop Sync] Błąd:', error)
-    const { mkdirSync, existsSync } = await import('fs')
-    if (!existsSync('tmp')) mkdirSync('tmp', { recursive: true })
-    await page.screenshot({ path: 'tmp/maxcrop-error.png', fullPage: true })
+    await page.screenshot({ path: path.join(tmpDir, 'maxcrop-error.png'), fullPage: true })
     console.error('[MaxCrop Sync] Screenshot: tmp/maxcrop-error.png')
     process.exit(1)
   } finally {

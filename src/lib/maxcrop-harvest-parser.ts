@@ -12,11 +12,13 @@ export interface HarvestRow {
   quantity: number     // ilość rzeczywista
 }
 
-// Excel serial date to ISO string
+// Excel serial date to ISO string.
+// The epoch MUST be built in UTC (Date.UTC), not local time — otherwise on a
+// non-UTC machine toISOString() shifts the result back by a day (46190 → 16th
+// instead of 17th). Excel epoch is Dec 30, 1899 (1900 leap-year bug accounted).
 function excelDateToISO(serial: number): string {
-  // Excel epoch: 1900-01-01, but Excel has a bug treating 1900 as leap year
-  const epoch = new Date(1899, 11, 30) // Dec 30, 1899
-  const d = new Date(epoch.getTime() + serial * 86400000)
+  const epochUTC = Date.UTC(1899, 11, 30)
+  const d = new Date(epochUTC + serial * 86400000)
   return d.toISOString().slice(0, 10)
 }
 

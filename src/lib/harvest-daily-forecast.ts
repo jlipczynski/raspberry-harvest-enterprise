@@ -3,6 +3,8 @@
 // Takes the weekly harvest curve (% per week) and distributes kg
 // within each week proportionally to daily GDH from temperature forecast.
 // Hotter day (including warm nights) → more GDH → more kg.
+//
+// NO historical correction multiplier — prediction is pure GDH × curve.
 
 export interface DailyForecastPoint {
   date: string           // ISO YYYY-MM-DD
@@ -10,7 +12,6 @@ export interface DailyForecastPoint {
   predictedKg: number    // GDH-weighted prediction
   actualKg: number       // from HarvestEntry (0 if future)
   gdhDaily: number       // GDH for this day
-  correctionFactor: number // applied correction from learning
   isPast: boolean
 }
 
@@ -18,7 +19,6 @@ export interface DailyBlockForecast {
   blockName: string
   days: DailyForecastPoint[]
   totalPredicted7d: number
-  correctionFactor: number
 }
 
 interface SectionForDaily {
@@ -31,11 +31,6 @@ interface SectionForDaily {
 interface ForecastDay {
   date: string
   avgTunnelTemp: number
-}
-
-interface CorrectionEntry {
-  blockName: string
-  ratio: number
 }
 
 const GDH_UPPER_TEMP = 26.0
@@ -72,21 +67,6 @@ function buildGdhMap(forecastDays: ForecastDay[], baseTemp: number): Map<string,
 }
 
 /**
- * Calculate correction factor for a block from recent prediction history.
- * Uses rolling average of actual/predicted ratio from last 7 days with data.
- */
-function calcCorrectionFactor(
-  blockName: string,
-  corrections: CorrectionEntry[],
-): number {
-  const blockCorr = corrections.filter(c => c.blockName === blockName)
-  if (blockCorr.length === 0) return 1.0
-  const avg = blockCorr.reduce((s, c) => s + c.ratio, 0) / blockCorr.length
-  // Clamp between 0.3 and 3.0 to prevent extreme corrections
-  return Math.max(0.3, Math.min(3.0, avg))
-}
-
-/**
  * Main function: compute daily harvest forecast for next N days.
  *
  * Steps:
@@ -94,15 +74,16 @@ function calcCorrectionFactor(
  * 2. Get weekly kg from curve
  * 3. Get daily GDH from forecast for those days
  * 4. Distribute weekly kg proportionally to daily GDH
- * 5. Apply correction factor from learning history
- * 6. Aggregate per block per day
+ * 5. Aggregate per block per day
+ *
+ * No historical correction multiplier is applied — the prediction is the
+ * pure harvest curve distributed across days by the weather forecast GDH.
  */
 export function calculateDailyForecast(
   sections: SectionForDaily[],
   forecastDays: ForecastDay[],
   baseTemp: number,
   actualEntries: Array<{ date: string; blockName: string; weightKg: number }>,
-  corrections: CorrectionEntry[],
   daysAhead: number = 7,
   today: Date = new Date(),
 ): DailyBlockForecast[] {
@@ -184,14 +165,13 @@ export function calculateDailyForecast(
 
   for (const blockName of allBlocks) {
     const dayMap = blockDayKg.get(blockName)!
-    const cf = calcCorrectionFactor(blockName, corrections)
 
     const days: DailyForecastPoint[] = []
     let total7d = 0
 
     for (const dateStr of targetDates) {
       const data = dayMap.get(dateStr) || { predicted: 0, gdh: 0 }
-      const predicted = Math.round(data.predicted * cf * 10) / 10
+      const predicted = Math.round(data.predicted * 10) / 10
       const actual = actualMap.get(`${blockName}|${dateStr}`) || 0
       const isPast = dateStr < todayStr
 
@@ -201,7 +181,6 @@ export function calculateDailyForecast(
         predictedKg: predicted,
         actualKg: Math.round(actual * 10) / 10,
         gdhDaily: Math.round(data.gdh * 10) / 10,
-        correctionFactor: cf,
         isPast,
       })
       total7d += predicted
@@ -211,7 +190,6 @@ export function calculateDailyForecast(
       blockName,
       days,
       totalPredicted7d: Math.round(total7d * 10) / 10,
-      correctionFactor: cf,
     })
   }
 

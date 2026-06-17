@@ -77,11 +77,9 @@ interface DailyForecastBlock {
     predictedKg: number
     actualKg: number
     gdhDaily: number
-    correctionFactor: number
     isPast: boolean
   }>
   totalPredicted7d: number
-  correctionFactor: number
 }
 
 interface PredictionHistory {
@@ -587,9 +585,6 @@ export default function HarvestPage() {
               </CardTitle>
               <p className="text-xs text-gray-400 mt-1">
                 predykcja na podstawie GDH z prognozy pogody × krzywa odmiany
-                {dailyForecasts[0]?.correctionFactor !== 1.0 && (
-                  <> × korekcja z historii ({dailyForecasts[0]?.correctionFactor.toFixed(2)}x)</>
-                )}
               </p>
             </div>
             <div className="flex gap-1.5 flex-wrap">
@@ -647,6 +642,7 @@ export default function HarvestPage() {
                               {d.actualKg > 0 && (
                                 <div className="text-xs text-green-600">
                                   real: {d.actualKg.toLocaleString('pl-PL')}
+                                  {isToday && <span className="text-gray-400"> (w toku)</span>}
                                 </div>
                               )}
                             </td>
@@ -657,6 +653,7 @@ export default function HarvestPage() {
                           {hasActual && (
                             <div className="text-xs text-green-600 font-normal">
                               real: {Math.round(actualTotal).toLocaleString('pl-PL')}
+                              {isToday && <span className="text-gray-400"> (w toku)</span>}
                             </div>
                           )}
                         </td>

@@ -201,32 +201,12 @@ export async function GET(request: Request) {
       weightKg: e.weightKg,
     }))
 
-    // --- 4. Fetch correction factors from prediction history ---
-    const predictions = await prisma.harvestPrediction.findMany({
-      where: {
-        farmId: farm.id,
-        ratio: { not: null },
-        date: { gte: sevenDaysAgo },
-      },
-      include: { block: { select: { name: true } } },
-      orderBy: { date: 'desc' },
-      take: 50,
-    })
-
-    const corrections = predictions
-      .filter(p => p.ratio != null)
-      .map(p => ({
-        blockName: p.block.name,
-        ratio: p.ratio!,
-      }))
-
-    // --- 5. Calculate daily forecast ---
+    // --- 4. Calculate daily forecast (pure GDH × curve, no correction) ---
     const blocks = calculateDailyForecast(
       sectionInfos,
       forecastDays,
       baseTemp,
       entries,
-      corrections,
       daysAhead,
       today,
     )

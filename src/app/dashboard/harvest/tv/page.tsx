@@ -69,7 +69,6 @@ interface DailyForecastBlock {
     gdhDaily: number
   }>
   totalPredicted7d: number
-  correctionFactor: number
 }
 
 const SLIDE_COUNT = 5

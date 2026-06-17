@@ -3,9 +3,9 @@
  *
  * Runs after MaxCrop sync (e.g., 21:15).
  * 1. Updates yesterday's (and older) predictions with actual harvest data
- * 2. Calculates correction factor from recent history
- * 3. Generates predictions for next 7 days
- * 4. Saves predictions to HarvestPrediction table
+ *    (records actual/ratio for accuracy tracking — NOT used to adjust forecasts)
+ * 2. Generates predictions for next 7 days (pure GDH × curve, no correction)
+ * 3. Saves predictions to HarvestPrediction table
  *
  * Usage: npx tsx scripts/harvest-predict.ts
  */
@@ -19,7 +19,6 @@ const prisma = new PrismaClient()
 
 const GDH_UPPER_TEMP = 26.0
 const DAYS_AHEAD = 7
-const CORRECTION_WINDOW = 7 // days of history for correction factor
 
 function toKey(d: Date): string {
   return d.toISOString().slice(0, 10)
@@ -93,40 +92,7 @@ async function main() {
   }
   console.log(`[Predict] Zaktualizowano ${updated} predykcji z danymi actual`)
 
-  // --- 2. Get correction factors per block ---
-  const correctionStart = new Date(today)
-  correctionStart.setDate(correctionStart.getDate() - CORRECTION_WINDOW)
-
-  const recentPreds = await prisma.harvestPrediction.findMany({
-    where: {
-      farmId: farm.id,
-      ratio: { not: null },
-      date: { gte: correctionStart, lt: today },
-    },
-    include: { block: true },
-  })
-
-  const blockCorrections = new Map<string, number[]>()
-  for (const p of recentPreds) {
-    if (p.ratio == null) continue
-    const arr = blockCorrections.get(p.blockId) || []
-    arr.push(p.ratio)
-    blockCorrections.set(p.blockId, arr)
-  }
-
-  const corrections = new Map<string, number>()
-  for (const [blockId, ratios] of blockCorrections) {
-    const avg = ratios.reduce((s, r) => s + r, 0) / ratios.length
-    corrections.set(blockId, Math.max(0.3, Math.min(3.0, avg)))
-  }
-
-  console.log('[Predict] Correction factors:')
-  for (const [blockId, cf] of corrections) {
-    const block = farm.blocks.find(b => b.id === blockId)
-    console.log(`  ${block?.name || blockId}: ${cf.toFixed(2)}`)
-  }
-
-  // --- 3. Get forecast cache for temperatures ---
+  // --- 2. Get forecast cache for temperatures ---
   const forecastCache = await prisma.forecastCache.findUnique({
     where: { farmId: farm.id },
   })
@@ -140,7 +106,7 @@ async function main() {
     }
   }
 
-  // --- 4. Generate predictions for next 7 days ---
+  // --- 3. Generate predictions for next 7 days ---
   let created = 0
 
   for (const block of farm.blocks) {
@@ -252,8 +218,6 @@ async function main() {
       return s + bt
     }, 0) / sections.length
 
-    const cf = corrections.get(block.id) ?? 1.0
-
     // Generate prediction for each of next 7 days
     for (let dayOffset = 0; dayOffset < DAYS_AHEAD; dayOffset++) {
       const targetDate = new Date(today)
@@ -297,9 +261,9 @@ async function main() {
         dayPredicted += weekKg * share
       }
 
-      dayPredicted = Math.round(dayPredicted * cf * 10) / 10
+      dayPredicted = Math.round(dayPredicted * 10) / 10
 
-      // Upsert prediction
+      // Upsert prediction (pure GDH × curve, no correction multiplier)
       await prisma.harvestPrediction.upsert({
         where: {
           farmId_date_blockId: {
@@ -311,7 +275,6 @@ async function main() {
         update: {
           predictedKg: dayPredicted,
           gdhDaily: Math.round(dayGdh * 10) / 10,
-          correctionFactor: cf,
         },
         create: {
           date: targetDate,
@@ -319,7 +282,6 @@ async function main() {
           farmId: farm.id,
           predictedKg: dayPredicted,
           gdhDaily: Math.round(dayGdh * 10) / 10,
-          correctionFactor: cf,
         },
       })
       created++

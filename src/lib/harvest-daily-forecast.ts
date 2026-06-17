@@ -169,7 +169,7 @@ export function calculateDailyForecast(
     const days: DailyForecastPoint[] = []
     let total7d = 0
 
-    for (const dateStr of targetDates) {
+    targetDates.forEach((dateStr, idx) => {
       const data = dayMap.get(dateStr) || { predicted: 0, gdh: 0 }
       const predicted = Math.round(data.predicted * 10) / 10
       const actual = actualMap.get(`${blockName}|${dateStr}`) || 0
@@ -183,8 +183,10 @@ export function calculateDailyForecast(
         gdhDaily: Math.round(data.gdh * 10) / 10,
         isPast,
       })
-      total7d += predicted
-    }
+      // totalPredicted7d sums ONLY the first 7 days (the on-screen table shows 7),
+      // even when more days are requested for the 14-day report.
+      if (idx < 7) total7d += predicted
+    })
 
     results.push({
       blockName,

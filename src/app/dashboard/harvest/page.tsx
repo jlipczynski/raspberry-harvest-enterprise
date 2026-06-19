@@ -722,7 +722,7 @@ export default function HarvestPage() {
                 {totalDeviation != null && (
                   <span className={`ml-2 text-sm font-medium px-2 py-0.5 rounded-full ${
                     Math.abs(totalDeviation) <= 15 ? 'bg-green-50 text-green-700' :
-                    totalDeviation > 0 ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'
+                    totalDeviation > 0 ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'
                   }`}>
                     odchylenie: {totalDeviation > 0 ? '+' : ''}{totalDeviation}%
                   </span>
@@ -747,9 +747,9 @@ export default function HarvestPage() {
                   <Bar dataKey="predicted" radius={[4, 4, 0, 0]}>
                     {historyDays.map((day, idx) => {
                       const color = day.predicted > day.actual
-                        ? '#ef4444'  // przeszacowane — czerwony
+                        ? '#3b82f6'  // przeszacowane — niebieski
                         : day.predicted < day.actual
-                          ? '#3b82f6'  // niedoszacowane — niebieski
+                          ? '#ef4444'  // niedoszacowane — czerwony
                           : '#22c55e'  // idealnie — zielony
                       return <Cell key={idx} fill={color} />
                     })}
@@ -758,8 +758,8 @@ export default function HarvestPage() {
               </ResponsiveContainer>
               <div className="flex justify-center gap-4 text-xs text-gray-500">
                 <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-500" /> Realne</span>
-                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-blue-500" /> Niedoszacowane</span>
-                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-500" /> Przeszacowane</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-500" /> Niedoszacowane</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-blue-500" /> Przeszacowane</span>
               </div>
 
               {/* Table */}
@@ -787,7 +787,7 @@ export default function HarvestPage() {
                           {day.deviation != null ? (
                             <span className={`font-medium ${
                               Math.abs(day.deviation) <= 15 ? 'text-green-600' :
-                              day.deviation > 0 ? 'text-blue-600' : 'text-red-600'
+                              day.deviation > 0 ? 'text-red-600' : 'text-blue-600'
                             }`}>
                               {day.deviation > 0 ? '+' : ''}{day.deviation}%
                             </span>
@@ -806,7 +806,7 @@ export default function HarvestPage() {
                         {totalDeviation != null && (
                           <span className={`${
                             Math.abs(totalDeviation) <= 15 ? 'text-green-600' :
-                            totalDeviation > 0 ? 'text-blue-600' : 'text-red-600'
+                            totalDeviation > 0 ? 'text-red-600' : 'text-blue-600'
                           }`}>
                             {totalDeviation > 0 ? '+' : ''}{totalDeviation}%
                           </span>

@@ -701,10 +701,14 @@ export default function HarvestPage() {
           dayMap.set(h.date, (dayMap.get(h.date) || 0) + h.predictedKg)
         }
 
-        // Only show days that have predictions (past days)
-        const historyDays = Array.from(dayMap.entries())
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([date, predicted]) => {
+        // Merge all dates from predictions AND actuals
+        const allDates = new Set<string>([...dayMap.keys(), ...actualByDate.keys()])
+        const todayStr = new Date().toISOString().slice(0, 10)
+        const historyDays = Array.from(allDates)
+          .filter(d => d < todayStr) // only past days
+          .sort((a, b) => a.localeCompare(b))
+          .map(date => {
+            const predicted = dayMap.get(date) || 0
             const actual = actualByDate.get(date) || 0
             return {
               date,
@@ -715,7 +719,7 @@ export default function HarvestPage() {
               deviation: predicted > 0 && actual > 0 ? Math.round(((actual - predicted) / predicted) * 100) : null,
             }
           })
-          .filter(d => d.actual > 0)
+          .filter(d => d.actual > 0 || d.predicted > 0)
 
         const totalPredicted = historyDays.reduce((s, d) => s + d.predicted, 0)
         const totalActual = historyDays.reduce((s, d) => s + d.actual, 0)

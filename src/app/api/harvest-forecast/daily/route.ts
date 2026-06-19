@@ -212,17 +212,10 @@ export async function GET(request: Request) {
     )
 
     // --- 6. Also return recent history (last 7 days) for comparison ---
-    const historyDates: string[] = []
-    for (let i = 7; i >= 1; i--) {
-      const d = new Date(today)
-      d.setDate(d.getDate() - i)
-      historyDates.push(d.toISOString().slice(0, 10))
-    }
-
     const historyPredictions = await prisma.harvestPrediction.findMany({
       where: {
         farmId: farm.id,
-        date: { gte: sevenDaysAgo, lt: new Date(todayStr) },
+        date: { lt: new Date(todayStr) },
       },
       include: { block: { select: { name: true } } },
       orderBy: { date: 'asc' },

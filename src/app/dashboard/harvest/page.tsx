@@ -686,60 +686,119 @@ export default function HarvestPage() {
         </Card>
       )}
 
-      {/* Prediction history — last 7 days accuracy */}
-      {predictionHistory.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Trafność predykcji — ostatnie 7 dni</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-gray-500 text-xs">
-                    <th className="py-2 px-2">Data</th>
-                    <th className="py-2 px-2">Blok</th>
-                    <th className="py-2 px-2 text-right">Predykcja</th>
-                    <th className="py-2 px-2 text-right">Realne</th>
-                    <th className="py-2 px-2 text-right">Trafność</th>
-                    <th className="py-2 px-2 text-right">GDH</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {predictionHistory.map((h, i) => {
-                    const accuracy = h.ratio != null ? Math.round(h.ratio * 100) : null
-                    return (
-                      <tr key={i} className="border-b last:border-0">
-                        <td className="py-1.5 px-2">
-                          {new Date(h.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })}
+      {/* Prediction history — forecast vs actual chart + table */}
+      {predictionHistory.length > 0 && (() => {
+        // Aggregate per day: sum predicted and actual across blocks
+        const dayMap = new Map<string, { predicted: number; actual: number; blocks: Array<{ name: string; predicted: number; actual: number }> }>()
+        for (const h of predictionHistory) {
+          const existing = dayMap.get(h.date) || { predicted: 0, actual: 0, blocks: [] }
+          existing.predicted += h.predictedKg
+          existing.actual += (h.actualKg ?? 0)
+          existing.blocks.push({ name: h.blockName, predicted: h.predictedKg, actual: h.actualKg ?? 0 })
+          dayMap.set(h.date, existing)
+        }
+        const historyDays = Array.from(dayMap.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, data]) => ({
+            date,
+            label: new Date(date + 'T12:00:00').toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' }),
+            predicted: Math.round(data.predicted),
+            actual: Math.round(data.actual),
+            diff: Math.round(data.actual - data.predicted),
+            accuracy: data.predicted > 0 ? Math.round((data.actual / data.predicted) * 100) : null,
+            blocks: data.blocks.sort((a, b) => a.name.localeCompare(b.name)),
+          }))
+
+        const totalPredicted = historyDays.reduce((s, d) => s + d.predicted, 0)
+        const totalActual = historyDays.reduce((s, d) => s + d.actual, 0)
+        const totalAccuracy = totalPredicted > 0 ? Math.round((totalActual / totalPredicted) * 100) : null
+
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Target className="w-5 h-5 text-blue-600" />
+                Prognoza vs rzeczywistość
+                {totalAccuracy != null && (
+                  <span className={`ml-2 text-sm font-medium px-2 py-0.5 rounded-full ${
+                    totalAccuracy >= 80 && totalAccuracy <= 120 ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+                  }`}>
+                    trafność: {totalAccuracy}%
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Chart */}
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={historyDays} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `${v}`} />
+                  <Tooltip
+                    formatter={(value?: number, name?: string) => [
+                      `${(value ?? 0).toLocaleString('pl-PL')} kg`,
+                      name === 'predicted' ? 'Prognoza' : 'Realne',
+                    ]}
+                  />
+                  <Legend formatter={(value: string) => value === 'predicted' ? 'Prognoza' : 'Realne'} />
+                  <Bar dataKey="predicted" fill="#93c5fd" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="actual" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+
+              {/* Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-gray-500 text-xs">
+                      <th className="py-2 px-2">Data</th>
+                      <th className="py-2 px-2 text-right">Prognoza</th>
+                      <th className="py-2 px-2 text-right">Realne</th>
+                      <th className="py-2 px-2 text-right">Różnica</th>
+                      <th className="py-2 px-2 text-right">Trafność</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyDays.map(day => (
+                      <tr key={day.date} className="border-b last:border-0">
+                        <td className="py-1.5 px-2 font-medium">{day.label}</td>
+                        <td className="py-1.5 px-2 text-right text-blue-600">{day.predicted.toLocaleString('pl-PL')} kg</td>
+                        <td className="py-1.5 px-2 text-right text-green-600 font-medium">{day.actual.toLocaleString('pl-PL')} kg</td>
+                        <td className={`py-1.5 px-2 text-right font-medium ${day.diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {day.diff >= 0 ? '+' : ''}{day.diff.toLocaleString('pl-PL')} kg
                         </td>
-                        <td className="py-1.5 px-2">
-                          <span className="inline-flex items-center gap-1">
-                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: getBlockColor(h.blockName) }} />
-                            {h.blockName}
-                          </span>
-                        </td>
-                        <td className="py-1.5 px-2 text-right">{h.predictedKg.toLocaleString('pl-PL')} kg</td>
                         <td className="py-1.5 px-2 text-right">
-                          {h.actualKg != null ? `${h.actualKg.toLocaleString('pl-PL')} kg` : '—'}
-                        </td>
-                        <td className="py-1.5 px-2 text-right">
-                          {accuracy != null ? (
-                            <span className={`font-medium ${accuracy >= 80 && accuracy <= 120 ? 'text-green-600' : 'text-amber-600'}`}>
-                              {accuracy}%
+                          {day.accuracy != null ? (
+                            <span className={`font-medium ${day.accuracy >= 80 && day.accuracy <= 120 ? 'text-green-600' : 'text-amber-600'}`}>
+                              {day.accuracy}%
                             </span>
                           ) : '—'}
                         </td>
-                        <td className="py-1.5 px-2 text-right text-gray-400">{h.gdhDaily?.toFixed(0) ?? '—'}</td>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                    ))}
+                    <tr className="border-t-2 font-bold bg-gray-50">
+                      <td className="py-2 px-2">Razem</td>
+                      <td className="py-2 px-2 text-right text-blue-600">{totalPredicted.toLocaleString('pl-PL')} kg</td>
+                      <td className="py-2 px-2 text-right text-green-600">{totalActual.toLocaleString('pl-PL')} kg</td>
+                      <td className={`py-2 px-2 text-right ${totalActual - totalPredicted >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {totalActual - totalPredicted >= 0 ? '+' : ''}{(totalActual - totalPredicted).toLocaleString('pl-PL')} kg
+                      </td>
+                      <td className="py-2 px-2 text-right">
+                        {totalAccuracy != null && (
+                          <span className={`${totalAccuracy >= 80 && totalAccuracy <= 120 ? 'text-green-600' : 'text-amber-600'}`}>
+                            {totalAccuracy}%
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })()}
 
       {/* Cumulative plan vs actual chart */}
       {cumulativeChartData.length > 0 && (

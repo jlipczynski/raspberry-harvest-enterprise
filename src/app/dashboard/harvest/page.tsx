@@ -688,26 +688,34 @@ export default function HarvestPage() {
 
       {/* Prediction history — forecast vs actual chart + table */}
       {predictionHistory.length > 0 && (() => {
-        // Aggregate per day: sum predicted and actual across blocks
-        const dayMap = new Map<string, { predicted: number; actual: number; blocks: Array<{ name: string; predicted: number; actual: number }> }>()
-        for (const h of predictionHistory) {
-          const existing = dayMap.get(h.date) || { predicted: 0, actual: 0, blocks: [] }
-          existing.predicted += h.predictedKg
-          existing.actual += (h.actualKg ?? 0)
-          existing.blocks.push({ name: h.blockName, predicted: h.predictedKg, actual: h.actualKg ?? 0 })
-          dayMap.set(h.date, existing)
+        // Build actual harvest totals per date from entries (always up-to-date after import)
+        const actualByDate = new Map<string, number>()
+        for (const e of entries) {
+          const d = e.date.slice(0, 10)
+          actualByDate.set(d, (actualByDate.get(d) || 0) + e.weightKg)
         }
+
+        // Aggregate predictions per day
+        const dayMap = new Map<string, number>()
+        for (const h of predictionHistory) {
+          dayMap.set(h.date, (dayMap.get(h.date) || 0) + h.predictedKg)
+        }
+
+        // Only show days that have predictions (past days)
         const historyDays = Array.from(dayMap.entries())
           .sort(([a], [b]) => a.localeCompare(b))
-          .map(([date, data]) => ({
-            date,
-            label: new Date(date + 'T12:00:00').toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' }),
-            predicted: Math.round(data.predicted),
-            actual: Math.round(data.actual),
-            diff: Math.round(data.actual - data.predicted),
-            deviation: data.predicted > 0 ? Math.round(((data.actual - data.predicted) / data.predicted) * 100) : null,
-            blocks: data.blocks.sort((a, b) => a.name.localeCompare(b.name)),
-          }))
+          .map(([date, predicted]) => {
+            const actual = actualByDate.get(date) || 0
+            return {
+              date,
+              label: new Date(date + 'T12:00:00').toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short' }),
+              predicted: Math.round(predicted),
+              actual: Math.round(actual),
+              diff: Math.round(actual - predicted),
+              deviation: predicted > 0 && actual > 0 ? Math.round(((actual - predicted) / predicted) * 100) : null,
+            }
+          })
+          .filter(d => d.actual > 0)
 
         const totalPredicted = historyDays.reduce((s, d) => s + d.predicted, 0)
         const totalActual = historyDays.reduce((s, d) => s + d.actual, 0)
@@ -951,8 +959,25 @@ export default function HarvestPage() {
                   <XAxis dataKey="date" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${v} kg`} />
                   <Tooltip
-                    formatter={(value?: number, name?: string) => [`${(value ?? 0).toLocaleString('pl-PL')} kg`, name ?? '']}
-                    labelStyle={{ fontWeight: 'bold' }}
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null
+                      const total = payload.reduce((s, p) => s + (Number(p.value) || 0), 0)
+                      return (
+                        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-sm">
+                          <div className="font-bold mb-1">{label}</div>
+                          {payload.map((p, i) => (
+                            <div key={i} className="flex justify-between gap-4" style={{ color: p.color }}>
+                              <span>{p.name}</span>
+                              <span className="font-medium">{(Number(p.value) || 0).toLocaleString('pl-PL')} kg</span>
+                            </div>
+                          ))}
+                          <div className="border-t mt-1 pt-1 flex justify-between gap-4 font-bold text-gray-900">
+                            <span>Razem</span>
+                            <span>{Math.round(total).toLocaleString('pl-PL')} kg</span>
+                          </div>
+                        </div>
+                      )
+                    }}
                   />
                   <Legend />
                   {blockNames.map(name => (

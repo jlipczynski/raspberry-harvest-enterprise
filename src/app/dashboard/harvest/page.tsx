@@ -705,13 +705,13 @@ export default function HarvestPage() {
             predicted: Math.round(data.predicted),
             actual: Math.round(data.actual),
             diff: Math.round(data.actual - data.predicted),
-            accuracy: data.predicted > 0 ? Math.round((data.actual / data.predicted) * 100) : null,
+            deviation: data.predicted > 0 ? Math.round(((data.actual - data.predicted) / data.predicted) * 100) : null,
             blocks: data.blocks.sort((a, b) => a.name.localeCompare(b.name)),
           }))
 
         const totalPredicted = historyDays.reduce((s, d) => s + d.predicted, 0)
         const totalActual = historyDays.reduce((s, d) => s + d.actual, 0)
-        const totalAccuracy = totalPredicted > 0 ? Math.round((totalActual / totalPredicted) * 100) : null
+        const totalDeviation = totalPredicted > 0 ? Math.round(((totalActual - totalPredicted) / totalPredicted) * 100) : null
 
         return (
           <Card>
@@ -719,11 +719,12 @@ export default function HarvestPage() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <Target className="w-5 h-5 text-blue-600" />
                 Prognoza vs rzeczywistość
-                {totalAccuracy != null && (
+                {totalDeviation != null && (
                   <span className={`ml-2 text-sm font-medium px-2 py-0.5 rounded-full ${
-                    totalAccuracy >= 80 && totalAccuracy <= 120 ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+                    Math.abs(totalDeviation) <= 15 ? 'bg-green-50 text-green-700' :
+                    totalDeviation > 0 ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'
                   }`}>
-                    trafność: {totalAccuracy}%
+                    odchylenie: {totalDeviation > 0 ? '+' : ''}{totalDeviation}%
                   </span>
                 )}
               </CardTitle>
@@ -756,7 +757,7 @@ export default function HarvestPage() {
                       <th className="py-2 px-2 text-right">Prognoza</th>
                       <th className="py-2 px-2 text-right">Realne</th>
                       <th className="py-2 px-2 text-right">Różnica</th>
-                      <th className="py-2 px-2 text-right">Trafność</th>
+                      <th className="py-2 px-2 text-right">Odchylenie</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -769,9 +770,12 @@ export default function HarvestPage() {
                           {day.diff >= 0 ? '+' : ''}{day.diff.toLocaleString('pl-PL')} kg
                         </td>
                         <td className="py-1.5 px-2 text-right">
-                          {day.accuracy != null ? (
-                            <span className={`font-medium ${day.accuracy >= 80 && day.accuracy <= 120 ? 'text-green-600' : 'text-amber-600'}`}>
-                              {day.accuracy}%
+                          {day.deviation != null ? (
+                            <span className={`font-medium ${
+                              Math.abs(day.deviation) <= 15 ? 'text-green-600' :
+                              day.deviation > 0 ? 'text-blue-600' : 'text-red-600'
+                            }`}>
+                              {day.deviation > 0 ? '+' : ''}{day.deviation}%
                             </span>
                           ) : '—'}
                         </td>
@@ -785,9 +789,12 @@ export default function HarvestPage() {
                         {totalActual - totalPredicted >= 0 ? '+' : ''}{(totalActual - totalPredicted).toLocaleString('pl-PL')} kg
                       </td>
                       <td className="py-2 px-2 text-right">
-                        {totalAccuracy != null && (
-                          <span className={`${totalAccuracy >= 80 && totalAccuracy <= 120 ? 'text-green-600' : 'text-amber-600'}`}>
-                            {totalAccuracy}%
+                        {totalDeviation != null && (
+                          <span className={`${
+                            Math.abs(totalDeviation) <= 15 ? 'text-green-600' :
+                            totalDeviation > 0 ? 'text-blue-600' : 'text-red-600'
+                          }`}>
+                            {totalDeviation > 0 ? '+' : ''}{totalDeviation}%
                           </span>
                         )}
                       </td>

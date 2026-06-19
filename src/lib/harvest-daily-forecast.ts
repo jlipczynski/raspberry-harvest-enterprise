@@ -1,15 +1,18 @@
-// Daily Harvest Forecast — GDH-weighted distribution within weeks
+// Daily Harvest Forecast — smooth interpolation + GDH weighting
 //
-// Takes the weekly harvest curve (% per week) and distributes kg
-// within each week proportionally to daily GDH from temperature forecast.
-// Hotter day (including warm nights) → more GDH → more kg.
+// Takes the weekly harvest curve (% per week) and produces smooth daily
+// predictions using linear interpolation between week midpoints, then
+// adjusts proportionally to daily GDH from temperature forecast.
 //
-// NO historical correction multiplier — prediction is pure GDH × curve.
+// This avoids the "step function" problem where week boundaries create
+// unrealistic jumps (e.g. week 22 = 4% → week 23 = 10%).
+//
+// NO historical correction multiplier — prediction is pure curve × GDH.
 
 export interface DailyForecastPoint {
   date: string           // ISO YYYY-MM-DD
   blockName: string
-  predictedKg: number    // GDH-weighted prediction
+  predictedKg: number    // smoothed + GDH-weighted prediction
   actualKg: number       // from HarvestEntry (0 if future)
   gdhDaily: number       // GDH for this day
   isPast: boolean
@@ -35,21 +38,12 @@ interface ForecastDay {
 
 const GDH_UPPER_TEMP = 26.0
 
-function getWeekMonday(date: Date): Date {
-  const d = new Date(date)
-  const day = d.getDay() || 7
-  d.setDate(d.getDate() - (day - 1))
-  d.setHours(0, 0, 0, 0)
-  return d
-}
-
 function toKey(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
 /**
- * Calculate daily GDH for a day from hourly tunnel temperature.
- * If we only have daily avg, compute as: max(0, min(avg, 26) - baseTemp) × 24
+ * Calculate daily GDH from average tunnel temperature.
  */
 function dailyGdh(avgTemp: number, baseTemp: number): number {
   return Math.max(0, Math.min(avgTemp, GDH_UPPER_TEMP) - baseTemp) * 24
@@ -67,17 +61,89 @@ function buildGdhMap(forecastDays: ForecastDay[], baseTemp: number): Map<string,
 }
 
 /**
+ * Convert weekly curve to smooth daily baseline using linear interpolation
+ * between week midpoints. Preserves weekly totals.
+ *
+ * For each week i, the "midpoint daily rate" is weekPct[i] / 7.
+ * We interpolate between midpoints of adjacent weeks to get a smooth
+ * daily baseline, then normalize within each week so the sum = weekPct[i].
+ *
+ * Example: week 22 = 4%, week 23 = 10%
+ * - Week 22 midpoint rate = 0.571%/day
+ * - Week 23 midpoint rate = 1.429%/day
+ * - Days at end of week 22 ramp UP towards week 23's rate
+ * - Days at start of week 23 continue from where week 22 ended
+ */
+function smoothWeeklyCurve(weeklyPcts: number[]): number[] {
+  const n = weeklyPcts.length
+  if (n === 0) return []
+
+  // Midpoint daily rate for each week
+  const midRates = weeklyPcts.map(p => p / 7)
+
+  // For each day, interpolate between adjacent week midpoints
+  const rawDaily: number[] = []
+  const totalDays = n * 7
+
+  for (let day = 0; day < totalDays; day++) {
+    const weekIdx = Math.floor(day / 7)
+    const dayInWeek = day - weekIdx * 7
+    // Position within week: 0 = start, 6 = end
+    // Midpoint is at position 3 (Wednesday)
+    const t = dayInWeek / 7  // 0..0.857
+
+    // Interpolate between previous week midpoint and next week midpoint
+    // Current midpoint is at t=0.5 (center of the week)
+    const prevRate = weekIdx > 0 ? midRates[weekIdx - 1] : midRates[0]
+    const currRate = midRates[weekIdx]
+    const nextRate = weekIdx < n - 1 ? midRates[weekIdx + 1] : midRates[n - 1]
+
+    let interpolated: number
+    if (t < 0.5) {
+      // First half of week: interpolate from (prev+curr)/2 to curr
+      const startVal = (prevRate + currRate) / 2
+      const factor = t / 0.5 // 0..1
+      interpolated = startVal + (currRate - startVal) * factor
+    } else {
+      // Second half of week: interpolate from curr to (curr+next)/2
+      const endVal = (currRate + nextRate) / 2
+      const factor = (t - 0.5) / 0.5 // 0..1
+      interpolated = currRate + (endVal - currRate) * factor
+    }
+
+    rawDaily.push(Math.max(0, interpolated))
+  }
+
+  // Normalize within each week to preserve weekly totals
+  const smoothed: number[] = []
+  for (let w = 0; w < n; w++) {
+    const weekStart = w * 7
+    let weekRawSum = 0
+    for (let d = 0; d < 7; d++) {
+      weekRawSum += rawDaily[weekStart + d]
+    }
+
+    for (let d = 0; d < 7; d++) {
+      if (weekRawSum > 0) {
+        smoothed.push(weeklyPcts[w] * (rawDaily[weekStart + d] / weekRawSum))
+      } else {
+        smoothed.push(0)
+      }
+    }
+  }
+
+  return smoothed
+}
+
+/**
  * Main function: compute daily harvest forecast for next N days.
  *
  * Steps:
- * 1. For each section, find which weeks overlap with forecast window
- * 2. Get weekly kg from curve
- * 3. Get daily GDH from forecast for those days
- * 4. Distribute weekly kg proportionally to daily GDH
+ * 1. Convert weekly curve to smooth daily baseline (interpolation)
+ * 2. For each day, get daily % from smooth curve
+ * 3. Apply GDH weighting: scale day's kg by (dayGDH / avgGDH_for_week)
+ * 4. Re-normalize within week to preserve weekly total
  * 5. Aggregate per block per day
- *
- * No historical correction multiplier is applied — the prediction is the
- * pure harvest curve distributed across days by the weather forecast GDH.
  */
 export function calculateDailyForecast(
   sections: SectionForDaily[],
@@ -106,39 +172,47 @@ export function calculateDailyForecast(
 
     const fruitStart = new Date(section.fruitDate)
 
-    // For each target date, find which week of the curve it falls in
+    // Pre-compute smooth daily curve for this section
+    const smoothDaily = smoothWeeklyCurve(section.harvestCurve)
+
     for (const dateStr of targetDates) {
       const date = new Date(dateStr)
       const daysSinceFruit = Math.floor((date.getTime() - fruitStart.getTime()) / 86400000)
       if (daysSinceFruit < 0) continue
+      if (daysSinceFruit >= smoothDaily.length) continue
 
+      const dayPct = smoothDaily[daysSinceFruit]
+      if (dayPct <= 0) continue
+
+      // Base kg from smooth curve
+      const baseKg = (dayPct / 100) * section.totalKg
+
+      // GDH adjustment: scale relative to week average GDH
       const weekIdx = Math.floor(daysSinceFruit / 7)
-      if (weekIdx >= section.harvestCurve.length) continue
-
-      const weekPct = section.harvestCurve[weekIdx]
-      if (weekPct <= 0) continue
-
-      const weekKg = (weekPct / 100) * section.totalKg
-
-      // Get GDH for all 7 days of this week to compute proportional weight
+      const weekStartDay = weekIdx * 7
       const weekStartDate = new Date(fruitStart)
-      weekStartDate.setDate(weekStartDate.getDate() + weekIdx * 7)
+      weekStartDate.setDate(weekStartDate.getDate() + weekStartDay)
 
       let weekGdhSum = 0
-      const dayGdhs: Array<{ date: string; gdh: number }> = []
+      let weekDayCount = 0
       for (let d = 0; d < 7; d++) {
         const wd = new Date(weekStartDate)
         wd.setDate(wd.getDate() + d)
         const wdStr = toKey(wd)
-        const gdh = gdhMap.get(wdStr) ?? dailyGdh(18, baseTemp) // fallback to moderate temp if no forecast
-        dayGdhs.push({ date: wdStr, gdh })
+        const gdh = gdhMap.get(wdStr) ?? dailyGdh(18, baseTemp)
         weekGdhSum += gdh
+        weekDayCount++
       }
 
-      // This day's share of the week
+      const avgWeekGdh = weekGdhSum / weekDayCount
       const thisGdh = gdhMap.get(dateStr) ?? dailyGdh(18, baseTemp)
-      const share = weekGdhSum > 0 ? thisGdh / weekGdhSum : 1 / 7
-      const dayKg = weekKg * share
+
+      // GDH ratio: hot day → more harvest, cold day → less
+      // But we need to preserve weekly total, so the ratio adjusts
+      // relative to the average. If all days have same GDH, ratio = 1.
+      const gdhRatio = avgWeekGdh > 0 ? thisGdh / avgWeekGdh : 1
+
+      const dayKg = baseKg * gdhRatio
 
       // Accumulate per block
       if (!blockDayKg.has(section.blockName)) {
@@ -147,7 +221,7 @@ export function calculateDailyForecast(
       const dayMap = blockDayKg.get(section.blockName)!
       const existing = dayMap.get(dateStr) || { predicted: 0, gdh: 0 }
       existing.predicted += dayKg
-      existing.gdh = thisGdh // same GDH for all sections in block
+      existing.gdh = thisGdh
       dayMap.set(dateStr, existing)
     }
   }
@@ -183,8 +257,6 @@ export function calculateDailyForecast(
         gdhDaily: Math.round(data.gdh * 10) / 10,
         isPast,
       })
-      // totalPredicted7d sums ONLY the first 7 days (the on-screen table shows 7),
-      // even when more days are requested for the 14-day report.
       if (idx < 7) total7d += predicted
     })
 

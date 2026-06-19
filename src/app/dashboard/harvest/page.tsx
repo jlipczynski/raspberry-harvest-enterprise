@@ -7,7 +7,7 @@ import { Target, Upload, Loader2, TrendingUp, AlertTriangle, Package, Sun, Cloud
 import Link from 'next/link'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area, Line, ComposedChart, ReferenceLine,
+  AreaChart, Area, Line, ComposedChart, ReferenceLine, Cell,
 } from 'recharts'
 
 interface HarvestEntry {
@@ -743,10 +743,24 @@ export default function HarvestPage() {
                     ]}
                   />
                   <Legend formatter={(value: string) => value === 'predicted' ? 'Prognoza' : 'Realne'} />
-                  <Bar dataKey="predicted" fill="#93c5fd" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="actual" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="predicted" radius={[4, 4, 0, 0]}>
+                    {historyDays.map((day, idx) => {
+                      const color = day.predicted > day.actual
+                        ? '#ef4444'  // przeszacowane — czerwony
+                        : day.predicted < day.actual
+                          ? '#3b82f6'  // niedoszacowane — niebieski
+                          : '#22c55e'  // idealnie — zielony
+                      return <Cell key={idx} fill={color} />
+                    })}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
+              <div className="flex justify-center gap-4 text-xs text-gray-500">
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-green-500" /> Realne</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-blue-500" /> Niedoszacowane</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-red-500" /> Przeszacowane</span>
+              </div>
 
               {/* Table */}
               <div className="overflow-x-auto">

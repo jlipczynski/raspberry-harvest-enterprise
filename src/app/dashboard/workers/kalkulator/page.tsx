@@ -517,9 +517,9 @@ export default function PieceRateCalculatorPage() {
               ) : (
                 <span className="inline-flex flex-col items-center text-sm text-gray-600">
                   <Upload className="w-5 h-5 mb-1" />
-                  {fileNames.length > 0 ? fileNames.join(', ') : 'Wgraj raport(y) pracy z MaxCrop'}
+                  {fileNames.length > 0 ? fileNames.join(', ') : 'Wgraj raport pracy z MaxCrop'}
                   <span className="text-xs text-gray-400 mt-0.5">
-                    kilka plików z jednego dnia scalę po kodzie kreskowym
+                    można wgrać kilka plików z jednego dnia — scalę je po kodzie kreskowym
                   </span>
                 </span>
               )}
@@ -530,19 +530,25 @@ export default function PieceRateCalculatorPage() {
                 <Input id="harvestDate" type="date" value={harvestDate}
                   onChange={(e) => setHarvestDate(e.target.value)} className="mt-1" />
               </div>
-              <div>
-                <Label className="text-xs">Godziny przy kilku plikach</Label>
-                <div className="flex gap-1 mt-1">
-                  <button onClick={() => setHoursStrategy('max')}
-                    className={`flex-1 px-2 py-1 rounded text-xs border ${hoursStrategy === 'max' ? 'bg-green-600 text-white border-green-600' : 'bg-white border-gray-300 text-gray-600'}`}>
-                    Najdłuższa
-                  </button>
-                  <button onClick={() => setHoursStrategy('sum')}
-                    className={`flex-1 px-2 py-1 rounded text-xs border ${hoursStrategy === 'sum' ? 'bg-green-600 text-white border-green-600' : 'bg-white border-gray-300 text-gray-600'}`}>
-                    Suma
-                  </button>
+              {/* Przy jednym pliku nie ma czego scalać — przełącznik tylko zaśmiecałby widok. */}
+              {fileNames.length > 1 && (
+                <div>
+                  <Label className="text-xs">Godziny przy kilku plikach</Label>
+                  <div className="flex gap-1 mt-1">
+                    <button onClick={() => setHoursStrategy('max')}
+                      className={`flex-1 px-2 py-1 rounded text-xs border ${hoursStrategy === 'max' ? 'bg-green-600 text-white border-green-600' : 'bg-white border-gray-300 text-gray-600'}`}>
+                      Najdłuższa
+                    </button>
+                    <button onClick={() => setHoursStrategy('sum')}
+                      className={`flex-1 px-2 py-1 rounded text-xs border ${hoursStrategy === 'sum' ? 'bg-green-600 text-white border-green-600' : 'bg-white border-gray-300 text-gray-600'}`}>
+                      Suma
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Wgrałeś {fileNames.length} pliki — wybierz, jak liczyć czas pracy
+                  </p>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 

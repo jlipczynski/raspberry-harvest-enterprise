@@ -17,6 +17,8 @@
  * więc nie dublujemy pozycji zbiorczych typu "GRUPA 1" (nie wchodzą do Razem).
  */
 
+import { mapAreaToBlockName } from './maxcrop-harvest-parser'
+
 /** Literały formatu MaxCrop — nie są to wartości domenowe, tylko etykiety eksportu. */
 const SUMMARY_LABEL = 'razem'
 const HARVEST_WORK_TYPE = 'zbiory'
@@ -47,10 +49,40 @@ export interface PieceRateWorkerRow {
   currentAmount: number | null
 }
 
+/** Zbiór z jednego obszaru (bloku) w danym dniu. */
+export interface PieceRateBlock {
+  /** Oryginalna nazwa obszaru z MaxCrop, np. "Malina - Blok_A1-9" */
+  areaName: string
+  /** Nazwa bloku po zmapowaniu, null gdy nie rozpoznano */
+  blockName: string | null
+  dessertKg: number
+  industrialKg: number
+  totalKg: number
+  /** Kwota naliczona przez MaxCrop dla tego obszaru */
+  currentAmount: number
+}
+
+export interface PieceRateDay {
+  /** YYYY-MM-DD */
+  date: string
+  rows: PieceRateWorkerRow[]
+  /** Rozbicie zbioru na obszary — liczone z pozycji szczegółowych */
+  blocks: PieceRateBlock[]
+}
+
 export interface PieceRateFileParseResult {
   fileName: string
-  /** Data raportu odczytana z kolumny "Data" (YYYY-MM-DD), null gdy brak */
+  /**
+   * Data raportu — wypełniona tylko gdy plik dotyczy jednego dnia.
+   * Przy eksporcie za zakres dat jest null, a dni siedzą w `days`.
+   */
   reportDate: string | null
+  /** Dni znalezione w pliku, posortowane rosnąco */
+  days: PieceRateDay[]
+  /**
+   * Wiersze pierwszego dnia — wygoda dla wywołań jednodniowych.
+   * Przy wielu dniach zawiera dzień najwcześniejszy.
+   */
   rows: PieceRateWorkerRow[]
   warnings: string[]
 }
@@ -63,6 +95,7 @@ interface ColumnIndex {
   workType: number
   settlement: number
   productClass: number
+  area: number
   time: number
   quantity: number
   weight: number
@@ -132,6 +165,7 @@ function findHeaderRow(grid: unknown[][]): { index: number; columns: ColumnIndex
       workType: find('rodzaj pracy'),
       settlement: find('rozliczenie'),
       productClass: find('klasa produktu'),
+      area: find('obszar'),
       time: find('czas'),
       quantity: find('ilość', 'ilosc'),
       weight: find('waga'),
@@ -182,6 +216,7 @@ export function parseMaxcropPieceRateSheet(
     return {
       fileName,
       reportDate: null,
+      days: [],
       rows: [],
       warnings: ['Nie rozpoznano nagłówków raportu MaxCrop (Pracownik / Czas / Waga).'],
     }
@@ -190,6 +225,7 @@ export function parseMaxcropPieceRateSheet(
   const { index: headerIndex, columns } = header
 
   interface Accumulator {
+    date: string
     externalId: string | null
     workerName: string
     workTypes: Set<string>
@@ -197,10 +233,25 @@ export function parseMaxcropPieceRateSheet(
     industrialKg: number
     hours: number | null
     amount: number | null
+    /** Ile razy trafił nam się wiersz "Razem" — >1 znaczy zły podział na dni */
+    summaryCount: number
   }
 
   const workers = new Map<string, Accumulator>()
-  let reportDate: string | null = null
+
+  /**
+   * Zbiór per obszar, klucz `${data}|${obszar}`.
+   *
+   * Liczony wyłącznie z pozycji szczegółowych, które MAJĄ wypełniony obszar.
+   * Pozycje zbiorcze (GRUPA) mają obszar pusty i MaxCrop nie wlicza ich do
+   * "Razem" — ten sam filtr odcina je tu i tam.
+   */
+  const blocks = new Map<string, PieceRateBlock & { date: string }>()
+
+  // Wiersz "Razem" ma pustą kolumnę Data, więc niesiemy ostatnią widzianą
+  // datę z wierszy poprzedzających w bloku pracownika.
+  let currentDate: string | null = null
+  const datesSeen = new Set<string>()
 
   for (let i = headerIndex + 1; i < grid.length; i++) {
     const row = grid[i]
@@ -214,13 +265,28 @@ export function parseMaxcropPieceRateSheet(
     const external =
       columns.externalId >= 0 ? String(row[columns.externalId] ?? '').trim() || null : null
 
+    // Data z tego wiersza, jeśli jest — inaczej zostajemy przy poprzedniej.
+    if (columns.date >= 0) {
+      const parsedDate = parseDateCell(row[columns.date])
+      if (parsedDate !== null) {
+        currentDate = parsedDate
+        datesSeen.add(parsedDate)
+      }
+    }
+
+    // Bez daty nie wiemy, do którego dnia przypisać wiersz — pomijamy,
+    // zamiast wrzucać go do przypadkowego dnia.
+    if (currentDate === null) continue
+
     // Kod kreskowy jest wypełniony w każdym wierszu bloku; "Zewnętrzne ID"
     // bywa puste, więc traktujemy je tylko jako alternatywę.
-    const key = barcode || external || workerName.toLowerCase()
+    const workerKey = barcode || external || workerName.toLowerCase()
+    const key = `${currentDate}|${workerKey}`
 
     let entry = workers.get(key)
     if (!entry) {
       entry = {
+        date: currentDate,
         externalId: barcode || external,
         workerName,
         workTypes: new Set<string>(),
@@ -228,12 +294,9 @@ export function parseMaxcropPieceRateSheet(
         industrialKg: 0,
         hours: null,
         amount: null,
+        summaryCount: 0,
       }
       workers.set(key, entry)
-    }
-
-    if (reportDate === null && columns.date >= 0) {
-      reportDate = parseDateCell(row[columns.date])
     }
 
     if (columns.workType >= 0) {
@@ -249,6 +312,7 @@ export function parseMaxcropPieceRateSheet(
       entry.kg = parseNumber(row[columns.weight])
       entry.hours = parseTimeToHours(row[columns.time])
       entry.amount = columns.amount >= 0 ? parseNumber(row[columns.amount]) : null
+      entry.summaryCount += 1
     } else if (INDUSTRIAL_CLASS_PATTERN.test(productClass)) {
       // Pozycje szczegółowe przemysłu. Sumujemy tylko je — deser wychodzi
       // jako różnica wobec "Razem", więc pozycje zbiorcze (GRUPA), których
@@ -256,14 +320,56 @@ export function parseMaxcropPieceRateSheet(
       const weight = parseNumber(row[columns.weight])
       if (weight !== null && weight > 0) entry.industrialKg += weight
     }
+
+    // ===== Rozbicie na obszary =====
+    const areaName = columns.area >= 0 ? String(row[columns.area] ?? '').trim() : ''
+    const weight = parseNumber(row[columns.weight])
+
+    // Tylko pozycje szczegółowe z obszarem — wiersz "Razem" i wiersz obecności
+    // nie mają obszaru albo powtarzałyby masę.
+    if (areaName && weight !== null && weight > 0 && productClass && productClass !== SUMMARY_LABEL) {
+      const blockKey = `${currentDate}|${areaName}`
+      let block = blocks.get(blockKey)
+      if (!block) {
+        block = {
+          date: currentDate,
+          areaName,
+          blockName: mapAreaToBlockName(areaName),
+          dessertKg: 0,
+          industrialKg: 0,
+          totalKg: 0,
+          currentAmount: 0,
+        }
+        blocks.set(blockKey, block)
+      }
+
+      const isIndustrial = INDUSTRIAL_CLASS_PATTERN.test(productClass)
+      block.totalKg += weight
+      if (isIndustrial) block.industrialKg += weight
+      else block.dessertKg += weight
+
+      const amount = columns.amount >= 0 ? parseNumber(row[columns.amount]) : null
+      if (amount !== null) block.currentAmount += amount
+    }
   }
 
-  const rows: PieceRateWorkerRow[] = []
+  const byDate = new Map<string, PieceRateWorkerRow[]>()
 
   for (const entry of workers.values()) {
     if (entry.kg === null && entry.hours === null) {
-      warnings.push(`${entry.workerName}: brak wiersza "Razem" — pominięty.`)
+      warnings.push(
+        `${entry.workerName} (${entry.date}): brak wiersza "Razem" — pominięty.`
+      )
       continue
+    }
+
+    // Więcej niż jedno "Razem" na dzień znaczy, że MaxCrop grupuje inaczej
+    // niż zakładamy i nadpisaliśmy dane — lepiej powiedzieć to wprost.
+    if (entry.summaryCount > 1) {
+      warnings.push(
+        `${entry.workerName} (${entry.date}): ${entry.summaryCount} wierszy "Razem" w jednym dniu — ` +
+          `użyto ostatniego, sprawdź podział na dni.`
+      )
     }
 
     const workTypes = [...entry.workTypes]
@@ -283,7 +389,8 @@ export function parseMaxcropPieceRateSheet(
       industrialKg = totalKg
     }
 
-    rows.push({
+    const dayRows = byDate.get(entry.date)
+    const parsedRow: PieceRateWorkerRow = {
       externalId: entry.externalId,
       workerName: entry.workerName,
       kg: totalKg,
@@ -295,15 +402,104 @@ export function parseMaxcropPieceRateSheet(
         (type) => type.toLowerCase().trim() === HARVEST_WORK_TYPE
       ),
       currentAmount: entry.amount,
-    })
+    }
+
+    if (dayRows) dayRows.push(parsedRow)
+    else byDate.set(entry.date, [parsedRow])
   }
 
-  rows.sort((a, b) => a.workerName.localeCompare(b.workerName, 'pl'))
+  const blocksByDate = new Map<string, PieceRateBlock[]>()
+  for (const block of blocks.values()) {
+    const { date, ...rest } = block
+    const list = blocksByDate.get(date)
+    if (list) list.push(rest)
+    else blocksByDate.set(date, [rest])
+  }
 
-  return { fileName, reportDate, rows, warnings }
+  const days: PieceRateDay[] = [...byDate.entries()]
+    .map(([date, dayRows]) => ({
+      date,
+      rows: dayRows.sort((a, b) => a.workerName.localeCompare(b.workerName, 'pl')),
+      blocks: (blocksByDate.get(date) || []).sort((a, b) => b.totalKg - a.totalKg),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  return {
+    fileName,
+    // reportDate ma sens tylko dla pliku jednodniowego
+    reportDate: days.length === 1 ? days[0].date : null,
+    days,
+    rows: days.length > 0 ? days[0].rows : [],
+    warnings,
+  }
 }
 
 export type HoursMergeStrategy = 'max' | 'sum'
+
+/**
+ * Scala kilka plików w oś dni. Pliki mogą się nakładać albo obejmować
+ * różne zakresy — wiersze z tej samej daty łączymy tak samo jak przy
+ * pojedynczym dniu (patrz `mergePieceRateFiles`).
+ */
+export function mergePieceRateDays(
+  files: PieceRateFileParseResult[],
+  hoursStrategy: HoursMergeStrategy = 'max'
+): { days: PieceRateDay[]; warnings: string[] } {
+  const warnings: string[] = files.flatMap((file) =>
+    file.warnings.map((warning) => `${file.fileName}: ${warning}`)
+  )
+
+  const byDate = new Map<string, PieceRateFileParseResult[]>()
+
+  for (const file of files) {
+    for (const day of file.days) {
+      const group = byDate.get(day.date)
+      // Warnings pliku dołożyliśmy wyżej — tutaj puste, żeby się nie dublowały.
+      const slice: PieceRateFileParseResult = {
+        fileName: file.fileName,
+        reportDate: day.date,
+        days: [day],
+        rows: day.rows,
+        warnings: [],
+      }
+
+      if (group) group.push(slice)
+      else byDate.set(day.date, [slice])
+    }
+  }
+
+  const days = [...byDate.entries()]
+    .map(([date, group]) => {
+      const merged = mergePieceRateFiles(group, hoursStrategy)
+      warnings.push(...merged.warnings.map((warning) => `${date}: ${warning}`))
+
+      // Obszary sumujemy po nazwie — ten sam blok w dwóch plikach to
+      // dwie partie tego samego zbioru.
+      const byArea = new Map<string, PieceRateBlock>()
+      for (const slice of group) {
+        for (const block of slice.days[0].blocks) {
+          const existing = byArea.get(block.areaName)
+          if (!existing) {
+            byArea.set(block.areaName, { ...block })
+            continue
+          }
+          existing.dessertKg += block.dessertKg
+          existing.industrialKg += block.industrialKg
+          existing.totalKg += block.totalKg
+          existing.currentAmount += block.currentAmount
+        }
+      }
+
+      return {
+        date,
+        rows: merged.rows,
+        blocks: [...byArea.values()].sort((a, b) => b.totalKg - a.totalKg),
+      }
+    })
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  return { days, warnings }
+}
 
 /**
  * Scala kilka raportów z tego samego dnia w jedną listę.

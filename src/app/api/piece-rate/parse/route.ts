@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx'
 import { requirePieceRateContext, PieceRateAccessError } from '@/lib/piece-rate-access'
 import {
   parseMaxcropPieceRateSheet,
-  mergePieceRateFiles,
+  mergePieceRateDays,
   type PieceRateFileParseResult,
   type HoursMergeStrategy,
 } from '@/lib/maxcrop-piece-rate-parser'
@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
         parsed.push({
           fileName: file.name,
           reportDate: null,
+          days: [],
           rows: [],
           warnings: ['Plik nie zawiera żadnego arkusza'],
         })
@@ -54,23 +55,22 @@ export async function POST(request: NextRequest) {
       parsed.push(parseMaxcropPieceRateSheet(grid, file.name))
     }
 
-    const { rows, warnings } = mergePieceRateFiles(parsed, hoursStrategy)
+    const { days, warnings } = mergePieceRateDays(parsed, hoursStrategy)
 
-    // Data zbioru: bierzemy z raportu. Rozjazd dat między plikami to sygnał,
-    // że użytkownik wgrał raporty z różnych dni — ostrzegamy, nie zgadujemy.
-    const dates = [...new Set(parsed.map((file) => file.reportDate).filter(Boolean))]
-    if (dates.length > 1) {
-      warnings.push(`Pliki dotyczą różnych dni: ${dates.join(', ')} — sprawdź, czy o to chodziło.`)
+    if (days.length === 0) {
+      warnings.push('Nie znaleziono żadnego dnia z danymi.')
     }
 
     return NextResponse.json({
-      rows,
+      days,
       warnings,
-      reportDate: dates.length === 1 ? dates[0] : null,
+      // Zgodność wstecz dla wywołań jednodniowych
+      rows: days.length > 0 ? days[0].rows : [],
+      reportDate: days.length === 1 ? days[0].date : null,
       files: parsed.map((file) => ({
         fileName: file.fileName,
-        reportDate: file.reportDate,
-        rowCount: file.rows.length,
+        dayCount: file.days.length,
+        dates: file.days.map((day) => day.date),
       })),
     })
   } catch (error) {

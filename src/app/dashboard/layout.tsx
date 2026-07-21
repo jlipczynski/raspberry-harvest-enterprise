@@ -19,8 +19,16 @@ import {
   Database,
   LogOut,
   Shield,
-  Target
+  Target,
+  Calculator
 } from 'lucide-react'
+
+// Podpozycje renderowane pod danym wpisem menu
+const subItems: Record<string, { title: string; href: string; icon: typeof Calculator }[]> = {
+  '/dashboard/workers': [
+    { title: 'Kalkulator wynagrodzeń', href: '/dashboard/workers/kalkulator', icon: Calculator },
+  ],
+}
 
 const menuItems = [
   { title: 'Panel główny', href: '/dashboard', icon: LayoutDashboard },
@@ -73,21 +81,44 @@ export default function DashboardLayout({
               return true
             })
             .map((item) => {
-            const isActive = pathname === item.href || 
+            const isActive = pathname === item.href ||
               (item.href !== '/dashboard' && pathname.startsWith(item.href))
+            const children = subItems[item.href] || []
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                  isActive 
-                    ? 'bg-white text-green-700 font-medium shadow-sm' 
-                    : 'text-green-100 hover:bg-white/10'
-                }`}
-              >
-                <item.icon className={`w-5 h-5 ${isActive ? 'text-green-600' : ''}`} />
-                <span>{item.title}</span>
-              </Link>
+              <div key={item.href}>
+                <Link
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+                    isActive
+                      ? 'bg-white text-green-700 font-medium shadow-sm'
+                      : 'text-green-100 hover:bg-white/10'
+                  }`}
+                >
+                  <item.icon className={`w-5 h-5 ${isActive ? 'text-green-600' : ''}`} />
+                  <span>{item.title}</span>
+                </Link>
+                {children.length > 0 && isActive && (
+                  <div className="mt-1 ml-4 pl-3 border-l border-green-500/60 space-y-1">
+                    {children.map((child) => {
+                      const childActive = pathname === child.href
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                            childActive
+                              ? 'bg-white/90 text-green-700 font-medium'
+                              : 'text-green-100 hover:bg-white/10'
+                          }`}
+                        >
+                          <child.icon className="w-4 h-4" />
+                          <span>{child.title}</span>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             )
           })}
           
@@ -164,20 +195,43 @@ export default function DashboardLayout({
               })
               .map((item) => {
                 const isActive = pathname === item.href
+                const children = subItems[item.href] || []
+                const showChildren = children.length > 0 &&
+                  (item.href !== '/dashboard' && pathname.startsWith(item.href))
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                      isActive 
-                        ? 'bg-white text-green-700 font-medium' 
-                        : 'text-green-100 hover:bg-white/10'
-                    }`}
-                  >
-                    <item.icon className={`w-5 h-5 ${isActive ? 'text-green-600' : ''}`} />
-                    <span>{item.title}</span>
-                  </Link>
+                  <div key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+                        isActive
+                          ? 'bg-white text-green-700 font-medium'
+                          : 'text-green-100 hover:bg-white/10'
+                      }`}
+                    >
+                      <item.icon className={`w-5 h-5 ${isActive ? 'text-green-600' : ''}`} />
+                      <span>{item.title}</span>
+                    </Link>
+                    {showChildren && (
+                      <div className="mt-1 ml-4 pl-3 border-l border-green-500/60 space-y-1">
+                        {children.map((child) => (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            onClick={() => setMobileMenuOpen(false)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
+                              pathname === child.href
+                                ? 'bg-white/90 text-green-700 font-medium'
+                                : 'text-green-100 hover:bg-white/10'
+                            }`}
+                          >
+                            <child.icon className="w-4 h-4" />
+                            <span>{child.title}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )
               })}
               {role === 'SUPER_ADMIN' && (

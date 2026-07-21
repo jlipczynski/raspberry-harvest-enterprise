@@ -13,29 +13,29 @@ model Tenant {
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   users     User[]
   farms     Farm[]
-  varieties  Variety[]
-  templates  ProductionCurveTemplate[]
-  
+  varieties Variety[]
+  templates ProductionCurveTemplate[]
+
   @@map("tenants")
 }
 
 // ==================== USERS ====================
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String  @id @default(cuid())
+  email        String  @unique
   name         String?
   passwordHash String
-  role         String   @default("MANAGER")
-  
-  tenantId     String
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
+  role         String  @default("MANAGER")
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@map("users")
 }
 
@@ -47,38 +47,38 @@ model Farm {
   latitude        Float?
   longitude       Float?
   seasonStartDate DateTime?
-  
-  tenantId        String
-  tenant          Tenant    @relation(fields: [tenantId], references: [id])
-  
-  blocks          Block[]
-  workers         Worker[]
-  weatherData     WeatherData[]
-  forecastCache   ForecastCache?
-  sensorDevices   SensorDevice[]
-  harvestEntries  HarvestEntry[]
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  blocks             Block[]
+  workers            Worker[]
+  weatherData        WeatherData[]
+  forecastCache      ForecastCache?
+  sensorDevices      SensorDevice[]
+  harvestEntries     HarvestEntry[]
   harvestPredictions HarvestPrediction[]
 
   googleDriveRefreshToken String?
   googleDriveFolderId     String?
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("farms")
 }
 
 // ==================== BLOCKS ====================
 model Block {
-  id       String    @id @default(cuid())
-  name     String
-  areaHa   Float?
+  id     String @id @default(cuid())
+  name   String
+  areaHa Float?
 
-  farmId   String
-  farm     Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  farmId String
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
 
-  sections       Section[]
-  harvestEntries HarvestEntry[]
+  sections           Section[]
+  harvestEntries     HarvestEntry[]
   harvestPredictions HarvestPrediction[]
 
   createdAt DateTime @default(now())
@@ -89,20 +89,20 @@ model Block {
 
 // ==================== HARVEST DATA ====================
 model HarvestEntry {
-  id              String   @id @default(cuid())
-  date            DateTime @db.Date
-  areaName        String                    // oryginalna nazwa z MaxCrop
-  productClass    String                    // klasa produktu z MaxCrop
-  weightKg        Float                     // waga rzeczywista (kg)
-  quantity        Float?                    // ilość rzeczywista
+  id           String   @id @default(cuid())
+  date         DateTime @db.Date
+  areaName     String // oryginalna nazwa z MaxCrop
+  productClass String // klasa produktu z MaxCrop
+  weightKg     Float // waga rzeczywista (kg)
+  quantity     Float? // ilość rzeczywista
 
-  blockId         String?
-  block           Block?   @relation(fields: [blockId], references: [id], onDelete: SetNull)
-  farmId          String
-  farm            Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  sourceFile      String?                   // nazwa pliku z importu
+  blockId    String?
+  block      Block?  @relation(fields: [blockId], references: [id], onDelete: SetNull)
+  farmId     String
+  farm       Farm    @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  sourceFile String? // nazwa pliku z importu
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@unique([farmId, date, areaName, productClass])
   @@map("harvest_entries")
@@ -110,48 +110,48 @@ model HarvestEntry {
 
 // ==================== VARIETIES ====================
 model Variety {
-  id                    String    @id @default(cuid())
-  name                  String
-  origin                String?
-  description           String?
-  
-  yieldSummerPerShoot   Float?
-  yieldAutumnPerShoot   Float?
-  
-  baseTemp              Float?    @default(6.0)
+  id          String  @id @default(cuid())
+  name        String
+  origin      String?
+  description String?
+
+  yieldSummerPerShoot Float?
+  yieldAutumnPerShoot Float?
+
+  baseTemp Float? @default(6.0)
 
   // GDH progi — LATO (kwitnienie + owocowanie per typ rośliny)
-  gdhWinteredFlowerSummer  Int?   // GDH do kwitnienia lata (zimowane w tunelu)
-  gdhWinteredFruitSummer   Int?   // GDH do owocowania lata (zimowane w tunelu)
-  gdhPlantedFlowerSummer   Int?   // GDH do kwitnienia lata (wysadzona doniczka/korzeń)
-  gdhPlantedFruitSummer    Int?   // GDH do owocowania lata (wysadzona doniczka/korzeń)
-  gdhLcFlowerSummer        Int?   // GDH do kwitnienia lata (ze szkółki/LC)
-  gdhLcFruitSummer         Int?   // GDH do owocowania lata (ze szkółki/LC)
+  gdhWinteredFlowerSummer Int? // GDH do kwitnienia lata (zimowane w tunelu)
+  gdhWinteredFruitSummer  Int? // GDH do owocowania lata (zimowane w tunelu)
+  gdhPlantedFlowerSummer  Int? // GDH do kwitnienia lata (wysadzona doniczka/korzeń)
+  gdhPlantedFruitSummer   Int? // GDH do owocowania lata (wysadzona doniczka/korzeń)
+  gdhLcFlowerSummer       Int? // GDH do kwitnienia lata (ze szkółki/LC)
+  gdhLcFruitSummer        Int? // GDH do owocowania lata (ze szkółki/LC)
 
   // GDH próg — JESIEŃ (od wypuszczenia pędów jesiennych do owocowania)
-  gdhFruitAutumn           Int?   // GDH od autumnShootDate do owocowania jesiennego
+  gdhFruitAutumn Int? // GDH od autumnShootDate do owocowania jesiennego
 
-  harvestCurveSummer    Json?
-  harvestCurveAutumn    Json?
+  harvestCurveSummer Json?
+  harvestCurveAutumn Json?
 
-  rushWeeksSummer       Int?   // liczba pierwszych tygodni lata = pośpiech (przed fruitDate)
-  rushWeeksAutumn       Int?   // liczba pierwszych tygodni jesieni = pośpiech (przed autumnFruitDate)
+  rushWeeksSummer Int? // liczba pierwszych tygodni lata = pośpiech (przed fruitDate)
+  rushWeeksAutumn Int? // liczba pierwszych tygodni jesieni = pośpiech (przed autumnFruitDate)
 
   pickingEfficiency     Float?
   wastePercent          Float?
   secondCategoryPercent Float?
-  
-  isCustom              Boolean   @default(false)
-  
-  tenantId              String?
-  tenant                Tenant?   @relation(fields: [tenantId], references: [id])
-  
-  sections              Section[]
-  harvestCurves         HarvestCurve[]
-  templates             ProductionCurveTemplate[] @relation("TemplateVariety")  
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  
+
+  isCustom Boolean @default(false)
+
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
+
+  sections      Section[]
+  harvestCurves HarvestCurve[]
+  templates     ProductionCurveTemplate[] @relation("TemplateVariety")
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+
   @@map("varieties")
 }
 
@@ -163,120 +163,120 @@ enum PlantSource {
 
 // ==================== SECTIONS ====================
 model Section {
-  id                    String    @id @default(cuid())
-  name                  String?
-  
-  metersLength          Float
-  potsPerMeter          Float
-  shootsPerPot          Float
-  potsOverride          Int?
-  
-  plantingYear          Int?
-  productionYear        Int?
-  
-  plantMaterialType     String?
-  plantSource           PlantSource?
+  id   String  @id @default(cuid())
+  name String?
 
-  yieldSummerPerShoot   Float?
-  yieldAutumnPerShoot   Float?
+  metersLength Float
+  potsPerMeter Float
+  shootsPerPot Float
+  potsOverride Int?
+
+  plantingYear   Int?
+  productionYear Int?
+
+  plantMaterialType String?
+  plantSource       PlantSource?
+
+  yieldSummerPerShoot Float?
+  yieldAutumnPerShoot Float?
 
   // GDH progi — LATO (override odmiany, nullable = brak override)
-  gdhWinteredFlowerSummer  Int?
-  gdhWinteredFruitSummer   Int?
-  gdhPlantedFlowerSummer   Int?
-  gdhPlantedFruitSummer    Int?
-  gdhLcFlowerSummer        Int?
-  gdhLcFruitSummer         Int?
+  gdhWinteredFlowerSummer Int?
+  gdhWinteredFruitSummer  Int?
+  gdhPlantedFlowerSummer  Int?
+  gdhPlantedFruitSummer   Int?
+  gdhLcFlowerSummer       Int?
+  gdhLcFruitSummer        Int?
 
   // GDH próg — JESIEŃ (override odmiany, nullable = brak override)
-  gdhFruitAutumn           Int?   // GDH od autumnShootDate do owocowania jesiennego
-  
-  certificateUrl        String?
-  deliveryProofUrl      String?
-  
-  blockId               String
-  block                 Block     @relation(fields: [blockId], references: [id], onDelete: Cascade)
-  
-  varietyId             String
-  variety               Variety   @relation(fields: [varietyId], references: [id])
-  
-  harvests              Harvest[]
-  weeklyOverrides       WeeklyOverride[]
-  harvestCurves         HarvestCurve[]
-  
-  temperatureReadings   TemperatureReading[]
-  sensorDevices         SensorDevice[]
-  winteredInTunnel      Boolean   @default(false)
-  templateAssignments   SectionTemplateAssignment[]
-  sourceTemplates       ProductionCurveTemplate[] @relation("TemplateSource")
-  harvestSeasons        HarvestSeason[]
-  plantingDate          DateTime?
-  autumnShootDate       DateTime?
-  harvestCurveSummer    Float[]   @default([])
-  harvestCurveAutumn    Float[]   @default([])
+  gdhFruitAutumn Int? // GDH od autumnShootDate do owocowania jesiennego
 
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  certificateUrl   String?
+  deliveryProofUrl String?
+
+  blockId String
+  block   Block  @relation(fields: [blockId], references: [id], onDelete: Cascade)
+
+  varietyId String
+  variety   Variety @relation(fields: [varietyId], references: [id])
+
+  harvests        Harvest[]
+  weeklyOverrides WeeklyOverride[]
+  harvestCurves   HarvestCurve[]
+
+  temperatureReadings TemperatureReading[]
+  sensorDevices       SensorDevice[]
+  winteredInTunnel    Boolean                     @default(false)
+  templateAssignments SectionTemplateAssignment[]
+  sourceTemplates     ProductionCurveTemplate[]   @relation("TemplateSource")
+  harvestSeasons      HarvestSeason[]
+  plantingDate        DateTime?
+  autumnShootDate     DateTime?
+  harvestCurveSummer  Float[]                     @default([])
+  harvestCurveAutumn  Float[]                     @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("sections")
 }
 
 // ==================== HARVEST CURVES ====================
 model HarvestCurve {
-  id            String   @id @default(cuid())
-  year          Int                          // rok danych (2023, 2024, 2025)
-  season        String?  @default("summer")   // 'summer' | 'autumn'
-  curve         Float[]                      // % na tydzień [5, 12, 18, 22, 20, 13, 7, 3]
-  dailyCurve    Float[]                      // kg na dzień
-  startDate     String?                      // data startu zbioru
-  totalKg       Float                        // suma kg w sezonie
-  startWeek     Int                          // tydzień startu zbioru
-  
-  sectionId     String?
-  section       Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  
-  varietyId     String?
-  variety       Variety? @relation(fields: [varietyId], references: [id], onDelete: SetNull)
-  
-  sourceFile    String?                      // nazwa pliku MaxCrop
-  name          String?                      // opcjonalna nazwa (wymagana dla merged)
+  id         String  @id @default(cuid())
+  year       Int // rok danych (2023, 2024, 2025)
+  season     String? @default("summer") // 'summer' | 'autumn'
+  curve      Float[] // % na tydzień [5, 12, 18, 22, 20, 13, 7, 3]
+  dailyCurve Float[] // kg na dzień
+  startDate  String? // data startu zbioru
+  totalKg    Float // suma kg w sezonie
+  startWeek  Int // tydzień startu zbioru
+
+  sectionId String?
+  section   Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+
+  varietyId String?
+  variety   Variety? @relation(fields: [varietyId], references: [id], onDelete: SetNull)
+
+  sourceFile    String? // nazwa pliku MaxCrop
+  name          String? // opcjonalna nazwa (wymagana dla merged)
   isArchived    Boolean  @default(false)
-  mergedFromIds String[]                     // ID krzywych źródłowych
+  mergedFromIds String[] // ID krzywych źródłowych
 
   commercialStartDate       DateTime?
   commercialStartDateAutumn DateTime?
 
-  winteredInTunnel  Boolean?
-  plantingDate      DateTime?
-  plantSource       PlantSource?
-  plantingYear      Int?
-  autumnShootDate   DateTime?
+  winteredInTunnel Boolean?
+  plantingDate     DateTime?
+  plantSource      PlantSource?
+  plantingYear     Int?
+  autumnShootDate  DateTime?
 
-  importedAt    DateTime @default(now())
-  
+  importedAt DateTime @default(now())
+
   templateAssignments SectionTemplateAssignment[]
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("harvest_curves")
 }
 
 // ==================== WEEKLY OVERRIDES ====================
 model WeeklyOverride {
-  id                String   @id @default(cuid())
-  
+  id String @id @default(cuid())
+
   weekNumber        Int
   year              Int
   pickingEfficiency Float?
   notes             String?
-  
-  sectionId         String
-  section           Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([sectionId, weekNumber, year])
   @@map("weekly_overrides")
 }
@@ -291,66 +291,66 @@ model WeatherData {
   gdhDaily      Float
   gdhCumulative Float
   source        String?
-  
-  farmId        String
-  farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  
-  createdAt     DateTime @default(now())
-  
+
+  farmId String
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
   @@unique([farmId, date])
   @@map("weather_data")
 }
 
 // ==================== HISTORICAL GDH ====================
 model HistoricalGdh {
-  id            String   @id @default(cuid())
-  dayOfYear     Int
-  avgGdh        Float
-  minGdh        Float?
-  maxGdh        Float?
-  yearsCount    Int?
-  
-  farmId        String
-  
+  id         String @id @default(cuid())
+  dayOfYear  Int
+  avgGdh     Float
+  minGdh     Float?
+  maxGdh     Float?
+  yearsCount Int?
+
+  farmId String
+
   @@unique([farmId, dayOfYear])
   @@map("historical_gdh")
 }
 
 // ==================== WORKERS ====================
 model Worker {
-  id                String   @id @default(cuid())
-  firstName         String
-  lastName          String
-  passport          String?
-  passportFileUrl   String?
+  id              String  @id @default(cuid())
+  firstName       String
+  lastName        String
+  passport        String?
+  passportFileUrl String?
 
-  availableFrom     DateTime? @db.Date
-  availableTo       DateTime? @db.Date
-  suggestedArrival  DateTime? @db.Date
-  confirmedArrival  DateTime? @db.Date
+  availableFrom    DateTime? @db.Date
+  availableTo      DateTime? @db.Date
+  suggestedArrival DateTime? @db.Date
+  confirmedArrival DateTime? @db.Date
 
   referredBy        String?
-  yearsAtPlantation Int       @default(0)
+  yearsAtPlantation Int     @default(0)
 
-  status            String    @default("new")
+  status String @default("new")
 
-  acceptedToList    Boolean   @default(false)
+  acceptedToList    Boolean @default(false)
   acceptedToListMsg String?
-  arrivalConfirmed  Boolean   @default(false)
+  arrivalConfirmed  Boolean @default(false)
   arrivalConfirmMsg String?
 
-  whatsapp          String?
-  viber             String?
-  phone             String?
+  whatsapp String?
+  viber    String?
+  phone    String?
 
-  efficiencyKgH     Float     @default(8.0)
-  isActive          Boolean   @default(true)
+  efficiencyKgH Float   @default(8.0)
+  isActive      Boolean @default(true)
 
-  farmId            String
-  farm              Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  farmId String
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("workers")
 }
@@ -361,30 +361,30 @@ model Harvest {
   date         DateTime @db.Date
   yieldKg      Float
   notes        String?
-  season       String?  // 'summer' | 'autumn'
+  season       String? // 'summer' | 'autumn'
   isPreHarvest Boolean  @default(false) // "pośpiech" — nie liczymy jako start komercyjny
 
-  sectionId    String
-  section      Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
-  createdAt    DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@map("harvests")
 }
 
 // ==================== HARVEST SEASONS (tracking commercial start per section/season/year) ====================
 model HarvestSeason {
-  id                     String    @id @default(cuid())
-  year                   Int
-  season                 String    // 'summer' | 'autumn'
-  commercialStartDate    DateTime? @db.Date // data zakotwiczenia — ręcznie potwierdzona
-  gdhPredictedStartDate  DateTime? @db.Date // prognoza startu z GDH
+  id                    String    @id @default(cuid())
+  year                  Int
+  season                String // 'summer' | 'autumn'
+  commercialStartDate   DateTime? @db.Date // data zakotwiczenia — ręcznie potwierdzona
+  gdhPredictedStartDate DateTime? @db.Date // prognoza startu z GDH
 
-  sectionId              String
-  section                Section   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([sectionId, year, season])
   @@map("harvest_seasons")
@@ -392,130 +392,129 @@ model HarvestSeason {
 
 // ==================== PRODUCTION CURVE TEMPLATES ====================
 model ProductionCurveTemplate {
-  id                  String   @id @default(cuid())
-  name                String
-  description         String?
-  
-  tenantId            String?
-  tenant              Tenant?  @relation(fields: [tenantId], references: [id])
-  
-  varietyId            String?
-  variety              Variety? @relation("TemplateVariety", fields: [varietyId], references: [id], onDelete: SetNull)
-  
-  productionYear      Int                          // year of data (2024, 2025)
-  productionCycle     Int      @default(1)          // 1st/2nd/3rd year of production
-  season              String?  @default("summer")    // 'summer' | 'autumn'
+  id          String  @id @default(cuid())
+  name        String
+  description String?
 
-  plantingDate        String?                       // when planted
-  winteredInTunnel    Boolean  @default(false)
-  plantSource         String?                       // 'long_canes' | 'tray_plants' | 'nursery'
-  
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
+
+  varietyId String?
+  variety   Variety? @relation("TemplateVariety", fields: [varietyId], references: [id], onDelete: SetNull)
+
+  productionYear  Int // year of data (2024, 2025)
+  productionCycle Int     @default(1) // 1st/2nd/3rd year of production
+  season          String? @default("summer") // 'summer' | 'autumn'
+
+  plantingDate     String? // when planted
+  winteredInTunnel Boolean @default(false)
+  plantSource      String? // 'long_canes' | 'tray_plants' | 'nursery'
+
   // Production curve data - Summer
-  dailyCurveSummer    Float[]
-  weeklyCurveSummer   Float[]
-  startDateSummer     String?
-  endDateSummer       String?
-  startWeekSummer     Int?
-  totalKgSummer       Float    @default(0)
-  
+  dailyCurveSummer  Float[]
+  weeklyCurveSummer Float[]
+  startDateSummer   String?
+  endDateSummer     String?
+  startWeekSummer   Int?
+  totalKgSummer     Float   @default(0)
+
   // Production curve data - Autumn
-  dailyCurveAutumn    Float[]
-  weeklyCurveAutumn   Float[]
-  startDateAutumn     String?
-  endDateAutumn       String?
-  startWeekAutumn     Int?
-  totalKgAutumn       Float    @default(0)
-  
+  dailyCurveAutumn  Float[]
+  weeklyCurveAutumn Float[]
+  startDateAutumn   String?
+  endDateAutumn     String?
+  startWeekAutumn   Int?
+  totalKgAutumn     Float   @default(0)
+
   // Historical temperature data
-  outsideTemps        Json?                         // [{date, min, max, avg}]
-  insideTunnelTemps   Json?                         // [{date, min, max, avg}]
-  tempAdjustmentFactor Float?                       // inside/outside ratio
-  
+  outsideTemps         Json? // [{date, min, max, avg}]
+  insideTunnelTemps    Json? // [{date, min, max, avg}]
+  tempAdjustmentFactor Float? // inside/outside ratio
+
   // GDH data
-  gdhData             Json?                         // [{date, gdh, cumulativeGdh}]
-  gdhToFlowering      Float?                        // cumulative GDH at flowering
-  gdhToFirstFruit     Float?                        // cumulative GDH at first fruit
-  
+  gdhData         Json? // [{date, gdh, cumulativeGdh}]
+  gdhToFlowering  Float? // cumulative GDH at flowering
+  gdhToFirstFruit Float? // cumulative GDH at first fruit
+
   // Temperature data sources
-  tempSources         String[]                      // ['MANUAL','API','SENSORS']
-  
-  sourceSectionId     String?
-  sourceSection       Section?  @relation("TemplateSource", fields: [sourceSectionId], references: [id], onDelete: SetNull)
+  tempSources String[] // ['MANUAL','API','SENSORS']
 
-  summerEndWeek       Int?
-  sourceFile          String?
-  notes               String?
-  sourceHarvestCurveIds String[]                    // IDs of HarvestCurve records used to create this template
-  sourceAreaNames     String[]                      // Names of source areas used to create this template
+  sourceSectionId String?
+  sourceSection   Section? @relation("TemplateSource", fields: [sourceSectionId], references: [id], onDelete: SetNull)
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  summerEndWeek         Int?
+  sourceFile            String?
+  notes                 String?
+  sourceHarvestCurveIds String[] // IDs of HarvestCurve records used to create this template
+  sourceAreaNames       String[] // Names of source areas used to create this template
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Sections using this template
-  sectionAssignments  SectionTemplateAssignment[]
+  sectionAssignments SectionTemplateAssignment[]
 
   @@map("production_curve_templates")
 }
 
 model SectionTemplateAssignment {
-  id                  String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  sectionId           String
-  section             Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
-  templateId          String
-  template            ProductionCurveTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  templateId String
+  template   ProductionCurveTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
-  targetYear          Int                          // which year this assignment is for (2026)
-  season              String   @default("summer")  // 'summer' | 'autumn'
-  adjustmentPercent   Float    @default(0)          // +/- % adjustment to curve
-  adjustedCurve       Float[]                       // final adjusted daily curve
+  targetYear        Int // which year this assignment is for (2026)
+  season            String  @default("summer") // 'summer' | 'autumn'
+  adjustmentPercent Float   @default(0) // +/- % adjustment to curve
+  adjustedCurve     Float[] // final adjusted daily curve
 
-  harvestCurveId      String?
-  harvestCurve        HarvestCurve? @relation(fields: [harvestCurveId], references: [id], onDelete: SetNull)
+  harvestCurveId String?
+  harvestCurve   HarvestCurve? @relation(fields: [harvestCurveId], references: [id], onDelete: SetNull)
 
-  isActive            Boolean  @default(true)
+  isActive Boolean @default(true)
 
-  plantingDate        String?                       // actual planting date for this assignment
+  plantingDate String? // actual planting date for this assignment
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([sectionId, templateId, targetYear, season])
   @@map("section_template_assignments")
 }
 
-
 // ==================== SENSOR DEVICES (measurement device registry) ====================
 model SensorDevice {
-  id            String   @id @default(cuid())
-  serialNumber  String                        // full serial number e.g. "85520793"
-  name          String?                       // friendly name e.g. "Czujnik 793"
+  id           String  @id @default(cuid())
+  serialNumber String // full serial number e.g. "85520793"
+  name         String? // friendly name e.g. "Czujnik 793"
 
-  sectionId     String
-  section       Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
-  farmId        String
-  farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  farmId String
+  farm   Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("sensor_devices")
 }
 
 // ==================== TEMPERATURE READINGS (from PDF loggers) ====================
 model TemperatureReading {
-  id            String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  timestamp     DateTime                      // date+time of the reading
-  temperature   Float                         // temperature in °C
+  timestamp   DateTime // date+time of the reading
+  temperature Float // temperature in °C
 
-  sectionId     String
-  section       Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
-  sourceFile    String?                       // PDF filename for traceability
-  importedAt    DateTime @default(now())
+  sourceFile String? // PDF filename for traceability
+  importedAt DateTime @default(now())
 
   @@unique([sectionId, timestamp])
   @@index([sectionId, timestamp])
@@ -524,22 +523,22 @@ model TemperatureReading {
 
 // ==================== HARVEST PREDICTIONS ====================
 model HarvestPrediction {
-  id              String   @id @default(cuid())
-  date            DateTime @db.Date
+  id   String   @id @default(cuid())
+  date DateTime @db.Date
 
-  blockId         String
-  block           Block    @relation(fields: [blockId], references: [id], onDelete: Cascade)
-  farmId          String
-  farm            Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  blockId String
+  block   Block  @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  farmId  String
+  farm    Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
 
-  predictedKg     Float            // what we predicted for this day
-  actualKg        Float?           // filled after MaxCrop sync (null = future)
-  ratio           Float?           // actual / predicted (null = future or predictedKg=0)
-  gdhDaily        Float?           // GDH forecast for this day (for analysis)
-  correctionFactor Float @default(1.0) // rolling avg ratio applied when making this prediction
+  predictedKg      Float // what we predicted for this day
+  actualKg         Float? // filled after MaxCrop sync (null = future)
+  ratio            Float? // actual / predicted (null = future or predictedKg=0)
+  gdhDaily         Float? // GDH forecast for this day (for analysis)
+  correctionFactor Float  @default(1.0) // rolling avg ratio applied when making this prediction
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([farmId, date, blockId])
   @@map("harvest_predictions")
@@ -547,28 +546,76 @@ model HarvestPrediction {
 
 // ==================== FEEDBACK ====================
 model Feedback {
-  id        String   @id @default(cuid())
-  message   String
-  category  String   @default("general")
-  page      String?
-  userName  String?
-  userEmail String?
+  id         String   @id @default(cuid())
+  message    String
+  category   String   @default("general")
+  page       String?
+  userName   String?
+  userEmail  String?
   tenantName String?
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 }
 
 // ==================== FORECAST CACHE ====================
 model ForecastCache {
-  id              String   @id @default(cuid())
-  farmId          String   @unique
-  meteoDays       Json
-  scenarios       Json
-  seasonalAnomaly Json?
+  id               String   @id @default(cuid())
+  farmId           String   @unique
+  meteoDays        Json
+  scenarios        Json
+  seasonalAnomaly  Json?
   lastForecastDate String
-  historicalYears Int
-  cachedAt        DateTime @default(now())
+  historicalYears  Int
+  cachedAt         DateTime @default(now())
 
   farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
 
   @@map("forecast_cache")
+}
+
+// ==================== PIECE RATE (AKORD) ====================
+enum PieceRateMode {
+  MANUAL
+  AUTO_MEDIAN
+}
+
+model PieceRateSession {
+  id           String        @id @default(cuid())
+  tenantId     String
+  farmId       String
+  harvestDate  DateTime      @db.Date
+  fileName     String
+  mode         PieceRateMode
+  targetHourly Float // zł/h dla osób wzorcowych
+  medianCount  Int           @default(5) // ile osób w trybie AUTO
+  breakMinutes Int           @default(0) // sumaryczne przerwy dnia, odejmowane każdemu
+  roundingStep Float         @default(0.01) // krok zaokrąglenia stawki
+  computedRate Float // wynikowa stawka zł/kg
+  note         String?
+  createdAt    DateTime      @default(now())
+
+  rows PieceRateRow[]
+
+  @@index([tenantId, harvestDate])
+  @@map("piece_rate_sessions")
+}
+
+model PieceRateRow {
+  id        String           @id @default(cuid())
+  sessionId String
+  session   PieceRateSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  workerName      String
+  externalId      String? // kod kreskowy z MaxCrop (PR592)
+  kg              Float
+  hours           Float // czas surowy z raportu
+  effectiveHours  Float // hours po odjęciu przerw
+  kgPerHour       Float // kg / effectiveHours
+  isReference     Boolean @default(false) // zaznaczony jako wzorcowy
+  isHarvestWorker Boolean @default(true) // rodzaj pracy "Zbiory"
+  earnings        Float? // kg * computedRate
+  effectiveHourly Float? // earnings / effectiveHours
+  currentAmount   Float? // kwota naliczona przez MaxCrop — do porównania
+
+  @@index([sessionId])
+  @@map("piece_rate_rows")
 }

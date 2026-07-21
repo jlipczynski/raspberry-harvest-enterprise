@@ -380,7 +380,10 @@ describe('computePieceRate — przemysł po stałej stawce', () => {
 
   it('grupa wzorcowa faktycznie zarabia tyle, ile cel', () => {
     const result = computePieceRate(rows, { ...base, industrialRate: 2 })
-    const totalEarnings = result.rows.reduce((sum, r) => sum + (r.earnings || 0), 0)
+    const totalEarnings = result.rows.reduce(
+      (sum, r) => sum + (r.earnings === null ? 0 : r.earnings),
+      0
+    )
     expect(totalEarnings / result.totalHours).toBeCloseTo(100, 6)
   })
 

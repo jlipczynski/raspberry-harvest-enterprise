@@ -9,7 +9,12 @@ import { Label } from '@/components/ui/label'
 import {
   Upload, Calculator, ArrowLeft, Trash2, Save, AlertTriangle, Loader2,
   ChevronUp, ChevronDown, ChevronsUpDown, Coffee, X, Scissors, Factory,
+  ChevronLeft, ChevronRight, MapPin,
 } from 'lucide-react'
+import {
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip, Legend, ResponsiveContainer, ReferenceLine,
+} from 'recharts'
 import {
   computePieceRate,
   DEFAULT_BAND_TOLERANCE,
@@ -24,6 +29,13 @@ const DEFAULT_MEDIAN_COUNT = 5
 const DEFAULT_INDUSTRIAL_RATE = 2
 const ROUNDING_STEP_COARSE = 0.05
 const ROUNDING_STEP_FINE = 0.01
+
+// Paleta przeszła walidację CVD (protan ΔE 24.7, tritan 32.7) — nie dobieraj
+// kolorów na oko, przepuść przez validate_palette.js ze skilla dataviz.
+const SERIES_DESSERT = '#2a78d6'
+const SERIES_INDUSTRIAL = '#eb6834'
+const AXIS_INK = '#6b7280'
+const GRID_INK = '#e5e7eb'
 
 const BAND_STYLE: Record<HourlyBand, { row: string; text: string; dot: string; label: string }> = {
   above: { row: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-500', label: 'powyżej celu' },
@@ -42,6 +54,21 @@ interface ParsedRow {
   workTypes: string[]
   isHarvestWorker: boolean
   currentAmount: number | null
+}
+
+interface ParsedBlock {
+  areaName: string
+  blockName: string | null
+  dessertKg: number
+  industrialKg: number
+  totalKg: number
+  currentAmount: number
+}
+
+interface ParsedDay {
+  date: string
+  rows: ParsedRow[]
+  blocks: ParsedBlock[]
 }
 
 interface SessionSummary {
@@ -63,6 +90,12 @@ const num = (value: number | null | undefined, digits = 2) =>
 const zl = (value: number | null | undefined, digits = 2) =>
   value === null || value === undefined ? '—' : `${value.toFixed(digits)} zł`
 
+/** Tooltip Rechartsa potrafi podać undefined — formatujemy odpornie. */
+const fmtChart = (value: unknown, digits: number, unit: string) =>
+  typeof value === 'number' && Number.isFinite(value)
+    ? `${value.toFixed(digits)} ${unit}`
+    : '—'
+
 const fmtDate = (value: string) => {
   try {
     return new Date(value).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -72,7 +105,8 @@ const fmtDate = (value: string) => {
 }
 
 export default function PieceRateCalculatorPage() {
-  const [rows, setRows] = useState<ParsedRow[]>([])
+  const [days, setDays] = useState<ParsedDay[]>([])
+  const [dayIndex, setDayIndex] = useState(0)
   const [fileNames, setFileNames] = useState<string[]>([])
   const [harvestDate, setHarvestDate] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
@@ -136,10 +170,12 @@ export default function PieceRateCalculatorPage() {
         return
       }
 
-      setRows(data.rows || [])
+      const parsedDays: ParsedDay[] = data.days || []
+      setDays(parsedDays)
+      setDayIndex(0)
       setWarnings(data.warnings || [])
       setFileNames((data.files || []).map((f: { fileName: string }) => f.fileName))
-      if (data.reportDate) setHarvestDate(data.reportDate)
+      if (parsedDays.length > 0) setHarvestDate(parsedDays[0].date)
       setManualRefs(new Set())
     } catch {
       setError('Błąd połączenia przy wysyłaniu pliku')
@@ -167,6 +203,9 @@ export default function PieceRateCalculatorPage() {
     const hours = Math.max(0, row.hours - breakHours)
     return hours > 0 ? row.kg / hours : null
   }, [breakHours])
+
+  const activeDay = days.length > 0 ? days[Math.min(dayIndex, days.length - 1)] : null
+  const rows = useMemo(() => (activeDay ? activeDay.rows : []), [activeDay])
 
   const eligibleRows = useMemo(
     () => (onlyHarvestWorkers ? rows.filter((row) => row.isHarvestWorker) : rows),
@@ -212,10 +251,63 @@ export default function PieceRateCalculatorPage() {
   }, [keptRows, manualRefs, mode, targetHourly, medianCount, coarseRounding, breakHours,
       rateInput, bandTolerance, parsedIndustrialRate])
 
+  useEffect(() => {
+    if (activeDay) setHarvestDate(activeDay.date)
+  }, [activeDay])
+
   const currentTotal = useMemo(() => {
     const amounts = keptRows.map((row) => row.currentAmount).filter((a): a is number => a !== null)
     return amounts.length > 0 ? amounts.reduce((sum, a) => sum + a, 0) : null
   }, [keptRows])
+
+  /**
+   * Przebieg dzień po dniu — te same parametry (cel zł/h, przemysł, przerwy,
+   * odcięcie) zastosowane do każdego dnia osobno.
+   *
+   * Na wykresie pokazujemy stawkę WYLICZONĄ z celu, nie ręcznie wpisaną —
+   * ręczna byłaby płaską linią przez wszystkie dni i nic by nie mówiła.
+   */
+  const dailySeries = useMemo(() => {
+    return days.map((day) => {
+      const eligible = onlyHarvestWorkers ? day.rows.filter((r) => r.isHarvestWorker) : day.rows
+      const kept = parsedCutoff === null
+        ? eligible
+        : eligible.filter((r) => {
+            const hours = Math.max(0, r.hours - breakHours)
+            return hours <= 0 || r.kg / hours >= parsedCutoff
+          })
+
+      const dayResult = computePieceRate(
+        kept.map((r) => ({
+          workerName: r.workerName,
+          externalId: r.externalId,
+          kg: r.kg,
+          industrialKg: r.industrialKg,
+          hours: r.hours,
+        })),
+        {
+          mode: 'AUTO_MEDIAN',
+          targetHourly,
+          medianCount,
+          roundingStep: coarseRounding ? ROUNDING_STEP_COARSE : ROUNDING_STEP_FINE,
+          breakHours,
+          industrialRate: parsedIndustrialRate,
+        }
+      )
+
+      return {
+        date: day.date,
+        label: day.date.slice(5).replace('-', '.'),
+        rate: dayResult.derivedRate,
+        kgPerHour: dayResult.avgKgPerHour,
+        dessertKg: Math.round(dayResult.totalDessertKg * 10) / 10,
+        industrialKg: Math.round(dayResult.totalIndustrialKg * 10) / 10,
+        workers: kept.length,
+        cost: dayResult.totalCost,
+      }
+    })
+  }, [days, onlyHarvestWorkers, parsedCutoff, breakHours, targetHourly, medianCount,
+      coarseRounding, parsedIndustrialRate])
 
   const sortedRows = useMemo(() => {
     const copy = [...result.rows]
@@ -354,6 +446,56 @@ export default function PieceRateCalculatorPage() {
           <span className="flex-1">{savedMessage}</span>
           <button onClick={() => setSavedMessage(null)}><X className="w-4 h-4" /></button>
         </div>
+      )}
+
+      {/* ========== PRZEWIJAK DNI ========== */}
+      {days.length > 1 && (
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="icon" className="shrink-0"
+                disabled={dayIndex === 0} onClick={() => setDayIndex((i) => Math.max(0, i - 1))}
+                title="Poprzedni dzień">
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+
+              <div className="flex-1 overflow-x-auto">
+                <div className="flex gap-1 min-w-min">
+                  {days.map((day, index) => {
+                    const active = index === Math.min(dayIndex, days.length - 1)
+                    const series = dailySeries[index]
+                    return (
+                      <button key={day.date} onClick={() => setDayIndex(index)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs whitespace-nowrap border transition-colors ${
+                          active
+                            ? 'bg-green-600 text-white border-green-600 font-semibold'
+                            : 'bg-white border-gray-200 text-gray-600 hover:border-green-400'
+                        }`}>
+                        <span className="block">{day.date.slice(5).replace('-', '.')}</span>
+                        <span className={`block text-[10px] ${active ? 'text-green-100' : 'text-gray-400'}`}>
+                          {series?.rate === null || series?.rate === undefined
+                            ? '—'
+                            : `${series.rate.toFixed(2)} zł`}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <Button variant="outline" size="icon" className="shrink-0"
+                disabled={dayIndex >= days.length - 1}
+                onClick={() => setDayIndex((i) => Math.min(days.length - 1, i + 1))}
+                title="Następny dzień">
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+
+              <span className="text-xs text-gray-500 shrink-0 hidden sm:block">
+                {Math.min(dayIndex, days.length - 1) + 1} / {days.length} dni
+              </span>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* ========== PASEK STEROWANIA — stawka na górze ========== */}
@@ -565,6 +707,148 @@ export default function PieceRateCalculatorPage() {
         </CardContent>
       </Card>
 
+      {/* ========== PODSUMOWANIE DNIA — BLOKI ========== */}
+      {activeDay && activeDay.blocks.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <MapPin className="w-4 h-4" />
+              Zbiór {fmtDate(activeDay.date)} wg obszarów
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
+                  <tr>
+                    <th className="p-2 text-left">Obszar</th>
+                    <th className="p-2 text-right">Deser</th>
+                    <th className="p-2 text-right">Przemysł</th>
+                    <th className="p-2 text-right">Razem</th>
+                    <th className="p-2 text-right">Koszt</th>
+                    <th className="p-2 text-right">Śr. zł/kg</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeDay.blocks.map((block) => {
+                    const cost = result.rate === null ? null
+                      : block.dessertKg * result.rate +
+                        block.industrialKg * (parsedIndustrialRate === null ? 0 : parsedIndustrialRate)
+                    // Średnia mieszana: bloki z większym udziałem przemysłu
+                    // wychodzą taniej za kilogram.
+                    const avgPerKg = cost === null || block.totalKg <= 0 ? null : cost / block.totalKg
+                    return (
+                      <tr key={block.areaName} className="border-t hover:bg-gray-50">
+                        <td className="p-2">
+                          {block.areaName}
+                          {block.blockName && (
+                            <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                              {block.blockName}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">{num(block.dessertKg, 1)}</td>
+                        <td className="p-2 text-right tabular-nums text-gray-500">
+                          {block.industrialKg > 0 ? num(block.industrialKg, 1) : '—'}
+                        </td>
+                        <td className="p-2 text-right tabular-nums font-medium">{num(block.totalKg, 1)}</td>
+                        <td className="p-2 text-right tabular-nums">{zl(cost, 0)}</td>
+                        <td className="p-2 text-right tabular-nums font-semibold">{num(avgPerKg)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot className="bg-gray-50 font-semibold">
+                  <tr className="border-t">
+                    <td className="p-2">Razem</td>
+                    <td className="p-2 text-right tabular-nums">
+                      {num(activeDay.blocks.reduce((s, b) => s + b.dessertKg, 0), 1)}
+                    </td>
+                    <td className="p-2 text-right tabular-nums">
+                      {num(activeDay.blocks.reduce((s, b) => s + b.industrialKg, 0), 1)}
+                    </td>
+                    <td className="p-2 text-right tabular-nums">
+                      {num(activeDay.blocks.reduce((s, b) => s + b.totalKg, 0), 1)}
+                    </td>
+                    <td className="p-2 text-right tabular-nums" colSpan={2}>
+                      MaxCrop: {num(activeDay.blocks.reduce((s, b) => s + b.currentAmount, 0), 0)} zł
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <p className="text-[11px] text-gray-400 px-4 py-2 border-t">
+              Liczone z pozycji szczegółowych raportu. Pozycje bez obszaru (zbiorcze) nie wchodzą —
+              MaxCrop też ich nie wlicza do sumy pracownika.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ========== WYKRESY DZIEŃ PO DNIU ========== */}
+      {days.length > 1 && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <DayChart title="Stawka za kg deseru" unit="zł/kg">
+            <LineChart data={dailySeries} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+              <CartesianGrid stroke={GRID_INK} strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: AXIS_INK }}
+                axisLine={{ stroke: GRID_INK }} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: AXIS_INK }} axisLine={false} tickLine={false}
+                width={44} tickFormatter={(v: number) => v.toFixed(0)} />
+              <RechartsTooltip
+                formatter={(value) => [fmtChart(value, 2, 'zł/kg'), 'Stawka']}
+                labelFormatter={(label) => `Dzień ${String(label)}`}
+                contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+              {result.isSimulated && result.rate !== null && (
+                <ReferenceLine y={result.rate} stroke={SERIES_INDUSTRIAL} strokeDasharray="4 4"
+                  label={{ value: `wpisana ${result.rate.toFixed(2)}`, fontSize: 10, fill: SERIES_INDUSTRIAL, position: 'insideTopRight' }} />
+              )}
+              <Line type="monotone" dataKey="rate" stroke={SERIES_DESSERT} strokeWidth={2}
+                dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls />
+            </LineChart>
+          </DayChart>
+
+          {/* Osobny wykres, nie druga oś Y — dwie skale na jednym polu
+              to najczęstszy błąd w wykresach i nie da się ich uczciwie porównać. */}
+          <DayChart title="Wydajność wzorca" unit="kg/h">
+            <LineChart data={dailySeries} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+              <CartesianGrid stroke={GRID_INK} strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: AXIS_INK }}
+                axisLine={{ stroke: GRID_INK }} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: AXIS_INK }} axisLine={false} tickLine={false}
+                width={44} tickFormatter={(v: number) => v.toFixed(1)} />
+              <RechartsTooltip
+                formatter={(value) => [fmtChart(value, 2, 'kg/h'), 'Wydajność']}
+                labelFormatter={(label) => `Dzień ${String(label)}`}
+                contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+              <Line type="monotone" dataKey="kgPerHour" stroke={SERIES_DESSERT} strokeWidth={2}
+                dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls />
+            </LineChart>
+          </DayChart>
+
+          <div className="lg:col-span-2">
+            <DayChart title="Zebrano dziennie" unit="kg">
+              <BarChart data={dailySeries} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                <CartesianGrid stroke={GRID_INK} strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: AXIS_INK }}
+                  axisLine={{ stroke: GRID_INK }} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: AXIS_INK }} axisLine={false} tickLine={false}
+                  width={52} tickFormatter={(v: number) => v.toFixed(0)} />
+                <RechartsTooltip
+                  formatter={(value, name) => [fmtChart(value, 1, 'kg'), String(name)]}
+                  labelFormatter={(label) => `Dzień ${String(label)}`}
+                  contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="dessertKg" name="Deser" stackId="kg" fill={SERIES_DESSERT}
+                  stroke="#fff" strokeWidth={2} />
+                <Bar dataKey="industrialKg" name="Przemysł" stackId="kg" fill={SERIES_INDUSTRIAL}
+                  stroke="#fff" strokeWidth={2} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </DayChart>
+          </div>
+        </div>
+      )}
+
       {/* ========== TABELA ========== */}
       {hasData && (
         <Card>
@@ -753,6 +1037,28 @@ function Th({ children, onClick, right }: { children: React.ReactNode; onClick: 
       className={`p-2 cursor-pointer select-none hover:text-gray-900 ${right ? 'text-right' : 'text-left'}`}>
       {children}
     </th>
+  )
+}
+
+/** Ramka wykresu — tytuł nazywa serię, więc pojedyncza seria nie potrzebuje legendy. */
+function DayChart({ title, unit, children }: {
+  title: string; unit: string; children: React.ReactElement
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-1">
+        <CardTitle className="text-sm font-medium text-gray-700">
+          {title} <span className="text-gray-400 font-normal">({unit})</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-2">
+        <div className="h-56">
+          <ResponsiveContainer width="100%" height="100%">
+            {children}
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

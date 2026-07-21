@@ -13,6 +13,9 @@ import {
   parseNumber,
   parseMaxcropPieceRateSheet,
   mergePieceRateFiles,
+  mergePieceRateDays,
+  type PieceRateFileParseResult,
+  type PieceRateWorkerRow,
 } from '@/lib/maxcrop-piece-rate-parser'
 
 const row = (workerName: string, kg: number, hours: number, isReference = false): PieceRateInputRow => ({
@@ -673,24 +676,27 @@ describe('parseMaxcropPieceRateSheet', () => {
   })
 })
 
+/** Buduje wynik parsowania pliku z jednego dnia — skrót dla testów scalania. */
+const makeFile = (
+  fileName: string,
+  date: string,
+  rows: PieceRateWorkerRow[]
+): PieceRateFileParseResult => ({
+  fileName,
+  reportDate: date,
+  days: [{ date, rows, blocks: [] }],
+  rows,
+  warnings: [],
+})
+
 describe('mergePieceRateFiles', () => {
-  const fileA = {
-    fileName: 'a.xls',
-    reportDate: '2026-07-20',
-    warnings: [],
-    rows: [
-      { externalId: 'PR1', workerName: 'Anna', kg: 20, industrialKg: 4, dessertKg: 16, hours: 8, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 100 },
-    ],
-  }
-  const fileB = {
-    fileName: 'b.xls',
-    reportDate: '2026-07-20',
-    warnings: [],
-    rows: [
-      { externalId: 'PR1', workerName: 'Anna', kg: 15, industrialKg: 5, dessertKg: 10, hours: 6, workTypes: ['Pakowanie'], isHarvestWorker: false, currentAmount: 50 },
-      { externalId: 'PR2', workerName: 'Bogdan', kg: 30, industrialKg: 0, dessertKg: 30, hours: 9, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 150 },
-    ],
-  }
+  const fileA = makeFile('a.xls', '2026-07-20', [
+    { externalId: 'PR1', workerName: 'Anna', kg: 20, industrialKg: 4, dessertKg: 16, hours: 8, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 100 },
+  ])
+  const fileB = makeFile('b.xls', '2026-07-20', [
+    { externalId: 'PR1', workerName: 'Anna', kg: 15, industrialKg: 5, dessertKg: 10, hours: 6, workTypes: ['Pakowanie'], isHarvestWorker: false, currentAmount: 50 },
+    { externalId: 'PR2', workerName: 'Bogdan', kg: 30, industrialKg: 0, dessertKg: 30, hours: 9, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 150 },
+  ])
 
   it('sumuje kg i bierze max godzin (domyślnie)', () => {
     const { rows } = mergePieceRateFiles([fileA, fileB])
@@ -733,10 +739,136 @@ describe('mergePieceRateFiles', () => {
   })
 
   it('scala po nazwisku gdy brak kodu kreskowego', () => {
-    const noId = { ...fileA, rows: [{ ...fileA.rows[0], externalId: null }] }
-    const noId2 = { ...fileB, fileName: 'c.xls', rows: [{ ...fileB.rows[0], externalId: null, kg: 5 }] }
+    const noId = makeFile('a.xls', '2026-07-20', [{ ...fileA.rows[0], externalId: null }])
+    const noId2 = makeFile('c.xls', '2026-07-20', [{ ...fileB.rows[0], externalId: null, kg: 5 }])
     const { rows } = mergePieceRateFiles([noId, noId2])
     expect(rows).toHaveLength(1)
     expect(rows[0].kg).toBe(25)
+  })
+})
+
+describe('parseMaxcropPieceRateSheet — eksport wielodniowy', () => {
+  const HEADER = [
+    'Nr umowy', 'Zewnętrzne ID', 'Kod\r\nkreskowy', 'Pracownik', 'Data\r\nzatrudnienia',
+    'Data\r\nzakończenia\r\npracy', 'Data', 'Obszar', 'Klasa produktu', 'Rodzaj pracy',
+    'Rozliczenie', 'Godz od', 'Godz do', 'Stawka', 'Czas', 'Ilość', 'Waga', 'Kwota',
+    'Wartość\r\nwynagrodzenia',
+  ]
+
+  // Uwaga: wiersz "Razem" ma PUSTĄ kolumnę Data — tak jak w prawdziwym eksporcie.
+  const grid: unknown[][] = [
+    ['Raport pracy pracownika (szczegółowy)'],
+    HEADER,
+    ['', '', 'PR1', 'Anna', '2026-06-01', null, '2026-07-20', 'Blok A', null, 'Zbiory', 'Akord', '05:00', '18:00', null, '13:00'],
+    ['', '', 'PR1', 'Anna', '2026-06-01', null, '2026-07-20', 'Blok A', 'Przemysl_250', null, 'Akord (ilość)', '', '', '0.50', '00:00', 2, 3, 1],
+    [null, '', 'PR1', 'Anna', null, null, null, null, 'Razem', null, null, '', '', null, '13:00', 20, 30, 180, 180],
+    ['', '', 'PR1', 'Anna', '2026-06-01', null, '2026-07-21', 'Blok A', null, 'Zbiory', 'Akord', '05:00', '17:00', null, '12:00'],
+    [null, '', 'PR1', 'Anna', null, null, null, null, 'Razem', null, null, '', '', null, '12:00', 25, 40, 240, 240],
+    ['', '', 'PR2', 'Bogdan', '2026-06-01', null, '2026-07-21', 'Blok A', null, 'Zbiory', 'Akord', '05:00', '17:00', null, '12:00'],
+    [null, '', 'PR2', 'Bogdan', null, null, null, null, 'Razem', null, null, '', '', null, '12:00', 30, 50, 300, 300],
+  ]
+
+  it('rozbija plik na dni', () => {
+    const result = parseMaxcropPieceRateSheet(grid, 'zakres.xls')
+    expect(result.days.map((d) => d.date)).toEqual(['2026-07-20', '2026-07-21'])
+  })
+
+  it('przypisuje wiersz "Razem" do dnia z wierszy poprzedzających', () => {
+    const result = parseMaxcropPieceRateSheet(grid, 'zakres.xls')
+    const d20 = result.days.find((d) => d.date === '2026-07-20')!
+    const d21 = result.days.find((d) => d.date === '2026-07-21')!
+    expect(d20.rows.find((r) => r.externalId === 'PR1')!.kg).toBe(30)
+    expect(d21.rows.find((r) => r.externalId === 'PR1')!.kg).toBe(40)
+  })
+
+  it('ten sam pracownik w wielu dniach to osobne wiersze, nie suma', () => {
+    const result = parseMaxcropPieceRateSheet(grid, 'zakres.xls')
+    const anna = result.days.flatMap((d) => d.rows).filter((r) => r.externalId === 'PR1')
+    expect(anna).toHaveLength(2)
+    expect(anna.map((r) => r.kg).sort((a, b) => a - b)).toEqual([30, 40])
+  })
+
+  it('przemysł przypisuje się do właściwego dnia', () => {
+    const result = parseMaxcropPieceRateSheet(grid, 'zakres.xls')
+    const d20 = result.days.find((d) => d.date === '2026-07-20')!
+    const d21 = result.days.find((d) => d.date === '2026-07-21')!
+    expect(d20.rows.find((r) => r.externalId === 'PR1')!.industrialKg).toBe(3)
+    expect(d21.rows.find((r) => r.externalId === 'PR1')!.industrialKg).toBe(0)
+  })
+
+  it('każdy dzień ma tylko swoich pracowników', () => {
+    const result = parseMaxcropPieceRateSheet(grid, 'zakres.xls')
+    expect(result.days[0].rows).toHaveLength(1) // 20.07: tylko Anna
+    expect(result.days[1].rows).toHaveLength(2) // 21.07: Anna + Bogdan
+  })
+
+  it('rozbija zbiór na obszary i mapuje je na bloki', () => {
+    const result = parseMaxcropPieceRateSheet(grid, 'zakres.xls')
+    const d20 = result.days.find((d) => d.date === '2026-07-20')!
+    expect(d20.blocks).toHaveLength(1)
+    expect(d20.blocks[0].areaName).toBe('Blok A')
+    expect(d20.blocks[0].industrialKg).toBe(3)
+    expect(d20.blocks[0].dessertKg).toBe(0)
+    expect(d20.blocks[0].totalKg).toBe(3)
+  })
+
+  it('obszary przypisuje do właściwego dnia', () => {
+    const result = parseMaxcropPieceRateSheet(grid, 'zakres.xls')
+    const d21 = result.days.find((d) => d.date === '2026-07-21')!
+    // 21.07 nie ma pozycji szczegółowych z obszarem — tylko wiersze Razem
+    expect(d21.blocks).toHaveLength(0)
+  })
+
+  it('reportDate jest null przy wielu dniach', () => {
+    expect(parseMaxcropPieceRateSheet(grid, 'zakres.xls').reportDate).toBeNull()
+  })
+
+  it('plik jednodniowy nadal wypełnia reportDate i rows', () => {
+    const single = [grid[0], grid[1], grid[2], grid[3], grid[4]]
+    const result = parseMaxcropPieceRateSheet(single, 'jeden.xls')
+    expect(result.reportDate).toBe('2026-07-20')
+    expect(result.days).toHaveLength(1)
+    expect(result.rows).toHaveLength(1)
+  })
+})
+
+describe('mergePieceRateDays', () => {
+  const day20 = { externalId: 'PR1', workerName: 'Anna', kg: 20, industrialKg: 0, dessertKg: 20, hours: 8, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 100 }
+  const day21 = { externalId: 'PR1', workerName: 'Anna', kg: 30, industrialKg: 0, dessertKg: 30, hours: 9, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 150 }
+
+  const fileA: PieceRateFileParseResult = {
+    fileName: 'a.xls', reportDate: null, rows: [day20], warnings: [],
+    days: [
+      { date: '2026-07-20', rows: [day20], blocks: [] },
+      { date: '2026-07-21', rows: [day21], blocks: [] },
+    ],
+  }
+
+  it('zachowuje dni osobno, nie sumuje ich', () => {
+    const { days } = mergePieceRateDays([fileA])
+    expect(days.map((d) => d.date)).toEqual(['2026-07-20', '2026-07-21'])
+    expect(days[0].rows[0].kg).toBe(20)
+    expect(days[1].rows[0].kg).toBe(30)
+  })
+
+  it('scala pliki o nakładających się zakresach po dacie', () => {
+    const fileB = makeFile('b.xls', '2026-07-21', [
+      { externalId: 'PR2', workerName: 'Bogdan', kg: 15, industrialKg: 0, dessertKg: 15, hours: 7, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 75 },
+    ])
+    const { days } = mergePieceRateDays([fileA, fileB])
+    expect(days).toHaveLength(2)
+    expect(days[1].rows).toHaveLength(2) // Anna + Bogdan 21.07
+  })
+
+  it('sortuje dni rosnąco niezależnie od kolejności plików', () => {
+    const early = makeFile('c.xls', '2026-07-19', [day20])
+    const { days } = mergePieceRateDays([fileA, early])
+    expect(days.map((d) => d.date)).toEqual(['2026-07-19', '2026-07-20', '2026-07-21'])
+  })
+
+  it('etykietuje ostrzeżenia datą, której dotyczą', () => {
+    const dup = makeFile('kopia.xls', '2026-07-20', [day20])
+    const { warnings } = mergePieceRateDays([makeFile('a.xls', '2026-07-20', [day20]), dup])
+    expect(warnings.join(' ')).toContain('2026-07-20')
   })
 })

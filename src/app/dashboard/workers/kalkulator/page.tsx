@@ -359,7 +359,7 @@ export default function PieceRateCalculatorPage() {
       {/* ========== PASEK STEROWANIA — stawka na górze ========== */}
       {hasData && (
         <div className="sticky top-0 lg:top-2 z-30 bg-white rounded-xl border shadow-sm">
-          <div className="p-4 grid gap-4 lg:grid-cols-[auto_1fr]">
+          <div className="p-4 space-y-3">
             {/* Wejścia */}
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 items-start">
               <div>
@@ -420,17 +420,17 @@ export default function PieceRateCalculatorPage() {
             </div>
 
             {/* Podsumowanie */}
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4 lg:border-l lg:pl-4">
+            <div className="grid gap-2 grid-cols-2 lg:grid-cols-4 pt-3 border-t">
               <BandTile band="above" count={result.bands.above} total={result.rows.length}
                 desc={`> ${(targetHourly * (1 + bandTolerance / 100)).toFixed(2)} zł/h`} />
               <BandTile band="near" count={result.bands.near} total={result.rows.length}
-                desc={`±${bandTolerance}% od ${targetHourly.toFixed(2)}`} />
+                desc={`±${bandTolerance}% od ${targetHourly.toFixed(2)} zł/h`} />
               <BandTile band="below" count={result.bands.below} total={result.rows.length}
                 desc={`< ${(targetHourly * (1 - bandTolerance / 100)).toFixed(2)} zł/h`} />
-              <div className="rounded-lg p-2.5 bg-gray-900 text-white">
+              <div className="rounded-lg p-2.5 bg-gray-900 text-white min-w-0">
                 <p className="text-[11px] text-gray-300">Koszt dnia</p>
-                <p className="text-xl font-bold">{zl(result.totalCost, 0)}</p>
-                <p className="text-[11px] text-gray-400">
+                <p className="text-xl font-bold whitespace-nowrap">{zl(result.totalCost, 0)}</p>
+                <p className="text-[11px] text-gray-400 truncate">
                   {currentTotal !== null && result.totalCost !== null
                     ? `MaxCrop ${currentTotal.toFixed(0)} zł (${result.totalCost >= currentTotal ? '+' : ''}${(result.totalCost - currentTotal).toFixed(0)})`
                     : `${result.rows.length} os.`}
@@ -762,16 +762,16 @@ function BandTile({ band, count, total, desc }: {
   const style = BAND_STYLE[band]
   const pct = total > 0 ? Math.round((count / total) * 100) : 0
   return (
-    <div className={`rounded-lg p-2.5 ${style.row} border border-black/5`}>
-      <p className="text-[11px] text-gray-600 flex items-center gap-1.5">
-        <span className={`w-2 h-2 rounded-full ${style.dot}`} />
-        {style.label}
+    <div className={`rounded-lg p-2.5 ${style.row} border border-black/5 min-w-0`}>
+      <p className="text-[11px] text-gray-600 flex items-center gap-1.5 min-w-0">
+        <span className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
+        <span className="truncate">{style.label}</span>
       </p>
-      <p className={`text-xl font-bold ${style.text}`}>
+      <p className={`text-xl font-bold whitespace-nowrap ${style.text}`}>
         {count}
         <span className="text-xs font-normal ml-1">os. · {pct}%</span>
       </p>
-      <p className="text-[11px] text-gray-400">{desc}</p>
+      <p className="text-[11px] text-gray-400 truncate" title={desc}>{desc}</p>
     </div>
   )
 }

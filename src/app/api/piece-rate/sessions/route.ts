@@ -24,6 +24,8 @@ const sessionSchema = z.object({
   medianCount: z.number().int().positive(),
   breakMinutes: z.number().finite().nonnegative(),
   roundingStep: z.number().finite().positive(),
+  /** Ręcznie narzucona stawka zł/kg — zapisujemy ją zamiast wyliczonej */
+  rateOverride: z.number().finite().positive().nullable().optional(),
   note: z.string().nullable().optional(),
   rows: z.array(rowSchema).min(1, 'Brak wierszy do zapisania'),
 })
@@ -85,6 +87,7 @@ export async function POST(request: NextRequest) {
       medianCount: body.medianCount,
       roundingStep: body.roundingStep,
       breakHours: body.breakMinutes / 60,
+      rateOverride: body.rateOverride === undefined ? null : body.rateOverride,
     })
 
     if (result.rate === null) {

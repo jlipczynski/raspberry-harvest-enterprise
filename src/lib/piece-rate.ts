@@ -28,6 +28,8 @@ export interface PieceRateComputedRow extends PieceRateInputRow {
   effectiveHours: number
   /** kg / effectiveHours — null gdy nie zostało dodatnich godzin */
   kgPerHour: number | null
+  /** Pasmo zarobku względem docelowej stawki godzinowej */
+  band: HourlyBand
   isReference: boolean
   /** kg * rate — null gdy stawki nie da się policzyć */
   earnings: number | null
@@ -41,10 +43,16 @@ export interface PieceRateResult {
   referenceRows: PieceRateComputedRow[]
   /** Ważona wydajność referencji: suma kg / suma godzin. null gdy brak referencji */
   avgKgPerHour: number | null
-  /** Stawka zł/kg po zaokrągleniu. null gdy nie da się policzyć */
+  /** Stawka zł/kg użyta do wyliczeń — narzucona ręcznie albo wyliczona */
   rate: number | null
-  /** Stawka zł/kg przed zaokrągleniem */
+  /** Stawka zł/kg przed zaokrągleniem (z wyliczenia, nie z override) */
   rawRate: number | null
+  /** Stawka wynikająca z targetHourly — do porównania w trybie symulacji */
+  derivedRate: number | null
+  /** Czy stawka została narzucona ręcznie */
+  isSimulated: boolean
+  /** Ilu pracowników trafiło w każde z pasm względem celu zł/h */
+  bands: { above: number; near: number; below: number; unknown: number }
   /** Suma earnings wszystkich pracowników — koszt dnia */
   totalCost: number | null
   totalKg: number
@@ -72,6 +80,40 @@ export interface PieceRateOptions {
    * więc bez tego przerwy zaniżałyby wydajność.
    */
   breakHours?: number
+  /**
+   * Ręcznie narzucona stawka zł/kg. Gdy podana — wchodzi zamiast stawki
+   * wyliczonej z targetHourly (tryb "co by było, gdyby").
+   */
+  rateOverride?: number | null
+  /**
+   * Szerokość pasma "w okolicy celu" jako ułamek targetHourly.
+   * 0.1 = ±10%.
+   */
+  bandTolerance?: number
+}
+
+/** Pasmo zarobku względem docelowej stawki godzinowej. */
+export type HourlyBand = 'above' | 'near' | 'below' | 'unknown'
+
+export const DEFAULT_BAND_TOLERANCE = 0.1
+
+/**
+ * Klasyfikuje zarobek względem celu:
+ *   'near'  — mieści się w ±tolerance od celu (ma pierwszeństwo)
+ *   'above' — powyżej pasma
+ *   'below' — poniżej pasma
+ */
+export function classifyHourly(
+  effectiveHourly: number | null,
+  targetHourly: number,
+  tolerance: number = DEFAULT_BAND_TOLERANCE
+): HourlyBand {
+  if (effectiveHourly === null || !Number.isFinite(effectiveHourly)) return 'unknown'
+  if (!Number.isFinite(targetHourly) || targetHourly <= 0) return 'unknown'
+
+  const margin = targetHourly * Math.abs(tolerance)
+  if (Math.abs(effectiveHourly - targetHourly) <= margin) return 'near'
+  return effectiveHourly > targetHourly ? 'above' : 'below'
 }
 
 /** Godziny pracy po odjęciu przerw — nigdy poniżej zera. */
@@ -182,7 +224,22 @@ export function computePieceRate(
       ? targetHourly / avgKgPerHour
       : null
 
-  const rate = rawRate !== null ? roundToStep(rawRate, roundingStep) : null
+  const derivedRate = rawRate !== null ? roundToStep(rawRate, roundingStep) : null
+
+  // Ręcznie narzucona stawka wygrywa z wyliczoną — to tryb symulacji
+  // "co by było, gdybym zapłacił X zł/kg".
+  const override =
+    options.rateOverride != null &&
+    Number.isFinite(options.rateOverride) &&
+    options.rateOverride > 0
+      ? options.rateOverride
+      : null
+
+  const rate = override === null ? derivedRate : override
+  const tolerance =
+    Number.isFinite(options.bandTolerance) && (options.bandTolerance as number) >= 0
+      ? (options.bandTolerance as number)
+      : DEFAULT_BAND_TOLERANCE
 
   const rows: PieceRateComputedRow[] = inputRows.map((row, index) => {
     const hours = effectiveHours(row, breakHours)
@@ -196,11 +253,15 @@ export function computePieceRate(
       ...row,
       effectiveHours: hours,
       kgPerHour: kph,
+      band: classifyHourly(effectiveHourly, targetHourly, tolerance),
       isReference: referenceIndices.has(index),
       earnings,
       effectiveHourly,
     }
   })
+
+  const bands = { above: 0, near: 0, below: 0, unknown: 0 }
+  for (const row of rows) bands[row.band] += 1
 
   const totalKg = inputRows.reduce((sum, row) => sum + (Number.isFinite(row.kg) ? row.kg : 0), 0)
   const totalHours = rows.reduce((sum, row) => sum + row.effectiveHours, 0)
@@ -218,6 +279,9 @@ export function computePieceRate(
     avgKgPerHour,
     rate,
     rawRate,
+    derivedRate,
+    isSimulated: override !== null,
+    bands,
     totalCost,
     totalKg,
     totalHours,

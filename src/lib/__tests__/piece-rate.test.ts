@@ -5,6 +5,7 @@ import {
   selectMedianIndices,
   weightedKgPerHour,
   kgPerHour,
+  classifyHourly,
   type PieceRateInputRow,
 } from '@/lib/piece-rate'
 import {
@@ -351,6 +352,112 @@ describe('computePieceRate — przerwy', () => {
     const base = computePieceRate(rows, opts).rate
     expect(computePieceRate(rows, { ...opts, breakHours: 0 }).rate).toBe(base)
     expect(computePieceRate(rows, { ...opts, breakHours: -3 }).rate).toBe(base)
+  })
+})
+
+describe('classifyHourly — pasma względem celu', () => {
+  it('zielone: powyżej celu o więcej niż 10%', () => {
+    expect(classifyHourly(28, 25)).toBe('above') // +12%
+    expect(classifyHourly(50, 25)).toBe('above')
+  })
+
+  it('niebieskie: w granicach ±10% celu', () => {
+    expect(classifyHourly(25, 25)).toBe('near')
+    expect(classifyHourly(27.5, 25)).toBe('near') // dokładnie +10%
+    expect(classifyHourly(22.5, 25)).toBe('near') // dokładnie -10%
+    expect(classifyHourly(26, 25)).toBe('near')
+  })
+
+  it('czerwone: poniżej celu o więcej niż 10%', () => {
+    expect(classifyHourly(22, 25)).toBe('below') // -12%
+    expect(classifyHourly(6, 25)).toBe('below')
+  })
+
+  it('pasmo "near" ma pierwszeństwo nad above/below', () => {
+    // 27.4 jest powyżej celu, ale mieści się w pasmie → niebieskie, nie zielone
+    expect(classifyHourly(27.4, 25)).toBe('near')
+  })
+
+  it('respektuje własną szerokość pasma', () => {
+    expect(classifyHourly(26, 25, 0.01)).toBe('above') // pasmo ±1%
+    expect(classifyHourly(26, 25, 0.5)).toBe('near') // pasmo ±50%
+  })
+
+  it('zwraca unknown dla braku danych i niepoprawnego celu', () => {
+    expect(classifyHourly(null, 25)).toBe('unknown')
+    expect(classifyHourly(25, 0)).toBe('unknown')
+    expect(classifyHourly(25, -5)).toBe('unknown')
+  })
+})
+
+describe('computePieceRate — symulacja narzuconej stawki', () => {
+  const rows = [row('slaby', 10, 10), row('sredni', 30, 10), row('mocny', 60, 10)]
+  const base = { mode: 'AUTO_MEDIAN' as const, targetHourly: 30, medianCount: 1, roundingStep: 0.01 }
+
+  it('używa narzuconej stawki zamiast wyliczonej', () => {
+    const result = computePieceRate(rows, { ...base, rateOverride: 5 })
+    expect(result.rate).toBe(5)
+    expect(result.isSimulated).toBe(true)
+  })
+
+  it('nadal pokazuje stawkę wyliczoną z celu, do porównania', () => {
+    const result = computePieceRate(rows, { ...base, rateOverride: 5 })
+    // środek to "sredni": 3 kg/h → 30 / 3 = 10 zł/kg
+    expect(result.derivedRate).toBe(10)
+    expect(result.rate).not.toBe(result.derivedRate)
+  })
+
+  it('przelicza zarobki wszystkich wg narzuconej stawki', () => {
+    const result = computePieceRate(rows, { ...base, rateOverride: 5 })
+    expect(result.rows.map((r) => r.earnings)).toEqual([50, 150, 300])
+    expect(result.rows.map((r) => r.effectiveHourly)).toEqual([5, 15, 30])
+    expect(result.totalCost).toBe(500)
+  })
+
+  it('ignoruje narzuconą stawkę gdy jest zerowa lub ujemna', () => {
+    expect(computePieceRate(rows, { ...base, rateOverride: 0 }).rate).toBe(10)
+    expect(computePieceRate(rows, { ...base, rateOverride: -5 }).rate).toBe(10)
+    expect(computePieceRate(rows, { ...base, rateOverride: null }).isSimulated).toBe(false)
+  })
+
+  it('działa nawet gdy nie da się wyliczyć stawki z referencji', () => {
+    const bezRef = rows.map((r) => ({ ...r, isReference: false }))
+    const result = computePieceRate(bezRef, { ...base, mode: 'MANUAL', rateOverride: 7 })
+    expect(result.derivedRate).toBeNull()
+    expect(result.rate).toBe(7)
+    expect(result.rows[0].earnings).toBe(70)
+  })
+
+  it('nie zaokrągla narzuconej stawki do kroku', () => {
+    const result = computePieceRate(rows, { ...base, roundingStep: 0.05, rateOverride: 6.13 })
+    expect(result.rate).toBe(6.13)
+  })
+})
+
+describe('computePieceRate — liczenie pasm', () => {
+  const rows = [row('slaby', 10, 10), row('sredni', 30, 10), row('mocny', 60, 10)]
+
+  it('zlicza pracowników w każdym paśmie', () => {
+    // stawka 5 zł/kg → zarobki 5, 15, 30 zł/h przy celu 30
+    const result = computePieceRate(rows, {
+      mode: 'AUTO_MEDIAN', targetHourly: 30, medianCount: 1, roundingStep: 0.01, rateOverride: 5,
+    })
+    expect(result.bands).toEqual({ above: 0, near: 1, below: 2, unknown: 0 })
+  })
+
+  it('sumy pasm zgadzają się z liczbą wierszy', () => {
+    const result = computePieceRate(rows, {
+      mode: 'AUTO_MEDIAN', targetHourly: 30, medianCount: 1, roundingStep: 0.01,
+    })
+    const total = result.bands.above + result.bands.near + result.bands.below + result.bands.unknown
+    expect(total).toBe(result.rows.length)
+  })
+
+  it('wiersze bez godzin trafiają do unknown, nie do below', () => {
+    const result = computePieceRate([...rows, row('brak', 5, 0)], {
+      mode: 'AUTO_MEDIAN', targetHourly: 30, medianCount: 1, roundingStep: 0.01, rateOverride: 5,
+    })
+    expect(result.bands.unknown).toBe(1)
   })
 })
 

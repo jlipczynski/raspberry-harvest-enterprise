@@ -10,7 +10,12 @@ import {
   Upload, Calculator, ArrowLeft, Trash2, Save, AlertTriangle, Loader2,
   ChevronUp, ChevronDown, ChevronsUpDown, Users, Coffee, X,
 } from 'lucide-react'
-import { computePieceRate, type PieceRateInputRow } from '@/lib/piece-rate'
+import {
+  computePieceRate,
+  DEFAULT_BAND_TOLERANCE,
+  type PieceRateInputRow,
+  type HourlyBand,
+} from '@/lib/piece-rate'
 
 // Wartości startowe formularza — użytkownik je nadpisuje, nic nie jest
 // zapisywane bez jego decyzji.
@@ -18,6 +23,14 @@ const DEFAULT_TARGET_HOURLY = 25
 const DEFAULT_MEDIAN_COUNT = 5
 const ROUNDING_STEP_COARSE = 0.05
 const ROUNDING_STEP_FINE = 0.01
+
+// Kolorystyka pasm zarobku względem docelowej stawki godzinowej
+const BAND_STYLE: Record<HourlyBand, { row: string; text: string; label: string }> = {
+  above: { row: 'bg-green-50', text: 'text-green-700', label: 'powyżej celu' },
+  near: { row: 'bg-blue-50', text: 'text-blue-700', label: 'w okolicy celu' },
+  below: { row: 'bg-red-50', text: 'text-red-700', label: 'poniżej celu' },
+  unknown: { row: '', text: 'text-gray-400', label: 'brak danych' },
+}
 
 interface ParsedRow {
   externalId: string | null
@@ -71,7 +84,8 @@ export default function PieceRateCalculatorPage() {
   const [targetHourly, setTargetHourly] = useState<number>(DEFAULT_TARGET_HOURLY)
   const [breakMinutes, setBreakMinutes] = useState(0)
   const [coarseRounding, setCoarseRounding] = useState(true)
-  const [hourlyThreshold, setHourlyThreshold] = useState<string>('')
+  const [rateOverride, setRateOverride] = useState<string>('')
+  const [bandTolerance, setBandTolerance] = useState(DEFAULT_BAND_TOLERANCE * 100)
   const [onlyHarvestWorkers, setOnlyHarvestWorkers] = useState(true)
   const [hoursStrategy, setHoursStrategy] = useState<'max' | 'sum'>('max')
   const [manualRefs, setManualRefs] = useState<Set<string>>(new Set())
@@ -145,7 +159,9 @@ export default function PieceRateCalculatorPage() {
       currentAmount: row.currentAmount,
     }))
 
-    const threshold = hourlyThreshold.trim() === '' ? null : parseFloat(hourlyThreshold.replace(',', '.'))
+    const parsedOverride = rateOverride.trim() === ''
+      ? null
+      : parseFloat(rateOverride.replace(',', '.'))
 
     return computePieceRate(input, {
       mode,
@@ -153,9 +169,12 @@ export default function PieceRateCalculatorPage() {
       medianCount,
       roundingStep: coarseRounding ? ROUNDING_STEP_COARSE : ROUNDING_STEP_FINE,
       breakHours: breakMinutes / 60,
-      hourlyThreshold: threshold !== null && Number.isFinite(threshold) ? threshold : null,
+      rateOverride: parsedOverride !== null && Number.isFinite(parsedOverride) ? parsedOverride : null,
+      bandTolerance: bandTolerance / 100,
+      // Próg alarmowy = docelowa stawka godzinowa; pasma pokazują resztę obrazu.
+      hourlyThreshold: targetHourly,
     })
-  }, [activeRows, manualRefs, mode, targetHourly, medianCount, coarseRounding, breakMinutes, hourlyThreshold])
+  }, [activeRows, manualRefs, mode, targetHourly, medianCount, coarseRounding, breakMinutes, rateOverride, bandTolerance])
 
   // Suma kwot z MaxCropa — punkt odniesienia dla nowej stawki
   const currentTotal = useMemo(() => {
@@ -234,6 +253,7 @@ export default function PieceRateCalculatorPage() {
           medianCount,
           breakMinutes,
           roundingStep: coarseRounding ? ROUNDING_STEP_COARSE : ROUNDING_STEP_FINE,
+          rateOverride: result.isSimulated ? result.rate : null,
           note: note.trim() || null,
           rows: activeRows.map((row) => ({
             workerName: row.workerName,
@@ -412,7 +432,9 @@ export default function PieceRateCalculatorPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="targetHourly" className="text-xs">Docelowa stawka (zł/h)</Label>
+                    <Label htmlFor="targetHourly" className="text-xs">
+                      Ile ma zarobić osoba z mediany (zł/h)
+                    </Label>
                     <Input id="targetHourly" type="number" step="0.5" min={0} value={targetHourly} className="mt-1"
                       onChange={(e) => setTargetHourly(parseFloat(e.target.value) || 0)} />
                   </div>
@@ -426,10 +448,31 @@ export default function PieceRateCalculatorPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="threshold" className="text-xs">Próg alarmowy (zł/h)</Label>
-                    <Input id="threshold" type="number" step="0.5" min={0} value={hourlyThreshold} className="mt-1"
-                      placeholder="nie ustawiono"
-                      onChange={(e) => setHourlyThreshold(e.target.value)} />
+                    <Label htmlFor="rateOverride" className="text-xs">
+                      Symuluj stawkę (zł/kg)
+                    </Label>
+                    <div className="flex gap-1 mt-1">
+                      <Input id="rateOverride" type="number" step="0.05" min={0} value={rateOverride}
+                        placeholder={result.derivedRate === null ? 'np. 6,00' : result.derivedRate.toFixed(2)}
+                        onChange={(e) => setRateOverride(e.target.value)} />
+                      {rateOverride.trim() !== '' && (
+                        <Button variant="outline" size="sm" onClick={() => setRateOverride('')}
+                          title="Wróć do stawki wyliczonej z celu">
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      Wpisz, żeby zobaczyć kto ile by zarobił przy tej stawce
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="bandTolerance" className="text-xs">
+                      Szerokość pasma „w okolicy" (%)
+                    </Label>
+                    <Input id="bandTolerance" type="number" step={1} min={0} value={bandTolerance} className="mt-1"
+                      onChange={(e) => setBandTolerance(Math.max(0, parseFloat(e.target.value) || 0))} />
                   </div>
 
                   <div className="space-y-2">
@@ -448,21 +491,30 @@ export default function PieceRateCalculatorPage() {
                 </div>
 
                 {/* Wynik */}
-                <div className="bg-gradient-to-br from-green-600 to-green-700 text-white rounded-xl p-5 min-w-[220px] flex flex-col justify-center">
-                  <p className="text-green-100 text-xs uppercase tracking-wide">Stawka akordowa</p>
+                <div className={`text-white rounded-xl p-5 min-w-[230px] flex flex-col justify-center bg-gradient-to-br ${
+                  result.isSimulated ? 'from-amber-500 to-amber-600' : 'from-green-600 to-green-700'
+                }`}>
+                  <p className="text-white/80 text-xs uppercase tracking-wide">
+                    {result.isSimulated ? 'Stawka symulowana' : 'Stawka akordowa'}
+                  </p>
                   <p className="text-4xl font-bold mt-1">
                     {result.rate === null ? '—' : result.rate.toFixed(2)}
                     <span className="text-lg font-normal ml-1">zł/kg</span>
                   </p>
                   {result.rate === null && (
-                    <p className="text-green-100 text-xs mt-2">
+                    <p className="text-white/80 text-xs mt-2">
                       {mode === 'MANUAL'
                         ? 'Zaznacz osoby wzorcowe w tabeli'
                         : 'Brak danych do wyliczenia'}
                     </p>
                   )}
-                  {result.rawRate !== null && result.rate !== null && (
-                    <p className="text-green-200 text-xs mt-2">
+                  {result.isSimulated && result.derivedRate !== null && (
+                    <p className="text-white/80 text-xs mt-2">
+                      z celu {targetHourly.toFixed(2)} zł/h wyszłoby {result.derivedRate.toFixed(2)} zł/kg
+                    </p>
+                  )}
+                  {!result.isSimulated && result.rawRate !== null && result.rate !== null && (
+                    <p className="text-white/70 text-xs mt-2">
                       bez zaokrąglenia: {result.rawRate.toFixed(4)} zł/kg
                     </p>
                   )}
@@ -479,9 +531,20 @@ export default function PieceRateCalculatorPage() {
                   hint={currentTotal !== null
                     ? `MaxCrop: ${currentTotal.toFixed(0)} zł${result.totalCost !== null ? ` (${result.totalCost >= currentTotal ? '+' : ''}${(result.totalCost - currentTotal).toFixed(0)} zł)` : ''}`
                     : 'brak danych porównawczych'} />
-                <Stat label="Poniżej progu"
-                  value={result.belowThresholdCount === null ? '—' : `${result.belowThresholdCount} os.`}
-                  hint={hourlyThreshold.trim() === '' ? 'ustaw próg alarmowy' : `< ${hourlyThreshold} zł/h`} />
+                <Stat label={`Rozkład vs ${targetHourly.toFixed(0)} zł/h`}
+                  value={`${result.bands.above} / ${result.bands.near} / ${result.bands.below}`}
+                  hint="powyżej / w okolicy / poniżej" />
+              </div>
+
+              {/* Legenda pasm */}
+              <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-gray-600">
+                <span className="font-medium text-gray-500">Kolory wierszy:</span>
+                <BandChip band="above" count={result.bands.above}
+                  desc={`> ${(targetHourly * (1 + bandTolerance / 100)).toFixed(2)} zł/h`} />
+                <BandChip band="near" count={result.bands.near}
+                  desc={`±${bandTolerance}% od ${targetHourly.toFixed(2)} zł/h`} />
+                <BandChip band="below" count={result.bands.below}
+                  desc={`< ${(targetHourly * (1 - bandTolerance / 100)).toFixed(2)} zł/h`} />
               </div>
             </CardContent>
           </Card>
@@ -515,12 +578,11 @@ export default function PieceRateCalculatorPage() {
                       const source = activeRows.find(
                         (r) => (r.externalId || r.workerName) === (row.externalId || row.workerName)
                       )
-                      const threshold = hourlyThreshold.trim() === '' ? null : parseFloat(hourlyThreshold.replace(',', '.'))
-                      const below = threshold !== null && row.effectiveHourly !== null && row.effectiveHourly < threshold
+                      const style = BAND_STYLE[row.band]
 
                       return (
                         <tr key={row.externalId || row.workerName}
-                          className={`border-t ${row.isReference ? 'bg-green-50' : 'hover:bg-gray-50'}`}>
+                          className={`border-t ${style.row} ${row.isReference ? 'ring-1 ring-inset ring-gray-400' : ''}`}>
                           <td className="p-2 text-center">
                             <input type="checkbox" checked={row.isReference}
                               disabled={mode !== 'MANUAL'}
@@ -539,7 +601,7 @@ export default function PieceRateCalculatorPage() {
                           <td className="p-2 text-right tabular-nums text-gray-600">{num(row.effectiveHours, 2)}</td>
                           <td className="p-2 text-right tabular-nums font-medium">{num(row.kgPerHour)}</td>
                           <td className="p-2 text-right tabular-nums">{zl(row.earnings)}</td>
-                          <td className={`p-2 text-right tabular-nums font-medium ${below ? 'text-red-600' : 'text-gray-800'}`}>
+                          <td className={`p-2 text-right tabular-nums font-semibold ${style.text}`}>
                             {num(row.effectiveHourly)}
                           </td>
                         </tr>
@@ -624,6 +686,17 @@ function Th({ children, onClick, right }: { children: React.ReactNode; onClick: 
       className={`p-2 cursor-pointer select-none hover:text-gray-900 ${right ? 'text-right' : 'text-left'}`}>
       {children}
     </th>
+  )
+}
+
+function BandChip({ band, count, desc }: { band: HourlyBand; count: number; desc: string }) {
+  const style = BAND_STYLE[band]
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`w-3 h-3 rounded border border-gray-300 ${style.row}`} />
+      <span className={style.text}>{style.label}</span>
+      <span className="text-gray-400">— {count} os., {desc}</span>
+    </span>
   )
 }
 

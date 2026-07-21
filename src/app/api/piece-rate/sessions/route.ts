@@ -10,6 +10,7 @@ const rowSchema = z.object({
   workerName: z.string().min(1),
   externalId: z.string().nullable().optional(),
   kg: z.number().finite().nonnegative(),
+  industrialKg: z.number().finite().nonnegative().optional(),
   hours: z.number().finite().nonnegative(),
   isReference: z.boolean().optional(),
   isHarvestWorker: z.boolean().optional(),
@@ -26,6 +27,10 @@ const sessionSchema = z.object({
   roundingStep: z.number().finite().positive(),
   /** Ręcznie narzucona stawka zł/kg — zapisujemy ją zamiast wyliczonej */
   rateOverride: z.number().finite().positive().nullable().optional(),
+  /** Stała stawka zł/kg za przemysł */
+  industrialRate: z.number().finite().positive().nullable().optional(),
+  /** Odcięcie najsłabszych poniżej tej wydajności kg/h */
+  cutoffKgPerHour: z.number().finite().nonnegative().nullable().optional(),
   note: z.string().nullable().optional(),
   rows: z.array(rowSchema).min(1, 'Brak wierszy do zapisania'),
 })
@@ -88,6 +93,7 @@ export async function POST(request: NextRequest) {
       roundingStep: body.roundingStep,
       breakHours: body.breakMinutes / 60,
       rateOverride: body.rateOverride === undefined ? null : body.rateOverride,
+      industrialRate: body.industrialRate === undefined ? null : body.industrialRate,
     })
 
     if (result.rate === null) {
@@ -108,6 +114,8 @@ export async function POST(request: NextRequest) {
         medianCount: body.medianCount,
         breakMinutes: Math.round(body.breakMinutes),
         roundingStep: body.roundingStep,
+        industrialRate: body.industrialRate === undefined ? null : body.industrialRate,
+        cutoffKgPerHour: body.cutoffKgPerHour === undefined ? null : body.cutoffKgPerHour,
         computedRate: result.rate,
         note: body.note || null,
         rows: {
@@ -115,6 +123,8 @@ export async function POST(request: NextRequest) {
             workerName: row.workerName,
             externalId: row.externalId || null,
             kg: row.kg,
+            industrialKg: row.industrialKg,
+            dessertKg: row.dessertKg,
             hours: row.hours,
             effectiveHours: row.effectiveHours,
             kgPerHour: row.kgPerHour === null ? 0 : row.kgPerHour,

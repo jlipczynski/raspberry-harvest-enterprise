@@ -355,6 +355,94 @@ describe('computePieceRate — przerwy', () => {
   })
 })
 
+describe('computePieceRate — przemysł po stałej stawce', () => {
+  // Każdy: 10 h. Deser + przemysł rozdzielone.
+  const rows: PieceRateInputRow[] = [
+    { workerName: 'a', kg: 30, industrialKg: 10, hours: 10 },
+    { workerName: 'b', kg: 40, industrialKg: 0, hours: 10 },
+  ]
+  const base = { mode: 'AUTO_MEDIAN' as const, targetHourly: 100, medianCount: 2, roundingStep: 0.01 }
+
+  it('rozwiązuje równanie: cel × godziny = deser × stawka + przemysł × stawka_przem.', () => {
+    const result = computePieceRate(rows, { ...base, industrialRate: 2 })
+    // Σgodzin=20, Σprzemysł=10, Σdeser=60
+    // (100×20 − 2×10) / 60 = 1980 / 60 = 33 zł/kg
+    expect(result.rate).toBe(33)
+  })
+
+  it('bez stawki przemysłu zachowuje się jak dotąd — cała masa po jednej stawce', () => {
+    const result = computePieceRate(rows, base)
+    // Σkg = 70, Σgodzin = 20 → 3.5 kg/h → 100 / 3.5 = 28.57
+    expect(result.rate).toBeCloseTo(28.57, 2)
+    expect(result.industrialRate).toBeNull()
+    expect(result.totalIndustrialKg).toBe(0)
+  })
+
+  it('grupa wzorcowa faktycznie zarabia tyle, ile cel', () => {
+    const result = computePieceRate(rows, { ...base, industrialRate: 2 })
+    const totalEarnings = result.rows.reduce(
+      (sum, r) => sum + (r.earnings === null ? 0 : r.earnings),
+      0
+    )
+    expect(totalEarnings / result.totalHours).toBeCloseTo(100, 6)
+  })
+
+  it('płaci przemysł po stawce stałej, a resztę po deserowej', () => {
+    const result = computePieceRate(rows, { ...base, industrialRate: 2 })
+    // a: 20 kg deser × 33 + 10 kg przemysł × 2 = 660 + 20 = 680
+    expect(result.rows[0].earnings).toBe(680)
+    expect(result.rows[0].dessertKg).toBe(20)
+    expect(result.rows[0].industrialKg).toBe(10)
+    // b: 40 × 33 = 1320
+    expect(result.rows[1].earnings).toBe(1320)
+  })
+
+  it('rozbija sumy na deser i przemysł', () => {
+    const result = computePieceRate(rows, { ...base, industrialRate: 2 })
+    expect(result.totalKg).toBe(70)
+    expect(result.totalIndustrialKg).toBe(10)
+    expect(result.totalDessertKg).toBe(60)
+    expect(result.industrialCost).toBe(20)
+    expect(result.totalCost).toBe(2000) // 680 + 1320
+  })
+
+  it('koszt to suma zarobków, nie totalKg × stawka', () => {
+    const result = computePieceRate(rows, { ...base, industrialRate: 2 })
+    expect(result.totalCost).not.toBe(result.totalKg * result.rate!)
+  })
+
+  it('nie da się policzyć stawki gdy cały zbiór to przemysł', () => {
+    const onlyIndustrial: PieceRateInputRow[] = [{ workerName: 'x', kg: 20, industrialKg: 20, hours: 10 }]
+    const result = computePieceRate(onlyIndustrial, { ...base, medianCount: 1, industrialRate: 2 })
+    expect(result.rate).toBeNull()
+  })
+
+  it('zwraca null gdy sam przemysł przekracza cel — zamiast ujemnej stawki', () => {
+    const result = computePieceRate(rows, { ...base, targetHourly: 1, industrialRate: 100 })
+    // przemysł daje 10×100 = 1000 zł przy celu 1×20 = 20 zł → stawka wyszłaby ujemna
+    expect(result.rate).toBeNull()
+  })
+
+  it('przycina przemysł do całej masy, gdy dane są niespójne', () => {
+    const bad: PieceRateInputRow[] = [{ workerName: 'x', kg: 10, industrialKg: 999, hours: 10 }]
+    const result = computePieceRate(bad, { ...base, medianCount: 1, industrialRate: 2 })
+    expect(result.rows[0].industrialKg).toBe(10)
+    expect(result.rows[0].dessertKg).toBe(0)
+  })
+
+  it('ignoruje zerową i ujemną stawkę przemysłu', () => {
+    expect(computePieceRate(rows, { ...base, industrialRate: 0 }).industrialRate).toBeNull()
+    expect(computePieceRate(rows, { ...base, industrialRate: -2 }).industrialRate).toBeNull()
+  })
+
+  it('symulacja stawki działa razem z przemysłem', () => {
+    const result = computePieceRate(rows, { ...base, industrialRate: 2, rateOverride: 10 })
+    // a: 20 × 10 + 10 × 2 = 220
+    expect(result.rows[0].earnings).toBe(220)
+    expect(result.isSimulated).toBe(true)
+  })
+})
+
 describe('classifyHourly — pasma względem celu', () => {
   it('zielone: powyżej celu o więcej niż 10%', () => {
     expect(classifyHourly(28, 25)).toBe('above') // +12%
@@ -520,6 +608,7 @@ describe('parseMaxcropPieceRateSheet', () => {
     // Pracownik 1 — zbieracz
     ['', '', 'PR592', 'Andreikiv Oksana', '2026-06-25', null, '2026-07-20', 'Niezdefiniowany obszar', null, 'Zbiory', 'Akord', '04:52', '18:31', null, '13:39'],
     ['', '', 'PR592', 'Andreikiv Oksana', '2026-06-25', null, '2026-07-20', 'Malina - Blok_A1-9', 'Malina 125', null, 'Akord (ilość)', '', '', '10.50', '00:00', 5, 7.5, 52.5],
+    ['', '', 'PR592', 'Andreikiv Oksana', '2026-06-25', null, '2026-07-20', 'Malina - Blok_A1-9', 'Przemysl_250', null, 'Akord (ilość)', '', '', '0.50', '00:00', 3, 4.2, 1.5],
     // pozycja zbiorcza GRUPA 1 — MaxCrop nie wlicza jej do Razem
     ['', '', 'PR592', 'Andreikiv Oksana', null, null, '2026-07-20', null, 'GRUPA 1', null, 'Akord (ilość)', '', '', '0.50', '00:00', 17.33, 26.2, 0],
     [null, '', 'PR592', 'Andreikiv Oksana', null, null, null, null, 'Razem', null, null, '', '', null, '13:39', 29.33, 31.7, 179.25, 179.25],
@@ -546,6 +635,31 @@ describe('parseMaxcropPieceRateSheet', () => {
     expect(picker.currentAmount).toBe(179.25)
   })
 
+  it('wydziela przemysł z pozycji Przemysl_*, deser jako różnicę wobec Razem', () => {
+    const result = parseMaxcropPieceRateSheet(grid, 'test.xls')
+    const picker = result.rows.find((r) => r.externalId === 'PR592')!
+    expect(picker.industrialKg).toBe(4.2)
+    expect(picker.dessertKg).toBeCloseTo(27.5, 5) // 31.7 - 4.2
+    expect(picker.industrialKg + picker.dessertKg).toBeCloseTo(picker.kg, 5)
+  })
+
+  it('pozycja zbiorcza GRUPA 1 nie trafia do przemysłu', () => {
+    const result = parseMaxcropPieceRateSheet(grid, 'test.xls')
+    expect(result.rows.find((r) => r.externalId === 'PR592')!.industrialKg).toBe(4.2)
+  })
+
+  it('ostrzega gdy przemysł przekracza sumę z Razem', () => {
+    const zly = grid.map((r) => [...r])
+    // podbijamy przemysł ponad wartość z wiersza Razem
+    zly[4] = [...(zly[4] as unknown[])]
+    ;(zly[4] as unknown[])[16] = 999
+    const result = parseMaxcropPieceRateSheet(zly, 'test.xls')
+    expect(result.warnings.join(' ')).toContain('przekracza')
+    const picker = result.rows.find((r) => r.externalId === 'PR592')!
+    expect(picker.dessertKg).toBe(0)
+    expect(picker.industrialKg).toBe(picker.kg)
+  })
+
   it('rozpoznaje zbieraczy po rodzaju pracy "Zbiory"', () => {
     const result = parseMaxcropPieceRateSheet(grid, 'test.xls')
     expect(result.rows.find((r) => r.externalId === 'PR592')!.isHarvestWorker).toBe(true)
@@ -565,7 +679,7 @@ describe('mergePieceRateFiles', () => {
     reportDate: '2026-07-20',
     warnings: [],
     rows: [
-      { externalId: 'PR1', workerName: 'Anna', kg: 20, hours: 8, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 100 },
+      { externalId: 'PR1', workerName: 'Anna', kg: 20, industrialKg: 4, dessertKg: 16, hours: 8, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 100 },
     ],
   }
   const fileB = {
@@ -573,8 +687,8 @@ describe('mergePieceRateFiles', () => {
     reportDate: '2026-07-20',
     warnings: [],
     rows: [
-      { externalId: 'PR1', workerName: 'Anna', kg: 15, hours: 6, workTypes: ['Pakowanie'], isHarvestWorker: false, currentAmount: 50 },
-      { externalId: 'PR2', workerName: 'Bogdan', kg: 30, hours: 9, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 150 },
+      { externalId: 'PR1', workerName: 'Anna', kg: 15, industrialKg: 5, dessertKg: 10, hours: 6, workTypes: ['Pakowanie'], isHarvestWorker: false, currentAmount: 50 },
+      { externalId: 'PR2', workerName: 'Bogdan', kg: 30, industrialKg: 0, dessertKg: 30, hours: 9, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 150 },
     ],
   }
 
@@ -583,6 +697,14 @@ describe('mergePieceRateFiles', () => {
     const anna = rows.find((r) => r.externalId === 'PR1')!
     expect(anna.kg).toBe(35)
     expect(anna.hours).toBe(8) // max(8, 6), nie 14
+  })
+
+  it('sumuje osobno deser i przemysł', () => {
+    const { rows } = mergePieceRateFiles([fileA, fileB])
+    const anna = rows.find((r) => r.externalId === 'PR1')!
+    expect(anna.industrialKg).toBe(9)
+    expect(anna.dessertKg).toBe(26)
+    expect(anna.industrialKg + anna.dessertKg).toBe(anna.kg)
   })
 
   it('sumuje godziny przy strategii sum', () => {

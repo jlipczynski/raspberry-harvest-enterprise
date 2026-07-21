@@ -41,6 +41,10 @@ export interface PieceRateWorkerRow {
   /** kg - industrialKg, czyli deser */
   dessertKg: number
   hours: number
+  /** Godzina wejścia z raportu, np. "04:52" */
+  startTime: string | null
+  /** Godzina wyjścia z raportu, np. "18:31" */
+  endTime: string | null
   /** Rodzaje pracy przypisane pracownikowi tego dnia */
   workTypes: string[]
   /** Czy tego dnia zbierał (rodzaj pracy "Zbiory") */
@@ -96,6 +100,8 @@ interface ColumnIndex {
   settlement: number
   productClass: number
   area: number
+  startTime: number
+  endTime: number
   time: number
   quantity: number
   weight: number
@@ -166,6 +172,8 @@ function findHeaderRow(grid: unknown[][]): { index: number; columns: ColumnIndex
       settlement: find('rozliczenie'),
       productClass: find('klasa produktu'),
       area: find('obszar'),
+      startTime: find('godz od'),
+      endTime: find('godz do'),
       time: find('czas'),
       quantity: find('ilość', 'ilosc'),
       weight: find('waga'),
@@ -232,6 +240,8 @@ export function parseMaxcropPieceRateSheet(
     kg: number | null
     industrialKg: number
     hours: number | null
+    startTime: string | null
+    endTime: string | null
     amount: number | null
     /** Ile razy trafił nam się wiersz "Razem" — >1 znaczy zły podział na dni */
     summaryCount: number
@@ -293,6 +303,8 @@ export function parseMaxcropPieceRateSheet(
         kg: null,
         industrialKg: 0,
         hours: null,
+        startTime: null,
+        endTime: null,
         amount: null,
         summaryCount: 0,
       }
@@ -302,6 +314,22 @@ export function parseMaxcropPieceRateSheet(
     if (columns.workType >= 0) {
       const workType = String(row[columns.workType] ?? '').trim()
       if (workType) entry.workTypes.add(workType)
+    }
+
+    // Godziny wejścia/wyjścia są tylko na wierszu obecności. Bierzemy
+    // najwcześniejsze wejście i najpóźniejsze wyjście — pracownik może mieć
+    // w ciągu dnia więcej niż jeden wpis obecności.
+    if (columns.startTime >= 0) {
+      const start = String(row[columns.startTime] ?? '').trim()
+      if (/^\d{1,2}:\d{2}/.test(start) && (entry.startTime === null || start < entry.startTime)) {
+        entry.startTime = start
+      }
+    }
+    if (columns.endTime >= 0) {
+      const end = String(row[columns.endTime] ?? '').trim()
+      if (/^\d{1,2}:\d{2}/.test(end) && (entry.endTime === null || end > entry.endTime)) {
+        entry.endTime = end
+      }
     }
 
     // Wiersz podsumowania pracownika — jedyne źródło kg i godzin.
@@ -397,6 +425,8 @@ export function parseMaxcropPieceRateSheet(
       industrialKg,
       dessertKg: totalKg - industrialKg,
       hours: entry.hours === null ? 0 : entry.hours,
+      startTime: entry.startTime,
+      endTime: entry.endTime,
       workTypes,
       isHarvestWorker: workTypes.some(
         (type) => type.toLowerCase().trim() === HARVEST_WORK_TYPE
@@ -550,6 +580,13 @@ export function mergePieceRateFiles(
       }
 
       existing.isHarvestWorker = existing.isHarvestWorker || row.isHarvestWorker
+
+      if (row.startTime !== null && (existing.startTime === null || row.startTime < existing.startTime)) {
+        existing.startTime = row.startTime
+      }
+      if (row.endTime !== null && (existing.endTime === null || row.endTime > existing.endTime)) {
+        existing.endTime = row.endTime
+      }
 
       if (row.currentAmount !== null) {
         const previous = existing.currentAmount === null ? 0 : existing.currentAmount

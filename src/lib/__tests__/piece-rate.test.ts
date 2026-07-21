@@ -691,11 +691,11 @@ const makeFile = (
 
 describe('mergePieceRateFiles', () => {
   const fileA = makeFile('a.xls', '2026-07-20', [
-    { externalId: 'PR1', workerName: 'Anna', kg: 20, industrialKg: 4, dessertKg: 16, hours: 8, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 100 },
+    { externalId: 'PR1', workerName: 'Anna', kg: 20, industrialKg: 4, dessertKg: 16, hours: 8, startTime: null, endTime: null, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 100 },
   ])
   const fileB = makeFile('b.xls', '2026-07-20', [
-    { externalId: 'PR1', workerName: 'Anna', kg: 15, industrialKg: 5, dessertKg: 10, hours: 6, workTypes: ['Pakowanie'], isHarvestWorker: false, currentAmount: 50 },
-    { externalId: 'PR2', workerName: 'Bogdan', kg: 30, industrialKg: 0, dessertKg: 30, hours: 9, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 150 },
+    { externalId: 'PR1', workerName: 'Anna', kg: 15, industrialKg: 5, dessertKg: 10, hours: 6, startTime: null, endTime: null, workTypes: ['Pakowanie'], isHarvestWorker: false, currentAmount: 50 },
+    { externalId: 'PR2', workerName: 'Bogdan', kg: 30, industrialKg: 0, dessertKg: 30, hours: 9, startTime: null, endTime: null, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 150 },
   ])
 
   it('sumuje kg i bierze max godzin (domyślnie)', () => {
@@ -833,8 +833,8 @@ describe('parseMaxcropPieceRateSheet — eksport wielodniowy', () => {
 })
 
 describe('mergePieceRateDays', () => {
-  const day20 = { externalId: 'PR1', workerName: 'Anna', kg: 20, industrialKg: 0, dessertKg: 20, hours: 8, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 100 }
-  const day21 = { externalId: 'PR1', workerName: 'Anna', kg: 30, industrialKg: 0, dessertKg: 30, hours: 9, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 150 }
+  const day20 = { externalId: 'PR1', workerName: 'Anna', kg: 20, industrialKg: 0, dessertKg: 20, hours: 8, startTime: null, endTime: null, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 100 }
+  const day21 = { externalId: 'PR1', workerName: 'Anna', kg: 30, industrialKg: 0, dessertKg: 30, hours: 9, startTime: null, endTime: null, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 150 }
 
   const fileA: PieceRateFileParseResult = {
     fileName: 'a.xls', reportDate: null, rows: [day20], warnings: [],
@@ -853,7 +853,7 @@ describe('mergePieceRateDays', () => {
 
   it('scala pliki o nakładających się zakresach po dacie', () => {
     const fileB = makeFile('b.xls', '2026-07-21', [
-      { externalId: 'PR2', workerName: 'Bogdan', kg: 15, industrialKg: 0, dessertKg: 15, hours: 7, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 75 },
+      { externalId: 'PR2', workerName: 'Bogdan', kg: 15, industrialKg: 0, dessertKg: 15, hours: 7, startTime: null, endTime: null, workTypes: ['Zbiory'], isHarvestWorker: true, currentAmount: 75 },
     ])
     const { days } = mergePieceRateDays([fileA, fileB])
     expect(days).toHaveLength(2)

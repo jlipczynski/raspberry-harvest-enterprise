@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import {
   Upload, Calculator, ArrowLeft, Trash2, Save, AlertTriangle, Loader2,
   ChevronUp, ChevronDown, ChevronsUpDown, Coffee, X, Scissors, Factory,
-  ChevronLeft, ChevronRight, MapPin,
+  ChevronLeft, ChevronRight, MapPin, Pencil, FolderOpen, Copy,
 } from 'lucide-react'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -51,6 +51,8 @@ interface ParsedRow {
   industrialKg: number
   dessertKg: number
   hours: number
+  startTime: string | null
+  endTime: string | null
   workTypes: string[]
   isHarvestWorker: boolean
   currentAmount: number | null
@@ -81,6 +83,10 @@ interface SessionSummary {
   computedRate: number
   workerCount: number
   note: string | null
+  medianCount: number
+  mode: 'MANUAL' | 'AUTO_MEDIAN'
+  roundingStep: number
+  cutoffKgPerHour: number | null
 }
 
 type SortKey = 'name' | 'kg' | 'hours' | 'kgPerHour' | 'earnings' | 'effectiveHourly'
@@ -89,6 +95,13 @@ const num = (value: number | null | undefined, digits = 2) =>
   value === null || value === undefined ? '—' : value.toFixed(digits)
 const zl = (value: number | null | undefined, digits = 2) =>
   value === null || value === undefined ? '—' : `${value.toFixed(digits)} zł`
+
+/** 13.65 → "13:39" — godziny czyta się lepiej niż ułamek dziesiętny. */
+const fmtDuration = (hours: number | null | undefined) => {
+  if (hours === null || hours === undefined || !Number.isFinite(hours)) return '—'
+  const total = Math.round(hours * 60)
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
 
 /** Tooltip Rechartsa potrafi podać undefined — formatujemy odpornie. */
 const fmtChart = (value: unknown, digits: number, unit: string) =>
@@ -131,6 +144,8 @@ export default function PieceRateCalculatorPage() {
   const [manualRefs, setManualRefs] = useState<Set<string>>(new Set())
   const [note, setNote] = useState('')
   const [showSettings, setShowSettings] = useState(false)
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [loadingSession, setLoadingSession] = useState(false)
 
   const [sortKey, setSortKey] = useState<SortKey>('kgPerHour')
   const [sortAsc, setSortAsc] = useState(true)
@@ -169,6 +184,9 @@ export default function PieceRateCalculatorPage() {
         setError(data.error || 'Nie udało się odczytać pliku')
         return
       }
+
+      // Nowy plik to nowa wycena — nie chcemy nadpisać wcześniej otwartej sesji.
+      setEditingSessionId(null)
 
       const parsedDays: ParsedDay[] = data.days || []
       setDays(parsedDays)
@@ -358,6 +376,32 @@ export default function PieceRateCalculatorPage() {
     if (result.derivedRate !== null) setRateInput(result.derivedRate.toFixed(2))
   }
 
+  /** Jedno ciało żądania dla zapisu nowej sesji i dla edycji istniejącej. */
+  const buildSessionPayload = () => ({
+    harvestDate,
+    fileName: fileNames.join(', ') || 'sesja ręczna',
+    mode,
+    targetHourly,
+    medianCount,
+    breakMinutes,
+    roundingStep: coarseRounding ? ROUNDING_STEP_COARSE : ROUNDING_STEP_FINE,
+    rateOverride: result.isSimulated ? result.rate : null,
+    industrialRate: parsedIndustrialRate,
+    cutoffKgPerHour: parsedCutoff,
+    note: note.trim() || null,
+    blocks: activeDay ? activeDay.blocks : [],
+    rows: keptRows.map((row) => ({
+      workerName: row.workerName,
+      externalId: row.externalId,
+      kg: row.kg,
+      industrialKg: row.industrialKg,
+      hours: row.hours,
+      isReference: manualRefs.has(rowKey(row)),
+      isHarvestWorker: row.isHarvestWorker,
+      currentAmount: row.currentAmount,
+    })),
+  })
+
   const handleSave = async () => {
     if (result.rate === null || !harvestDate) return
     setSaving(true)
@@ -367,29 +411,7 @@ export default function PieceRateCalculatorPage() {
       const response = await fetch('/api/piece-rate/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          harvestDate,
-          fileName: fileNames.join(', '),
-          mode,
-          targetHourly,
-          medianCount,
-          breakMinutes,
-          roundingStep: coarseRounding ? ROUNDING_STEP_COARSE : ROUNDING_STEP_FINE,
-          rateOverride: result.isSimulated ? result.rate : null,
-          industrialRate: parsedIndustrialRate,
-          cutoffKgPerHour: parsedCutoff,
-          note: note.trim() || null,
-          rows: keptRows.map((row) => ({
-            workerName: row.workerName,
-            externalId: row.externalId,
-            kg: row.kg,
-            industrialKg: row.industrialKg,
-            hours: row.hours,
-            isReference: manualRefs.has(rowKey(row)),
-            isHarvestWorker: row.isHarvestWorker,
-            currentAmount: row.currentAmount,
-          })),
-        }),
+        body: JSON.stringify(buildSessionPayload()),
       })
 
       const data = await response.json()
@@ -399,12 +421,117 @@ export default function PieceRateCalculatorPage() {
       }
 
       setSavedMessage(`Zapisano ${fmtDate(harvestDate)} — ${data.session.computedRate.toFixed(2)} zł/kg`)
+      setEditingSessionId(data.session.id)
       fetchSessions()
     } catch {
       setError('Błąd połączenia przy zapisie')
     } finally {
       setSaving(false)
     }
+  }
+
+  /** Wczytuje zapisaną sesję z powrotem do kalkulatora. */
+  const handleOpenSession = async (id: string) => {
+    setLoadingSession(true)
+    setError(null)
+    setSavedMessage(null)
+
+    try {
+      const response = await fetch(`/api/piece-rate/sessions/${id}`)
+      const data = await response.json()
+      if (!response.ok) {
+        setError(data.error || 'Nie udało się wczytać sesji')
+        return
+      }
+
+      const session = data.session
+      const loadedRows: ParsedRow[] = (session.rows || []).map(
+        (row: Record<string, unknown>) => ({
+          externalId: (row.externalId as string) || null,
+          workerName: row.workerName as string,
+          kg: row.kg as number,
+          industrialKg: (row.industrialKg as number) || 0,
+          dessertKg: (row.dessertKg as number) || 0,
+          hours: row.hours as number,
+          // Godziny wejścia/wyjścia nie są zapisywane — to dane z raportu,
+          // nie wynik wyceny. Po wczytaniu kolumna pokaże samą długość.
+          startTime: null,
+          endTime: null,
+          workTypes: [],
+          isHarvestWorker: row.isHarvestWorker !== false,
+          currentAmount: (row.currentAmount as number) ?? null,
+        })
+      )
+
+      const date = String(session.harvestDate).slice(0, 10)
+      setDays([{ date, rows: loadedRows, blocks: session.blocks || [] }])
+      setDayIndex(0)
+      setHarvestDate(date)
+
+      setTargetHourly(session.targetHourly)
+      setMedianCount(session.medianCount)
+      setBreakMinutes(session.breakMinutes)
+      setMode(session.mode)
+      setCoarseRounding(session.roundingStep >= ROUNDING_STEP_COARSE)
+      setIndustrialRate(session.industrialRate === null ? '' : String(session.industrialRate))
+      setCutoff(session.cutoffKgPerHour === null ? '' : String(session.cutoffKgPerHour))
+      setNote(session.note || '')
+      setFileNames(session.fileName ? [session.fileName] : [])
+
+      // Stawka zapisana wprost — tak, żeby podgląd pokazał dokładnie to,
+      // co zostało zapisane, a nie przeliczenie z bieżących parametrów.
+      setRateInput(session.computedRate.toFixed(2))
+      setManualRefs(
+        new Set(
+          (session.rows || [])
+            .filter((row: Record<string, unknown>) => row.isReference)
+            .map((row: Record<string, unknown>) => (row.externalId as string) || (row.workerName as string))
+        )
+      )
+
+      setEditingSessionId(id)
+      setWarnings([])
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch {
+      setError('Błąd połączenia przy wczytywaniu sesji')
+    } finally {
+      setLoadingSession(false)
+    }
+  }
+
+  /** Zapisuje zmiany w otwartej sesji (PATCH) zamiast tworzyć nową. */
+  const handleUpdate = async () => {
+    if (!editingSessionId || result.rate === null || !harvestDate) return
+    setSaving(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/piece-rate/sessions/${editingSessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildSessionPayload()),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        setError(data.error || 'Nie udało się zapisać zmian')
+        return
+      }
+
+      setSavedMessage(
+        `Zaktualizowano sesję z ${fmtDate(harvestDate)} — ${data.session.computedRate.toFixed(2)} zł/kg`
+      )
+      fetchSessions()
+    } catch {
+      setError('Błąd połączenia przy zapisie zmian')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const exitEditing = () => {
+    setEditingSessionId(null)
+    setSavedMessage(null)
   }
 
   const handleDelete = async (id: string) => {
@@ -445,6 +572,17 @@ export default function PieceRateCalculatorPage() {
           <Save className="w-4 h-4 mt-0.5 shrink-0" />
           <span className="flex-1">{savedMessage}</span>
           <button onClick={() => setSavedMessage(null)}><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {editingSessionId && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+          <Pencil className="w-4 h-4 shrink-0" />
+          <span className="flex-1">
+            Edytujesz zapisaną sesję z <strong>{fmtDate(harvestDate)}</strong> —
+            zmiany parametrów nadpiszą ją po kliknięciu „Zapisz zmiany".
+          </span>
+          <Button variant="outline" size="sm" onClick={exitEditing}>Zakończ edycję</Button>
         </div>
       )}
 
@@ -867,7 +1005,7 @@ export default function PieceRateCalculatorPage() {
                     <Th onClick={() => toggleSort('name')}>Pracownik <SortIcon column="name" /></Th>
                     <Th onClick={() => toggleSort('kg')} right>kg <SortIcon column="kg" /></Th>
                     <th className="p-2 text-right">w tym przem.</th>
-                    <Th onClick={() => toggleSort('hours')} right>godz. <SortIcon column="hours" /></Th>
+                    <Th onClick={() => toggleSort('hours')} right>Czas pracy <SortIcon column="hours" /></Th>
                     <Th onClick={() => toggleSort('kgPerHour')} right>kg/h <SortIcon column="kgPerHour" /></Th>
                     <Th onClick={() => toggleSort('earnings')} right>Zarobek <SortIcon column="earnings" /></Th>
                     <Th onClick={() => toggleSort('effectiveHourly')} right>zł/h <SortIcon column="effectiveHourly" /></Th>
@@ -897,7 +1035,19 @@ export default function PieceRateCalculatorPage() {
                         <td className="p-2 text-right tabular-nums text-gray-500">
                           {row.industrialKg > 0 ? num(row.industrialKg, 1) : '—'}
                         </td>
-                        <td className="p-2 text-right tabular-nums text-gray-600">{num(row.effectiveHours, 2)}</td>
+                        <td className="p-2 text-right tabular-nums text-gray-600">
+                          <span className="font-medium">{fmtDuration(row.effectiveHours)}</span>
+                          {source?.startTime && source?.endTime && (
+                            <span className="block text-[10px] text-gray-400">
+                              {source.startTime.slice(0, 5)}–{source.endTime.slice(0, 5)}
+                            </span>
+                          )}
+                          {breakMinutes > 0 && (
+                            <span className="block text-[10px] text-gray-400">
+                              brutto {fmtDuration(row.hours)}
+                            </span>
+                          )}
+                        </td>
                         <td className="p-2 text-right tabular-nums font-medium">{num(row.kgPerHour)}</td>
                         <td className="p-2 text-right tabular-nums">{zl(row.earnings)}</td>
                         <td className={`p-2 text-right tabular-nums font-semibold ${style.text}`}>
@@ -969,11 +1119,27 @@ export default function PieceRateCalculatorPage() {
               <Input id="note" value={note} onChange={(e) => setNote(e.target.value)}
                 placeholder="np. deszcz od 14:00" className="mt-1" />
             </div>
-            <Button onClick={handleSave} disabled={saving || result.rate === null || !harvestDate}
-              className="bg-green-600 hover:bg-green-700">
-              {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
-              Zapisz sesję
-            </Button>
+            {editingSessionId ? (
+              <>
+                <Button onClick={handleUpdate} disabled={saving || result.rate === null || !harvestDate}
+                  className="bg-amber-600 hover:bg-amber-700">
+                  {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
+                  Zapisz zmiany
+                </Button>
+                <Button variant="outline" onClick={handleSave}
+                  disabled={saving || result.rate === null || !harvestDate}
+                  title="Zapisz jako nową sesję, zostawiając poprzednią bez zmian">
+                  <Copy className="w-4 h-4 mr-1.5" />
+                  Zapisz jako nową
+                </Button>
+              </>
+            ) : (
+              <Button onClick={handleSave} disabled={saving || result.rate === null || !harvestDate}
+                className="bg-green-600 hover:bg-green-700">
+                {saving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Save className="w-4 h-4 mr-1.5" />}
+                Zapisz sesję
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
@@ -998,12 +1164,13 @@ export default function PieceRateCalculatorPage() {
                     <th className="p-2 text-right">Przerwy</th>
                     <th className="p-2 text-right">Osób</th>
                     <th className="p-2 text-left">Notatka</th>
-                    <th className="p-2 w-10" />
+                    <th className="p-2 w-20" />
                   </tr>
                 </thead>
                 <tbody>
                   {sessions.map((session) => (
-                    <tr key={session.id} className="border-t hover:bg-gray-50">
+                    <tr key={session.id}
+                      className={`border-t hover:bg-gray-50 ${session.id === editingSessionId ? 'bg-amber-50' : ''}`}>
                       <td className="p-2">{fmtDate(session.harvestDate)}</td>
                       <td className="p-2 text-right tabular-nums font-semibold">{session.computedRate.toFixed(2)} zł/kg</td>
                       <td className="p-2 text-right tabular-nums text-gray-600">
@@ -1014,10 +1181,18 @@ export default function PieceRateCalculatorPage() {
                       <td className="p-2 text-right tabular-nums">{session.workerCount}</td>
                       <td className="p-2 text-gray-500 text-xs">{session.note || '—'}</td>
                       <td className="p-2">
-                        <button onClick={() => handleDelete(session.id)}
-                          className="text-gray-400 hover:text-red-600" title="Usuń sesję">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => handleOpenSession(session.id)}
+                            disabled={loadingSession}
+                            className="text-gray-400 hover:text-green-700 disabled:opacity-40"
+                            title="Otwórz w kalkulatorze">
+                            {loadingSession ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderOpen className="w-4 h-4" />}
+                          </button>
+                          <button onClick={() => handleDelete(session.id)}
+                            className="text-gray-400 hover:text-red-600" title="Usuń sesję">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

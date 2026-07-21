@@ -591,6 +591,8 @@ model PieceRateSession {
   roundingStep    Float         @default(0.01) // krok zaokrąglenia stawki
   industrialRate  Float? // stała stawka zł/kg za przemysł (null = nie wydzielany)
   cutoffKgPerHour Float? // odcięcie najsłabszych poniżej tej wydajności
+  blocks          Json? // rozbicie zbioru na obszary — snapshot z raportu
+  updatedAt       DateTime      @updatedAt
   computedRate    Float // wynikowa stawka zł/kg
   note            String?
   createdAt       DateTime      @default(now())

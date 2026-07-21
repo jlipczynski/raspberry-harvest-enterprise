@@ -17,7 +17,16 @@ const rowSchema = z.object({
   currentAmount: z.number().finite().nullable().optional(),
 })
 
-const sessionSchema = z.object({
+export const blockSchema = z.object({
+  areaName: z.string(),
+  blockName: z.string().nullable(),
+  dessertKg: z.number().finite(),
+  industrialKg: z.number().finite(),
+  totalKg: z.number().finite(),
+  currentAmount: z.number().finite(),
+})
+
+export const sessionSchema = z.object({
   harvestDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data w formacie YYYY-MM-DD'),
   fileName: z.string().min(1),
   mode: z.enum(['MANUAL', 'AUTO_MEDIAN']),
@@ -32,8 +41,62 @@ const sessionSchema = z.object({
   /** Odcięcie najsłabszych poniżej tej wydajności kg/h */
   cutoffKgPerHour: z.number().finite().nonnegative().nullable().optional(),
   note: z.string().nullable().optional(),
+  blocks: z.array(blockSchema).optional(),
   rows: z.array(rowSchema).min(1, 'Brak wierszy do zapisania'),
 })
+
+export type SessionInput = z.infer<typeof sessionSchema>
+
+/**
+ * Przelicza stawkę na serwerze i buduje dane do zapisu.
+ * Wspólne dla POST (nowa sesja) i PATCH (edycja) — jedno miejsce prawdy.
+ */
+export function buildSessionData(body: SessionInput) {
+  const result = computePieceRate(body.rows, {
+    mode: body.mode,
+    targetHourly: body.targetHourly,
+    medianCount: body.medianCount,
+    roundingStep: body.roundingStep,
+    breakHours: body.breakMinutes / 60,
+    rateOverride: body.rateOverride === undefined ? null : body.rateOverride,
+    industrialRate: body.industrialRate === undefined ? null : body.industrialRate,
+  })
+
+  if (result.rate === null) return null
+
+  return {
+    result,
+    scalars: {
+      harvestDate: new Date(body.harvestDate),
+      fileName: body.fileName,
+      mode: body.mode,
+      targetHourly: body.targetHourly,
+      medianCount: body.medianCount,
+      breakMinutes: Math.round(body.breakMinutes),
+      roundingStep: body.roundingStep,
+      industrialRate: body.industrialRate === undefined ? null : body.industrialRate,
+      cutoffKgPerHour: body.cutoffKgPerHour === undefined ? null : body.cutoffKgPerHour,
+      blocks: body.blocks === undefined ? undefined : body.blocks,
+      computedRate: result.rate,
+      note: body.note || null,
+    },
+    rowData: result.rows.map((row) => ({
+      workerName: row.workerName,
+      externalId: row.externalId || null,
+      kg: row.kg,
+      industrialKg: row.industrialKg,
+      dessertKg: row.dessertKg,
+      hours: row.hours,
+      effectiveHours: row.effectiveHours,
+      kgPerHour: row.kgPerHour === null ? 0 : row.kgPerHour,
+      isReference: row.isReference,
+      isHarvestWorker: row.isHarvestWorker !== false,
+      earnings: row.earnings,
+      effectiveHourly: row.effectiveHourly,
+      currentAmount: row.currentAmount === undefined ? null : row.currentAmount,
+    })),
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -82,21 +145,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = parsed.data
-
-    // Stawkę przeliczamy na serwerze tą samą funkcją co na kliencie — zapisujemy
-    // wynik policzony tutaj, żeby podmiana w przeglądarce nic nie zmieniła.
-    const result = computePieceRate(body.rows, {
-      mode: body.mode,
-      targetHourly: body.targetHourly,
-      medianCount: body.medianCount,
-      roundingStep: body.roundingStep,
-      breakHours: body.breakMinutes / 60,
-      rateOverride: body.rateOverride === undefined ? null : body.rateOverride,
-      industrialRate: body.industrialRate === undefined ? null : body.industrialRate,
-    })
-
-    if (result.rate === null) {
+    const built = buildSessionData(parsed.data)
+    if (built === null) {
       return NextResponse.json(
         { error: 'Nie da się policzyć stawki — brak pracowników wzorcowych z dodatnimi godzinami' },
         { status: 400 }
@@ -107,34 +157,8 @@ export async function POST(request: NextRequest) {
       data: {
         tenantId,
         farmId,
-        harvestDate: new Date(body.harvestDate),
-        fileName: body.fileName,
-        mode: body.mode,
-        targetHourly: body.targetHourly,
-        medianCount: body.medianCount,
-        breakMinutes: Math.round(body.breakMinutes),
-        roundingStep: body.roundingStep,
-        industrialRate: body.industrialRate === undefined ? null : body.industrialRate,
-        cutoffKgPerHour: body.cutoffKgPerHour === undefined ? null : body.cutoffKgPerHour,
-        computedRate: result.rate,
-        note: body.note || null,
-        rows: {
-          create: result.rows.map((row) => ({
-            workerName: row.workerName,
-            externalId: row.externalId || null,
-            kg: row.kg,
-            industrialKg: row.industrialKg,
-            dessertKg: row.dessertKg,
-            hours: row.hours,
-            effectiveHours: row.effectiveHours,
-            kgPerHour: row.kgPerHour === null ? 0 : row.kgPerHour,
-            isReference: row.isReference,
-            isHarvestWorker: row.isHarvestWorker !== false,
-            earnings: row.earnings,
-            effectiveHourly: row.effectiveHourly,
-            currentAmount: row.currentAmount === undefined ? null : row.currentAmount,
-          })),
-        },
+        ...built.scalars,
+        rows: { create: built.rowData },
       },
       include: { _count: { select: { rows: true } } },
     })

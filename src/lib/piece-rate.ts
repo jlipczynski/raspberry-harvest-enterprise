@@ -14,7 +14,10 @@ export type PieceRateMode = 'MANUAL' | 'AUTO_MEDIAN'
 export interface PieceRateInputRow {
   workerName: string
   externalId?: string | null
+  /** Cała masa zebrana przez pracownika */
   kg: number
+  /** Część masy idąca na przemysł — rozliczana po stałej stawce */
+  industrialKg?: number
   hours: number
   isReference?: boolean
   /** Czy tego dnia zbierał — osoby na innych stanowiskach nie wchodzą do stawki */
@@ -26,6 +29,10 @@ export interface PieceRateInputRow {
 export interface PieceRateComputedRow extends PieceRateInputRow {
   /** Godziny po odjęciu przerw — to na nich liczymy wydajność */
   effectiveHours: number
+  /** Masa rozliczona po stawce przemysłowej (0 gdy przemysł nie jest wydzielany) */
+  industrialKg: number
+  /** Masa rozliczona po stawce deserowej */
+  dessertKg: number
   /** kg / effectiveHours — null gdy nie zostało dodatnich godzin */
   kgPerHour: number | null
   /** Pasmo zarobku względem docelowej stawki godzinowej */
@@ -56,6 +63,14 @@ export interface PieceRateResult {
   /** Suma earnings wszystkich pracowników — koszt dnia */
   totalCost: number | null
   totalKg: number
+  /** Masa rozliczona po stawce przemysłowej */
+  totalIndustrialKg: number
+  /** Masa rozliczona po stawce deserowej */
+  totalDessertKg: number
+  /** Stawka przemysłu użyta w wyliczeniu (null = przemysł nie wydzielany) */
+  industrialRate: number | null
+  /** Koszt samego przemysłu */
+  industrialCost: number | null
   /** Suma godzin PO odjęciu przerw */
   totalHours: number
   /** Przerwy użyte w wyliczeniu (godziny na osobę) */
@@ -90,6 +105,20 @@ export interface PieceRateOptions {
    * 0.1 = ±10%.
    */
   bandTolerance?: number
+  /**
+   * Stała stawka zł/kg za malinę przemysłową.
+   *
+   * null / brak → przemysł nie jest rozliczany osobno, cała masa idzie po
+   * stawce deserowej (zachowanie sprzed rozdzielenia klas).
+   */
+  industrialRate?: number | null
+}
+
+/** Masa przemysłowa wiersza, przycięta do całej masy. */
+function industrialOf(row: PieceRateInputRow): number {
+  const value = row.industrialKg
+  if (value === undefined || value === null || !Number.isFinite(value) || value <= 0) return 0
+  return Math.min(value, Number.isFinite(row.kg) ? row.kg : 0)
 }
 
 /** Pasmo zarobku względem docelowej stawki godzinowej. */
@@ -219,10 +248,40 @@ export function computePieceRate(
   const referenceInputs = inputRows.filter((_, index) => referenceIndices.has(index))
   const avgKgPerHour = weightedKgPerHour(referenceInputs, breakHours)
 
-  const rawRate =
-    avgKgPerHour !== null && avgKgPerHour > 0 && Number.isFinite(targetHourly) && targetHourly > 0
-      ? targetHourly / avgKgPerHour
+  // Przemysł rozliczamy osobno tylko gdy podano dla niego stawkę.
+  const industrialRate =
+    options.industrialRate != null &&
+    Number.isFinite(options.industrialRate) &&
+    options.industrialRate > 0
+      ? options.industrialRate
       : null
+
+  /**
+   * Stawka deserowa wynika z równania dla grupy wzorcowej:
+   *   cel × Σgodzin = stawka × Σkg_deser + stawka_przemysł × Σkg_przemysł
+   * czyli
+   *   stawka = (cel × Σgodzin − stawka_przemysł × Σkg_przemysł) / Σkg_deser
+   *
+   * Bez osobnej stawki przemysłu redukuje się to do cel / wydajność.
+   */
+  const measurableRefs = referenceInputs.filter((row) => isMeasurable(row, breakHours))
+  const refHours = measurableRefs.reduce((sum, row) => sum + effectiveHours(row, breakHours), 0)
+  const refIndustrialKg = industrialRate === null
+    ? 0
+    : measurableRefs.reduce((sum, row) => sum + industrialOf(row), 0)
+  const refDessertKg = measurableRefs.reduce(
+    (sum, row) => sum + row.kg - (industrialRate === null ? 0 : industrialOf(row)),
+    0
+  )
+
+  let rawRate: number | null = null
+  if (Number.isFinite(targetHourly) && targetHourly > 0 && refHours > 0 && refDessertKg > 0) {
+    const industrialEarnings = industrialRate === null ? 0 : industrialRate * refIndustrialKg
+    const candidate = (targetHourly * refHours - industrialEarnings) / refDessertKg
+    // Ujemna stawka znaczy, że sam przemysł przekracza cel — nie da się
+    // tego rozwiązać dopłatą za deser, więc mówimy "nie wiem".
+    if (Number.isFinite(candidate) && candidate > 0) rawRate = candidate
+  }
 
   const derivedRate = rawRate !== null ? roundToStep(rawRate, roundingStep) : null
 
@@ -244,7 +303,13 @@ export function computePieceRate(
   const rows: PieceRateComputedRow[] = inputRows.map((row, index) => {
     const hours = effectiveHours(row, breakHours)
     const kph = kgPerHour(row, breakHours)
-    const earnings = rate !== null && Number.isFinite(row.kg) ? row.kg * rate : null
+
+    const industrialKg = industrialRate === null ? 0 : industrialOf(row)
+    const dessertKg = Number.isFinite(row.kg) ? row.kg - industrialKg : 0
+
+    const earnings = rate === null || !Number.isFinite(row.kg)
+      ? null
+      : dessertKg * rate + industrialKg * (industrialRate === null ? 0 : industrialRate)
     // Stawkę godzinową liczymy po odjęciu przerw — pracownik dostaje za kg,
     // a porównujemy do zł/h za faktycznie przepracowany czas.
     const effectiveHourly = earnings !== null && hours > 0 ? earnings / hours : null
@@ -252,6 +317,8 @@ export function computePieceRate(
     return {
       ...row,
       effectiveHours: hours,
+      industrialKg,
+      dessertKg,
       kgPerHour: kph,
       band: classifyHourly(effectiveHourly, targetHourly, tolerance),
       isReference: referenceIndices.has(index),
@@ -265,7 +332,15 @@ export function computePieceRate(
 
   const totalKg = inputRows.reduce((sum, row) => sum + (Number.isFinite(row.kg) ? row.kg : 0), 0)
   const totalHours = rows.reduce((sum, row) => sum + row.effectiveHours, 0)
-  const totalCost = rate !== null ? totalKg * rate : null
+  const totalIndustrialKg = rows.reduce((sum, row) => sum + row.industrialKg, 0)
+  const totalDessertKg = rows.reduce((sum, row) => sum + row.dessertKg, 0)
+
+  // Koszt liczymy z faktycznych zarobków, nie z totalKg × stawka —
+  // przy dwóch stawkach te wartości się rozjeżdżają.
+  const totalCost = rate === null
+    ? null
+    : rows.reduce((sum, row) => sum + (row.earnings === null ? 0 : row.earnings), 0)
+  const industrialCost = industrialRate === null ? null : totalIndustrialKg * industrialRate
 
   const belowThresholdCount =
     hourlyThreshold != null && Number.isFinite(hourlyThreshold) && rate !== null
@@ -284,6 +359,10 @@ export function computePieceRate(
     bands,
     totalCost,
     totalKg,
+    totalIndustrialKg,
+    totalDessertKg,
+    industrialRate,
+    industrialCost,
     totalHours,
     breakHours,
     belowThresholdCount,

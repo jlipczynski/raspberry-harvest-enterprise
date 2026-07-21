@@ -20,6 +20,8 @@
 /** Literały formatu MaxCrop — nie są to wartości domenowe, tylko etykiety eksportu. */
 const SUMMARY_LABEL = 'razem'
 const HARVEST_WORK_TYPE = 'zbiory'
+/** Klasy produktu idące na przemysł, np. "Przemysl_250" */
+const INDUSTRIAL_CLASS_PATTERN = /przemys/i
 const BARCODE_HEADER = 'kod kreskowy'
 const EXTERNAL_ID_HEADER = 'zewnętrzne id'
 
@@ -27,7 +29,15 @@ export interface PieceRateWorkerRow {
   /** Kod kreskowy z MaxCrop (PR592) — klucz scalania między raportami */
   externalId: string | null
   workerName: string
+  /** Cała masa z wiersza "Razem" */
   kg: number
+  /**
+   * Masa na przemysł — suma pozycji o klasie produktu "Przemysl_*".
+   * Pozycje zbiorcze (GRUPA) nie wchodzą do "Razem", więc i tutaj ich nie ma.
+   */
+  industrialKg: number
+  /** kg - industrialKg, czyli deser */
+  dessertKg: number
   hours: number
   /** Rodzaje pracy przypisane pracownikowi tego dnia */
   workTypes: string[]
@@ -184,6 +194,7 @@ export function parseMaxcropPieceRateSheet(
     workerName: string
     workTypes: Set<string>
     kg: number | null
+    industrialKg: number
     hours: number | null
     amount: number | null
   }
@@ -214,6 +225,7 @@ export function parseMaxcropPieceRateSheet(
         workerName,
         workTypes: new Set<string>(),
         kg: null,
+        industrialKg: 0,
         hours: null,
         amount: null,
       }
@@ -237,6 +249,12 @@ export function parseMaxcropPieceRateSheet(
       entry.kg = parseNumber(row[columns.weight])
       entry.hours = parseTimeToHours(row[columns.time])
       entry.amount = columns.amount >= 0 ? parseNumber(row[columns.amount]) : null
+    } else if (INDUSTRIAL_CLASS_PATTERN.test(productClass)) {
+      // Pozycje szczegółowe przemysłu. Sumujemy tylko je — deser wychodzi
+      // jako różnica wobec "Razem", więc pozycje zbiorcze (GRUPA), których
+      // MaxCrop nie wlicza do "Razem", nie mają jak zaburzyć podziału.
+      const weight = parseNumber(row[columns.weight])
+      if (weight !== null && weight > 0) entry.industrialKg += weight
     }
   }
 
@@ -251,10 +269,26 @@ export function parseMaxcropPieceRateSheet(
     const workTypes = [...entry.workTypes]
     // Brak wartości w wierszu "Razem" oznacza realne zero (np. pakowaczka
     // bez zbioru), a nie brakującą daną — MaxCrop zawsze wypełnia to pole.
+    const totalKg = entry.kg === null ? 0 : entry.kg
+
+    // Przemysł nie może przekroczyć masy z "Razem". Gdyby przekroczył,
+    // znaczy że raport ma inną strukturę niż zakładamy — mówimy o tym
+    // wprost, zamiast po cichu produkować ujemny deser.
+    let industrialKg = entry.industrialKg
+    if (industrialKg > totalKg) {
+      warnings.push(
+        `${entry.workerName}: przemysł (${industrialKg.toFixed(2)} kg) przekracza sumę z "Razem" ` +
+          `(${totalKg.toFixed(2)} kg) — podział na deser i przemysł może być błędny.`
+      )
+      industrialKg = totalKg
+    }
+
     rows.push({
       externalId: entry.externalId,
       workerName: entry.workerName,
-      kg: entry.kg === null ? 0 : entry.kg,
+      kg: totalKg,
+      industrialKg,
+      dessertKg: totalKg - industrialKg,
       hours: entry.hours === null ? 0 : entry.hours,
       workTypes,
       isHarvestWorker: workTypes.some(
@@ -310,6 +344,8 @@ export function mergePieceRateFiles(
       }
 
       existing.kg += row.kg
+      existing.industrialKg += row.industrialKg
+      existing.dessertKg += row.dessertKg
       existing.hours =
         hoursStrategy === 'sum' ? existing.hours + row.hours : Math.max(existing.hours, row.hours)
 

@@ -579,19 +579,21 @@ enum PieceRateMode {
 }
 
 model PieceRateSession {
-  id           String        @id @default(cuid())
-  tenantId     String
-  farmId       String
-  harvestDate  DateTime      @db.Date
-  fileName     String
-  mode         PieceRateMode
-  targetHourly Float // zł/h dla osób wzorcowych
-  medianCount  Int           @default(5) // ile osób w trybie AUTO
-  breakMinutes Int           @default(0) // sumaryczne przerwy dnia, odejmowane każdemu
-  roundingStep Float         @default(0.01) // krok zaokrąglenia stawki
-  computedRate Float // wynikowa stawka zł/kg
-  note         String?
-  createdAt    DateTime      @default(now())
+  id              String        @id @default(cuid())
+  tenantId        String
+  farmId          String
+  harvestDate     DateTime      @db.Date
+  fileName        String
+  mode            PieceRateMode
+  targetHourly    Float // zł/h dla osób wzorcowych
+  medianCount     Int           @default(5) // ile osób w trybie AUTO
+  breakMinutes    Int           @default(0) // sumaryczne przerwy dnia, odejmowane każdemu
+  roundingStep    Float         @default(0.01) // krok zaokrąglenia stawki
+  industrialRate  Float? // stała stawka zł/kg za przemysł (null = nie wydzielany)
+  cutoffKgPerHour Float? // odcięcie najsłabszych poniżej tej wydajności
+  computedRate    Float // wynikowa stawka zł/kg
+  note            String?
+  createdAt       DateTime      @default(now())
 
   rows PieceRateRow[]
 
@@ -606,7 +608,9 @@ model PieceRateRow {
 
   workerName      String
   externalId      String? // kod kreskowy z MaxCrop (PR592)
-  kg              Float
+  kg              Float // cała masa
+  industrialKg    Float   @default(0) // masa na przemysł
+  dessertKg       Float   @default(0) // masa deserowa
   hours           Float // czas surowy z raportu
   effectiveHours  Float // hours po odjęciu przerw
   kgPerHour       Float // kg / effectiveHours

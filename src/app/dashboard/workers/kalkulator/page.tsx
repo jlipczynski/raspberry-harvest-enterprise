@@ -845,6 +845,72 @@ export default function PieceRateCalculatorPage() {
         </CardContent>
       </Card>
 
+      {/* ========== ZBIÓR DNIA: DESER vs PRZEMYSŁ ========== */}
+      {hasData && result.totalKg > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">
+              Zbiór {activeDay ? fmtDate(activeDay.date) : ''}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <HarvestTile
+                label="Deser"
+                color={SERIES_DESSERT}
+                kg={result.totalDessertKg}
+                share={result.totalKg > 0 ? result.totalDessertKg / result.totalKg : 0}
+                cost={result.rate === null ? null : result.totalDessertKg * result.rate}
+                rate={result.rate}
+              />
+              <HarvestTile
+                label="Przemysł"
+                color={SERIES_INDUSTRIAL}
+                kg={result.totalIndustrialKg}
+                share={result.totalKg > 0 ? result.totalIndustrialKg / result.totalKg : 0}
+                cost={result.industrialCost}
+                rate={result.industrialRate}
+              />
+              <div className="rounded-lg border p-3 bg-gray-50">
+                <p className="text-xs text-gray-500">Razem</p>
+                <p className="text-2xl font-bold text-gray-900 whitespace-nowrap">
+                  {num(result.totalKg, 1)}<span className="text-sm font-normal ml-1">kg</span>
+                </p>
+                <p className="text-xs text-gray-600 mt-1">{zl(result.totalCost, 0)}</p>
+                <p className="text-[11px] text-gray-400">
+                  {/* Średnia mieszana — im więcej przemysłu, tym niżej */}
+                  śr. {result.totalCost !== null && result.totalKg > 0
+                    ? `${(result.totalCost / result.totalKg).toFixed(2)} zł/kg`
+                    : '—'}
+                </p>
+              </div>
+            </div>
+
+            {/* Pasek udziału — ten sam podział, tylko widziany proporcjonalnie */}
+            <div className="mt-3">
+              <div className="flex h-2.5 rounded-full overflow-hidden bg-gray-100">
+                <div style={{
+                  width: `${(result.totalDessertKg / result.totalKg) * 100}%`,
+                  backgroundColor: SERIES_DESSERT,
+                }} />
+                <div style={{
+                  width: `${(result.totalIndustrialKg / result.totalKg) * 100}%`,
+                  backgroundColor: SERIES_INDUSTRIAL,
+                  marginLeft: 2,
+                }} />
+              </div>
+            </div>
+
+            <p className="text-[11px] text-gray-400 mt-2">
+              Liczone z {result.rows.length} os.
+              {onlyHarvestWorkers && nonHarvestCount > 0 && ` (bez ${nonHarvestCount} os. na innych stanowiskach)`}
+              {cutRows.length > 0 && `, po odcięciu ${cutRows.length} os.`}
+              {result.industrialRate === null && ' · przemysł nie jest wydzielany — wpisz jego stawkę'}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ========== PODSUMOWANIE DNIA — BLOKI ========== */}
       {activeDay && activeDay.blocks.length > 0 && (
         <Card>
@@ -1212,6 +1278,34 @@ function Th({ children, onClick, right }: { children: React.ReactNode; onClick: 
       className={`p-2 cursor-pointer select-none hover:text-gray-900 ${right ? 'text-right' : 'text-left'}`}>
       {children}
     </th>
+  )
+}
+
+function HarvestTile({ label, color, kg, share, cost, rate }: {
+  label: string
+  color: string
+  kg: number
+  share: number
+  cost: number | null
+  rate: number | null
+}) {
+  return (
+    <div className="rounded-lg border p-3 min-w-0">
+      <p className="text-xs text-gray-500 flex items-center gap-1.5">
+        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+        {label}
+        <span className="text-gray-400">· {(share * 100).toFixed(1)}%</span>
+      </p>
+      <p className="text-2xl font-bold text-gray-900 whitespace-nowrap">
+        {kg.toFixed(1)}<span className="text-sm font-normal ml-1">kg</span>
+      </p>
+      <p className="text-xs text-gray-600 mt-1">
+        {cost === null ? '—' : `${cost.toFixed(0)} zł`}
+      </p>
+      <p className="text-[11px] text-gray-400">
+        {rate === null ? 'brak stawki' : `po ${rate.toFixed(2)} zł/kg`}
+      </p>
+    </div>
   )
 }
 

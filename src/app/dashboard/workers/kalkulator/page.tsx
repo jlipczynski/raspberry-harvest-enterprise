@@ -89,7 +89,9 @@ interface SessionSummary {
   cutoffKgPerHour: number | null
 }
 
-type SortKey = 'name' | 'kg' | 'hours' | 'kgPerHour' | 'earnings' | 'effectiveHourly'
+type SortKey =
+  | 'name' | 'kg' | 'industrialKg' | 'dessertKg' | 'hours'
+  | 'kgPerHour' | 'earnings' | 'effectiveHourly'
 
 const num = (value: number | null | undefined, digits = 2) =>
   value === null || value === undefined ? '—' : value.toFixed(digits)
@@ -334,6 +336,8 @@ export default function PieceRateCalculatorPage() {
         switch (sortKey) {
           case 'name': return row.workerName.toLowerCase()
           case 'kg': return row.kg
+          case 'industrialKg': return row.industrialKg
+          case 'dessertKg': return row.dessertKg
           case 'hours': return row.effectiveHours
           case 'kgPerHour': return row.kgPerHour === null ? -1 : row.kgPerHour
           case 'earnings': return row.earnings === null ? -1 : row.earnings
@@ -1069,8 +1073,13 @@ export default function PieceRateCalculatorPage() {
                   <tr>
                     <th className="p-2 w-10 text-center">Wz.</th>
                     <Th onClick={() => toggleSort('name')}>Pracownik <SortIcon column="name" /></Th>
-                    <Th onClick={() => toggleSort('kg')} right>kg <SortIcon column="kg" /></Th>
-                    <th className="p-2 text-right">w tym przem.</th>
+                    <Th onClick={() => toggleSort('kg')} right>razem kg <SortIcon column="kg" /></Th>
+                    <Th onClick={() => toggleSort('dessertKg')} right>
+                      deser <SortIcon column="dessertKg" />
+                    </Th>
+                    <Th onClick={() => toggleSort('industrialKg')} right>
+                      przemysł <SortIcon column="industrialKg" />
+                    </Th>
                     <Th onClick={() => toggleSort('hours')} right>Czas pracy <SortIcon column="hours" /></Th>
                     <Th onClick={() => toggleSort('kgPerHour')} right>kg/h <SortIcon column="kgPerHour" /></Th>
                     <Th onClick={() => toggleSort('earnings')} right>Zarobek <SortIcon column="earnings" /></Th>
@@ -1098,7 +1107,10 @@ export default function PieceRateCalculatorPage() {
                           )}
                         </td>
                         <td className="p-2 text-right tabular-nums">{num(row.kg, 1)}</td>
-                        <td className="p-2 text-right tabular-nums text-gray-500">
+                        <td className="p-2 text-right tabular-nums text-gray-600">
+                          {num(row.dessertKg, 1)}
+                        </td>
+                        <td className="p-2 text-right tabular-nums text-gray-600">
                           {row.industrialKg > 0 ? num(row.industrialKg, 1) : '—'}
                         </td>
                         <td className="p-2 text-right tabular-nums text-gray-600">

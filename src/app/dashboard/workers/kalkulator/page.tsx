@@ -141,7 +141,6 @@ export default function PieceRateCalculatorPage() {
   const [breakMinutes, setBreakMinutes] = useState(0)
   const [coarseRounding, setCoarseRounding] = useState(true)
   const [bandTolerance, setBandTolerance] = useState(DEFAULT_BAND_TOLERANCE * 100)
-  const [onlyHarvestWorkers, setOnlyHarvestWorkers] = useState(true)
   const [hoursStrategy, setHoursStrategy] = useState<'max' | 'sum'>('max')
   const [manualRefs, setManualRefs] = useState<Set<string>>(new Set())
   const [note, setNote] = useState('')
@@ -157,7 +156,7 @@ export default function PieceRateCalculatorPage() {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const response = await fetch('/api/piece-rate/sessions')
+      const response = await fetch('/api/piece-rate/sessions', { cache: 'no-store' })
       if (!response.ok) return
       const data = await response.json()
       setSessions(data.sessions || [])
@@ -227,9 +226,12 @@ export default function PieceRateCalculatorPage() {
   const activeDay = days.length > 0 ? days[Math.min(dayIndex, days.length - 1)] : null
   const rows = useMemo(() => (activeDay ? activeDay.rows : []), [activeDay])
 
+  // Do wyceny wchodzą wyłącznie zbieracze. Pakowaczki, kontrola jakości
+  // i prace ogólne mają 0 kg i własne rozliczenie — nie mają czego wnieść
+  // do stawki za kilogram.
   const eligibleRows = useMemo(
-    () => (onlyHarvestWorkers ? rows.filter((row) => row.isHarvestWorker) : rows),
-    [rows, onlyHarvestWorkers]
+    () => rows.filter((row) => row.isHarvestWorker),
+    [rows]
   )
 
   const { keptRows, cutRows } = useMemo(() => {
@@ -289,7 +291,7 @@ export default function PieceRateCalculatorPage() {
    */
   const dailySeries = useMemo(() => {
     return days.map((day) => {
-      const eligible = onlyHarvestWorkers ? day.rows.filter((r) => r.isHarvestWorker) : day.rows
+      const eligible = day.rows.filter((r) => r.isHarvestWorker)
       const kept = parsedCutoff === null
         ? eligible
         : eligible.filter((r) => {
@@ -326,7 +328,7 @@ export default function PieceRateCalculatorPage() {
         cost: dayResult.totalCost,
       }
     })
-  }, [days, onlyHarvestWorkers, parsedCutoff, breakHours, targetHourly, medianCount,
+  }, [days, parsedCutoff, breakHours, targetHourly, medianCount,
       coarseRounding, parsedIndustrialRate])
 
   /** Udział przemysłu w całym dniu — punkt odniesienia dla kolumny procentowej. */
@@ -445,7 +447,7 @@ export default function PieceRateCalculatorPage() {
     setSavedMessage(null)
 
     try {
-      const response = await fetch(`/api/piece-rate/sessions/${id}`)
+      const response = await fetch(`/api/piece-rate/sessions/${id}`, { cache: 'no-store' })
       const data = await response.json()
       if (!response.ok) {
         setError(data.error || 'Nie udało się wczytać sesji')
@@ -587,8 +589,11 @@ export default function PieceRateCalculatorPage() {
         <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-sm">
           <Pencil className="w-4 h-4 shrink-0" />
           <span className="flex-1">
-            Edytujesz zapisaną sesję z <strong>{fmtDate(harvestDate)}</strong> —
-            zmiany parametrów nadpiszą ją po kliknięciu „Zapisz zmiany".
+            Edytujesz zapisaną sesję z <strong>{fmtDate(harvestDate)}</strong> —{' '}
+            {/* Liczby wprost w banerze: od razu widać, czy wczytała się ta sesja,
+                o którą chodziło, bez porównywania tabel. */}
+            <strong>{result.rows.length} os., {num(result.totalKg, 1)} kg</strong>.
+            Zmiany parametrów nadpiszą ją po kliknięciu „Zapisz zmiany".
           </span>
           <Button variant="outline" size="sm" onClick={exitEditing}>Zakończ edycję</Button>
         </div>
@@ -774,11 +779,10 @@ export default function PieceRateCalculatorPage() {
                       onChange={(e) => setCoarseRounding(e.target.checked)} />
                     Zaokrąglaj wyliczoną stawkę do 0,05 zł
                   </label>
-                  <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
-                    <input type="checkbox" checked={onlyHarvestWorkers}
-                      onChange={(e) => setOnlyHarvestWorkers(e.target.checked)} />
-                    Tylko zbierający{nonHarvestCount > 0 && ` (ukryj ${nonHarvestCount})`}
-                  </label>
+                  <span className="text-xs text-gray-500">
+                    Liczeni tylko zbieracze
+                    {nonHarvestCount > 0 && ` — pominięto ${nonHarvestCount} os. na innych stanowiskach`}
+                  </span>
                   <span className="text-xs text-gray-500">
                     Wydajność wzorca: <strong>{num(result.avgKgPerHour)} kg/h</strong> z {result.referenceRows.length} os.
                     {' · '}Zebrano <strong>{num(result.totalKg, 1)} kg</strong> w {num(result.totalHours, 1)} h
@@ -911,7 +915,7 @@ export default function PieceRateCalculatorPage() {
 
             <p className="text-[11px] text-gray-400 mt-2">
               Liczone z {result.rows.length} os.
-              {onlyHarvestWorkers && nonHarvestCount > 0 && ` (bez ${nonHarvestCount} os. na innych stanowiskach)`}
+              {nonHarvestCount > 0 && ` (bez ${nonHarvestCount} os. na innych stanowiskach)`}
               {cutRows.length > 0 && `, po odcięciu ${cutRows.length} os.`}
               {result.industrialRate === null && ' · przemysł nie jest wydzielany — wpisz jego stawkę'}
             </p>

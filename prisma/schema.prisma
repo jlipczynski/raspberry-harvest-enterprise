@@ -592,7 +592,9 @@ model PieceRateSession {
   industrialRate  Float? // stała stawka zł/kg za przemysł (null = nie wydzielany)
   cutoffKgPerHour Float? // odcięcie najsłabszych poniżej tej wydajności
   blocks          Json? // rozbicie zbioru na obszary — snapshot z raportu
-  updatedAt       DateTime      @updatedAt
+  // @default(now()) jest konieczne: bez niego ALTER TABLE dokłada kolumnę
+  // NOT NULL bez wartości i Postgres odrzuca zmianę na tabeli z wierszami.
+  updatedAt       DateTime      @default(now()) @updatedAt
   computedRate    Float // wynikowa stawka zł/kg
   note            String?
   createdAt       DateTime      @default(now())

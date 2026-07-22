@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requirePieceRateContext, PieceRateAccessError } from '@/lib/piece-rate-access'
-import { sessionSchema, buildSessionData } from '../route'
+import { sessionSchema, buildSessionData } from '@/lib/piece-rate-session'
 
 export const dynamic = 'force-dynamic'
 

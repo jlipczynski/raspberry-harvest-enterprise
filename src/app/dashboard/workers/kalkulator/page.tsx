@@ -90,7 +90,7 @@ interface SessionSummary {
 }
 
 type SortKey =
-  | 'name' | 'kg' | 'industrialKg' | 'dessertKg' | 'hours'
+  | 'name' | 'kg' | 'industrialKg' | 'dessertKg' | 'industrialShare' | 'hours'
   | 'kgPerHour' | 'earnings' | 'effectiveHourly'
 
 const num = (value: number | null | undefined, digits = 2) =>
@@ -329,6 +329,9 @@ export default function PieceRateCalculatorPage() {
   }, [days, onlyHarvestWorkers, parsedCutoff, breakHours, targetHourly, medianCount,
       coarseRounding, parsedIndustrialRate])
 
+  /** Udział przemysłu w całym dniu — punkt odniesienia dla kolumny procentowej. */
+  const dayIndustrialShare = result.totalKg > 0 ? result.totalIndustrialKg / result.totalKg : 0
+
   const sortedRows = useMemo(() => {
     const copy = [...result.rows]
     copy.sort((a, b) => {
@@ -338,6 +341,7 @@ export default function PieceRateCalculatorPage() {
           case 'kg': return row.kg
           case 'industrialKg': return row.industrialKg
           case 'dessertKg': return row.dessertKg
+          case 'industrialShare': return row.kg > 0 ? row.industrialKg / row.kg : -1
           case 'hours': return row.effectiveHours
           case 'kgPerHour': return row.kgPerHour === null ? -1 : row.kgPerHour
           case 'earnings': return row.earnings === null ? -1 : row.earnings
@@ -1080,6 +1084,9 @@ export default function PieceRateCalculatorPage() {
                     <Th onClick={() => toggleSort('industrialKg')} right>
                       przemysł <SortIcon column="industrialKg" />
                     </Th>
+                    <Th onClick={() => toggleSort('industrialShare')} right>
+                      % przem. <SortIcon column="industrialShare" />
+                    </Th>
                     <Th onClick={() => toggleSort('hours')} right>Czas pracy <SortIcon column="hours" /></Th>
                     <Th onClick={() => toggleSort('kgPerHour')} right>kg/h <SortIcon column="kgPerHour" /></Th>
                     <Th onClick={() => toggleSort('earnings')} right>Zarobek <SortIcon column="earnings" /></Th>
@@ -1112,6 +1119,29 @@ export default function PieceRateCalculatorPage() {
                         </td>
                         <td className="p-2 text-right tabular-nums text-gray-600">
                           {row.industrialKg > 0 ? num(row.industrialKg, 1) : '—'}
+                        </td>
+                        <td className="p-2 text-right tabular-nums">
+                          {row.kg > 0 ? (
+                            <span
+                              // Powyżej średniej dnia na pomarańczowo — próg jest
+                              // liczony z danych, nie wpisany na sztywno.
+                              className={
+                                row.industrialKg / row.kg > dayIndustrialShare
+                                  ? 'font-semibold'
+                                  : 'text-gray-500'
+                              }
+                              style={
+                                row.industrialKg / row.kg > dayIndustrialShare
+                                  ? { color: SERIES_INDUSTRIAL }
+                                  : undefined
+                              }
+                              title={`średnia dnia: ${(dayIndustrialShare * 100).toFixed(1)}%`}
+                            >
+                              {((row.industrialKg / row.kg) * 100).toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
                         </td>
                         <td className="p-2 text-right tabular-nums text-gray-600">
                           <span className="font-medium">{fmtDuration(row.effectiveHours)}</span>

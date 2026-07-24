@@ -15,18 +15,22 @@ const data: LabelData = {
 afterEach(cleanup)
 
 describe('LabelSheet', () => {
-  it('renderuje bez błędu i pokazuje dwie etykiety', () => {
-    const { container, getAllByText } = render(<LabelSheet data={data} />)
-    // dwie kopie nagłówka = dwie etykiety
-    expect(getAllByText('ETYKIETA PALETOWA')).toHaveLength(2)
-    expect(getAllByText('MALINY')).toHaveLength(2)
+  it('renderuje dwie etykiety z linią cięcia', () => {
+    const { container } = render(<LabelSheet data={data} />)
+    expect(container.querySelectorAll('.lbl')).toHaveLength(2)
     expect(container.querySelector('.lbl-cut')).not.toBeNull()
   })
 
   it('drukuje polskie znaki poprawnie (Lipczyński)', () => {
     const { getAllByText } = render(<LabelSheet data={data} />)
-    // ń, ł, ó muszą się pojawić dosłownie
     expect(getAllByText(/Gospodarstwo Rolne Jan Lipczyński/).length).toBeGreaterThan(0)
+  })
+
+  it('jest dwujęzyczna — angielskie podpisy pod polskimi', () => {
+    const { getAllByText } = render(<LabelSheet data={data} />)
+    expect(getAllByText('Recipient / customer').length).toBe(2)
+    expect(getAllByText('Batch number').length).toBe(2)
+    expect(getAllByText('Total net weight [kg]').length).toBe(2)
   })
 
   it('liczy masę łączną z kartonów i konfekcji', () => {

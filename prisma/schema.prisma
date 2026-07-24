@@ -627,3 +627,27 @@ model PieceRateRow {
   @@index([sessionId])
   @@map("piece_rate_rows")
 }
+
+// ==================== WYSYŁKI ====================
+model ShippingRecipient {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([tenantId])
+  @@map("shipping_recipients")
+}
+
+model PackagingFormat {
+  id             String   @id @default(cuid())
+  tenantId       String
+  unitsPerCarton Int // ile opakowań w kartonie zbiorczym
+  gramsPerUnit   Int // gramatura jednego opakowania
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId])
+  @@map("packaging_formats")
+}

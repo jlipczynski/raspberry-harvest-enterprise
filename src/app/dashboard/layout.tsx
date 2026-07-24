@@ -20,7 +20,8 @@ import {
   LogOut,
   Shield,
   Target,
-  Calculator
+  Calculator,
+  Truck
 } from 'lucide-react'
 
 // Podpozycje renderowane pod danym wpisem menu
@@ -39,6 +40,7 @@ const menuItems = [
   { title: 'Pogoda & GDH', href: '/dashboard/weather', icon: Cloud },
   { title: 'Krzywe zbiorów', href: '/dashboard/templates', icon: Database },
   { title: 'Pracownicy', href: '/dashboard/workers', icon: Users },
+  { title: 'Wysyłki', href: '/dashboard/wysylki', icon: Truck },
   { title: 'Raporty', href: '/dashboard/reports', icon: BarChart3 },
   { title: 'Ustawienia', href: '/dashboard/settings', icon: Settings },
 ]

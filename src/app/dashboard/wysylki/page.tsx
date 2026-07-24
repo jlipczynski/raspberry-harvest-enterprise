@@ -5,14 +5,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Truck, Printer, Plus, Trash2, Save, X, Loader2 } from 'lucide-react'
+import {
+  Truck, Printer, Plus, Trash2, Save, X, Loader2, Pencil, Check,
+  ChevronDown, ChevronUp,
+} from 'lucide-react'
 import LabelSheet, { type LabelData } from './label-sheet'
 import {
-  DEFAULT_PACKAGING,
   totalNetKg,
   formatKg,
   formatBatchNumber,
   packagingLabelWithWeight,
+  cartonWeightKg,
   type Packaging,
 } from '@/lib/shipping'
 
@@ -27,7 +30,7 @@ interface Recipient {
   address: string | null
 }
 
-interface CustomFormat {
+interface Format {
   id: string
   unitsPerCarton: number
   gramsPerUnit: number
@@ -40,18 +43,23 @@ export default function WysylkiPage() {
   const [prepDate, setPrepDate] = useState(today)
   const [recipient, setRecipient] = useState('')
   const [cartons, setCartons] = useState('')
-  const [packagingId, setPackagingId] = useState(DEFAULT_PACKAGING[0].id)
+  const [packagingId, setPackagingId] = useState('')
   const [batchNumber, setBatchNumber] = useState(formatBatchNumber(today))
   const [batchEdited, setBatchEdited] = useState(false)
   const [palletNumber, setPalletNumber] = useState('')
 
   const [recipients, setRecipients] = useState<Recipient[]>([])
-  const [customFormats, setCustomFormats] = useState<CustomFormat[]>([])
+  const [formats, setFormats] = useState<Format[]>([])
   const [savingRecipient, setSavingRecipient] = useState(false)
+  const [showPreview, setShowPreview] = useState(true)
 
+  // dodawanie / edycja konfekcji
   const [showAddFormat, setShowAddFormat] = useState(false)
   const [newUnits, setNewUnits] = useState('')
   const [newGrams, setNewGrams] = useState('')
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editUnits, setEditUnits] = useState('')
+  const [editGrams, setEditGrams] = useState('')
 
   // ==================== DANE Z API ====================
   const fetchRecipients = useCallback(async () => {
@@ -64,8 +72,12 @@ export default function WysylkiPage() {
   const fetchFormats = useCallback(async () => {
     try {
       const res = await fetch('/api/shipping/packaging', { cache: 'no-store' })
-      if (res.ok) setCustomFormats((await res.json()).formats || [])
-    } catch { /* własne konfekcje są opcjonalne */ }
+      if (res.ok) {
+        const list: Format[] = (await res.json()).formats || []
+        setFormats(list)
+        setPackagingId((prev) => (list.some((f) => f.id === prev) ? prev : list[0]?.id ?? ''))
+      }
+    } catch { /* konfekcje dogramy po odświeżeniu */ }
   }, [])
 
   useEffect(() => { fetchRecipients(); fetchFormats() }, [fetchRecipients, fetchFormats])
@@ -75,19 +87,7 @@ export default function WysylkiPage() {
     if (!batchEdited) setBatchNumber(formatBatchNumber(harvestDate))
   }, [harvestDate, batchEdited])
 
-  // Presety + własne konfekcje, bez duplikatów.
-  const allPackaging: Packaging[] = useMemo(() => {
-    const custom = customFormats.map((f) => ({
-      id: f.id,
-      unitsPerCarton: f.unitsPerCarton,
-      gramsPerUnit: f.gramsPerUnit,
-    }))
-    const seen = new Set(DEFAULT_PACKAGING.map((p) => `${p.unitsPerCarton}x${p.gramsPerUnit}`))
-    const extra = custom.filter((p) => !seen.has(`${p.unitsPerCarton}x${p.gramsPerUnit}`))
-    return [...DEFAULT_PACKAGING, ...extra]
-  }, [customFormats])
-
-  const packaging = allPackaging.find((p) => p.id === packagingId) ?? null
+  const packaging: Packaging | null = formats.find((f) => f.id === packagingId) ?? null
   const cartonsNum = cartons.trim() === '' ? null : parseInt(cartons, 10)
   const mass = totalNetKg(cartonsNum ?? 0, packaging)
 
@@ -101,7 +101,9 @@ export default function WysylkiPage() {
     palletNumber,
   }
 
-  // ==================== AKCJE ====================
+  // ==================== ODBIORCY ====================
+  const savedNames = new Set(recipients.map((r) => r.name))
+
   const saveRecipient = async () => {
     const name = recipient.trim()
     if (!name) return
@@ -123,6 +125,7 @@ export default function WysylkiPage() {
     if (res.ok) fetchRecipients()
   }
 
+  // ==================== KONFEKCJA ====================
   const addFormat = async () => {
     const units = parseInt(newUnits, 10)
     const grams = parseInt(newGrams, 10)
@@ -142,16 +145,32 @@ export default function WysylkiPage() {
     }
   }
 
-  const deleteFormat = async (id: string) => {
-    const res = await fetch(`/api/shipping/packaging/${id}`, { method: 'DELETE' })
+  const startEdit = (f: Format) => {
+    setEditId(f.id)
+    setEditUnits(String(f.unitsPerCarton))
+    setEditGrams(String(f.gramsPerUnit))
+  }
+
+  const saveEdit = async () => {
+    if (!editId) return
+    const units = parseInt(editUnits, 10)
+    const grams = parseInt(editGrams, 10)
+    if (!(units > 0) || !(grams > 0)) return
+    const res = await fetch(`/api/shipping/packaging/${editId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unitsPerCarton: units, gramsPerUnit: grams }),
+    })
     if (res.ok) {
-      if (packagingId === id) setPackagingId(DEFAULT_PACKAGING[0].id)
+      setEditId(null)
       fetchFormats()
     }
   }
 
-  const savedIds = new Set(recipients.map((r) => r.name))
-  const isPreset = (id: string) => id.startsWith('preset-')
+  const deleteFormat = async (id: string) => {
+    const res = await fetch(`/api/shipping/packaging/${id}`, { method: 'DELETE' })
+    if (res.ok) fetchFormats()
+  }
 
   return (
     <div className="space-y-4">
@@ -161,119 +180,143 @@ export default function WysylkiPage() {
           Wysyłki — etykiety paletowe
         </h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Wypełnij dane, sprawdź podgląd i wydrukuj lub zapisz jako PDF — dwie etykiety na stronie.
+          Wypełnij dane, w razie potrzeby sprawdź podgląd i wydrukuj lub zapisz jako PDF — dwie etykiety na stronie.
         </p>
       </div>
 
-      {/* Flex zamiast grid: formularz ma stałą szerokość i NIE może się
-          ścisnąć (shrink-0), podgląd bierze resztę i scrolluje. Wcześniej
-          kolumna 'auto' podglądu (etykieta 190 mm) zjadała szerokość i
-          formularz zapadał się do kilkudziesięciu pikseli. */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        {/* ===== FORMULARZ ===== */}
-        <Card className="no-print w-full lg:w-[400px] lg:shrink-0">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Dane etykiety</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="harvestDate" className="text-xs">Data zbioru</Label>
-                <Input id="harvestDate" type="date" value={harvestDate} className="mt-1"
-                  onChange={(e) => setHarvestDate(e.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="prepDate" className="text-xs">Data przygotowania (wydania)</Label>
-                <Input id="prepDate" type="date" value={prepDate} className="mt-1"
-                  onChange={(e) => setPrepDate(e.target.value)} />
-              </div>
-            </div>
-
-            {/* Odbiorca */}
+      {/* ===== FORMULARZ ===== */}
+      <Card className="no-print max-w-3xl">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Dane etykiety</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <Label htmlFor="recipient" className="text-xs">Odbiorca / klient</Label>
+              <Label htmlFor="harvestDate" className="text-xs">Data zbioru</Label>
+              <Input id="harvestDate" type="date" value={harvestDate} className="mt-1"
+                onChange={(e) => setHarvestDate(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="prepDate" className="text-xs">Data przygotowania / wydania</Label>
+              <Input id="prepDate" type="date" value={prepDate} className="mt-1"
+                onChange={(e) => setPrepDate(e.target.value)} />
+            </div>
+          </div>
+
+          {/* Odbiorca */}
+          <div>
+            <Label htmlFor="recipient" className="text-xs">Odbiorca / klient</Label>
+            <div className="flex gap-2 mt-1">
+              <Input id="recipient" list="recipients-list" value={recipient}
+                placeholder="wpisz lub wybierz z zapisanych"
+                onChange={(e) => setRecipient(e.target.value)} />
+              <datalist id="recipients-list">
+                {recipients.map((r) => <option key={r.id} value={r.name} />)}
+              </datalist>
+              <Button variant="outline" size="sm" onClick={saveRecipient}
+                disabled={savingRecipient || !recipient.trim() || savedNames.has(recipient.trim())}
+                title="Zapisz odbiorcę do listy">
+                {savingRecipient ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              </Button>
+            </div>
+            {recipients.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {recipients.map((r) => (
+                  <span key={r.id}
+                    className={`inline-flex items-center gap-1 pl-2.5 pr-1 py-0.5 rounded-full text-xs border cursor-pointer ${
+                      recipient === r.name ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-700 hover:border-green-400'
+                    }`}
+                    onClick={() => setRecipient(r.name)}>
+                    {r.name}
+                    <button onClick={(e) => { e.stopPropagation(); deleteRecipient(r.id) }}
+                      className="opacity-60 hover:opacity-100" title="Usuń odbiorcę">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="cartons" className="text-xs">Liczba kartonów zbiorczych</Label>
+              <Input id="cartons" type="number" min={0} value={cartons} className="mt-1"
+                placeholder="np. 100"
+                onChange={(e) => setCartons(e.target.value)} />
+            </div>
+            <div>
+              <Label htmlFor="batch" className="text-xs">Numer partii</Label>
               <div className="flex gap-2 mt-1">
-                <Input id="recipient" list="recipients-list" value={recipient}
-                  placeholder="wpisz lub wybierz z zapisanych"
-                  onChange={(e) => setRecipient(e.target.value)} />
-                <datalist id="recipients-list">
-                  {recipients.map((r) => <option key={r.id} value={r.name} />)}
-                </datalist>
-                <Button variant="outline" size="sm" onClick={saveRecipient}
-                  disabled={savingRecipient || !recipient.trim() || savedIds.has(recipient.trim())}
-                  title="Zapisz odbiorcę do listy">
-                  {savingRecipient ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                </Button>
-              </div>
-              {recipients.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {recipients.map((r) => (
-                    <span key={r.id}
-                      className={`inline-flex items-center gap-1 pl-2.5 pr-1 py-0.5 rounded-full text-xs border cursor-pointer ${
-                        recipient === r.name ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-700 hover:border-green-400'
-                      }`}
-                      onClick={() => setRecipient(r.name)}>
-                      {r.name}
-                      <button onClick={(e) => { e.stopPropagation(); deleteRecipient(r.id) }}
-                        className="opacity-60 hover:opacity-100" title="Usuń odbiorcę">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="cartons" className="text-xs">Liczba kartonów zbiorczych</Label>
-                <Input id="cartons" type="number" min={0} value={cartons} className="mt-1"
-                  placeholder="np. 100"
-                  onChange={(e) => setCartons(e.target.value)} />
-              </div>
-              <div>
-                <Label htmlFor="batch" className="text-xs">Numer partii</Label>
-                <div className="flex gap-2 mt-1">
-                  <Input id="batch" value={batchNumber}
-                    onChange={(e) => { setBatchNumber(e.target.value); setBatchEdited(true) }} />
-                  {batchEdited && (
-                    <Button variant="outline" size="sm"
-                      onClick={() => { setBatchEdited(false); setBatchNumber(formatBatchNumber(harvestDate)) }}
-                      title="Wróć do domyślnego DD.MM/JL">
-                      <X className="w-3.5 h-3.5" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Konfekcja */}
-            <div>
-              <div className="flex items-center justify-between">
-                <Label htmlFor="packaging" className="text-xs">Konfekcja</Label>
-                <button onClick={() => setShowAddFormat((v) => !v)}
-                  className="text-xs text-green-700 hover:underline inline-flex items-center gap-1">
-                  <Plus className="w-3 h-3" /> dodaj konfekcję
-                </button>
-              </div>
-              <div className="flex gap-2 mt-1 items-center">
-                <select id="packaging" value={packagingId}
-                  onChange={(e) => setPackagingId(e.target.value)}
-                  className="flex-1 h-9 rounded-md border border-gray-300 bg-white px-2 text-sm">
-                  {allPackaging.map((p) => (
-                    <option key={p.id} value={p.id}>{packagingLabelWithWeight(p)}</option>
-                  ))}
-                </select>
-                {packaging && !isPreset(packaging.id) && (
-                  <Button variant="outline" size="sm" onClick={() => deleteFormat(packaging.id)}
-                    title="Usuń tę własną konfekcję">
-                    <Trash2 className="w-4 h-4" />
+                <Input id="batch" value={batchNumber}
+                  onChange={(e) => { setBatchNumber(e.target.value); setBatchEdited(true) }} />
+                {batchEdited && (
+                  <Button variant="outline" size="sm"
+                    onClick={() => { setBatchEdited(false); setBatchNumber(formatBatchNumber(harvestDate)) }}
+                    title="Wróć do domyślnego DD.MM/JL">
+                    <X className="w-3.5 h-3.5" />
                   </Button>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Konfekcja — zarządzalna lista */}
+          <div>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Konfekcja</Label>
+              <button onClick={() => setShowAddFormat((v) => !v)}
+                className="text-xs text-green-700 hover:underline inline-flex items-center gap-1">
+                <Plus className="w-3 h-3" /> dodaj konfekcję
+              </button>
+            </div>
+
+            <div className="mt-1.5 space-y-1.5">
+              {formats.map((f) => (
+                editId === f.id ? (
+                  <div key={f.id} className="flex items-center gap-2 p-2 rounded-lg border bg-gray-50">
+                    <Input type="number" min={1} value={editUnits} className="w-20 h-8"
+                      onChange={(e) => setEditUnits(e.target.value)} />
+                    <span className="text-gray-400">×</span>
+                    <Input type="number" min={1} value={editGrams} className="w-24 h-8"
+                      onChange={(e) => setEditGrams(e.target.value)} />
+                    <span className="text-xs text-gray-500">g</span>
+                    <div className="flex-1" />
+                    <Button size="sm" onClick={saveEdit} className="h-8 bg-green-600 hover:bg-green-700"
+                      disabled={!(parseInt(editUnits) > 0 && parseInt(editGrams) > 0)}>
+                      <Check className="w-4 h-4" />
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-8" onClick={() => setEditId(null)}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div key={f.id}
+                    className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer ${
+                      packagingId === f.id ? 'border-green-500 bg-green-50' : 'hover:border-green-300'
+                    }`}
+                    onClick={() => setPackagingId(f.id)}>
+                    <input type="radio" checked={packagingId === f.id} readOnly className="pointer-events-none" />
+                    <span className="text-sm">{packagingLabelWithWeight(f)}</span>
+                    <div className="flex-1" />
+                    <button onClick={(e) => { e.stopPropagation(); startEdit(f) }}
+                      className="text-gray-400 hover:text-gray-700" title="Edytuj konfekcję">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); deleteFormat(f.id) }}
+                      className="text-gray-400 hover:text-red-600" title="Usuń konfekcję">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )
+              ))}
+
+              {formats.length === 0 && (
+                <p className="text-xs text-gray-400 py-2">Ładuję konfekcje…</p>
+              )}
 
               {showAddFormat && (
-                <div className="flex flex-wrap items-end gap-2 mt-2 p-2.5 rounded-lg bg-gray-50 border">
+                <div className="flex flex-wrap items-end gap-2 p-2.5 rounded-lg bg-gray-50 border">
                   <div>
                     <Label className="text-[11px]">Opakowań w kartonie</Label>
                     <Input type="number" min={1} value={newUnits} className="mt-0.5 w-28"
@@ -285,46 +328,65 @@ export default function WysylkiPage() {
                     <Input type="number" min={1} value={newGrams} className="mt-0.5 w-28"
                       placeholder="np. 300" onChange={(e) => setNewGrams(e.target.value)} />
                   </div>
-                  <Button size="sm" onClick={addFormat} disabled={!(parseInt(newUnits) > 0 && parseInt(newGrams) > 0)}
-                    className="bg-green-600 hover:bg-green-700">
+                  <Button size="sm" onClick={addFormat} className="bg-green-600 hover:bg-green-700"
+                    disabled={!(parseInt(newUnits) > 0 && parseInt(newGrams) > 0)}>
                     Dodaj
                   </Button>
                 </div>
               )}
             </div>
+            {packaging && (
+              <p className="text-[11px] text-gray-400 mt-1.5">
+                1 karton = {formatKg(cartonWeightKg(packaging))} kg
+              </p>
+            )}
+          </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label className="text-xs">Masa łączna netto</Label>
-                <div className="mt-1 h-9 flex items-center px-3 rounded-md bg-gray-50 border text-sm font-semibold">
-                  {mass != null ? `${formatKg(mass)} kg` : '— podaj kartony i konfekcję'}
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="pallet" className="text-xs">Numer palety (opcjonalnie)</Label>
-                <Input id="pallet" value={palletNumber} className="mt-1"
-                  placeholder="zostaw puste, jeśli wpisujesz ręcznie"
-                  onChange={(e) => setPalletNumber(e.target.value)} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label className="text-xs">Masa łączna netto</Label>
+              <div className="mt-1 h-9 flex items-center px-3 rounded-md bg-gray-50 border text-sm font-semibold">
+                {mass != null ? `${formatKg(mass)} kg` : '— podaj kartony i konfekcję'}
               </div>
             </div>
+            <div>
+              <Label htmlFor="pallet" className="text-xs">Numer palety (opcjonalnie)</Label>
+              <Input id="pallet" value={palletNumber} className="mt-1"
+                placeholder="zostaw puste, jeśli wpisujesz ręcznie"
+                onChange={(e) => setPalletNumber(e.target.value)} />
+            </div>
+          </div>
 
-            <Button onClick={() => window.print()} className="w-full bg-green-600 hover:bg-green-700">
+          <div className="flex gap-2">
+            <Button onClick={() => window.print()} className="flex-1 bg-green-600 hover:bg-green-700">
               <Printer className="w-4 h-4 mr-1.5" />
               Drukuj / zapisz PDF (2 etykiety)
             </Button>
-          </CardContent>
-        </Card>
-
-        {/* ===== PODGLĄD ===== */}
-        <div className="min-w-0 lg:flex-1">
-          <p className="text-xs text-gray-500 mb-2 no-print">Podgląd — tak wyjdzie na wydruku:</p>
-          <div id="pallet-print" className="bg-white shadow-sm border rounded-lg p-4 overflow-x-auto">
-            <LabelSheet data={labelData} />
+            <Button variant="outline" onClick={() => setShowPreview((v) => !v)}>
+              {showPreview ? <ChevronUp className="w-4 h-4 mr-1.5" /> : <ChevronDown className="w-4 h-4 mr-1.5" />}
+              {showPreview ? 'Ukryj podgląd' : 'Pokaż podgląd'}
+            </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ===== PODGLĄD (pod spodem, zwijany) =====
+          #pallet-print jest ZAWSZE w DOM — to cel wydruku. Ukrycie podglądu
+          chowa go tylko na ekranie (screen-hidden), druk wciąż działa. */}
+      <div>
+        {showPreview && (
+          <p className="text-xs text-gray-500 mb-2 no-print">Podgląd — tak wyjdzie na wydruku:</p>
+        )}
+        <div id="pallet-print"
+          className={`bg-white shadow-sm border rounded-lg p-4 overflow-x-auto inline-block max-w-full${showPreview ? '' : ' screen-hidden'}`}>
+          <LabelSheet data={labelData} />
         </div>
       </div>
 
       <style dangerouslySetInnerHTML={{ __html: `
+        @media screen {
+          .screen-hidden { position: absolute; left: -9999px; top: 0; width: 0; height: 0; overflow: hidden; }
+        }
         @media print {
           @page { size: A4 portrait; margin: 10mm; }
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -333,6 +395,7 @@ export default function WysylkiPage() {
           #pallet-print {
             position: fixed; inset: 0; margin: 0; padding: 0;
             border: none; box-shadow: none; border-radius: 0; overflow: visible;
+            display: block;
           }
           .no-print { display: none !important; }
         }

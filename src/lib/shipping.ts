@@ -101,3 +101,45 @@ export function formatLabelDate(date: string): string {
   if (!match) return date
   return `${match[3]}.${match[2]}.${match[1]}`
 }
+
+/** Jedna paleta na liście paletowej. */
+export interface Pallet {
+  palletNumber: string
+  cartons: number | null
+  packaging: Packaging | null
+}
+
+export interface PalletSummary {
+  /** Ile palet ma policzalną masę (kartony + konfekcja) */
+  countedPallets: number
+  /** Wszystkie wiersze palet */
+  totalPallets: number
+  totalCartons: number
+  totalNetKg: number
+}
+
+/**
+ * Podsumowanie listy paletowej. Palety bez kompletu danych (brak kartonów lub
+ * konfekcji) nie wnoszą masy — nie zgadujemy, tylko liczymy to, co pewne.
+ */
+export function summarizePallets(pallets: Pallet[]): PalletSummary {
+  let countedPallets = 0
+  let totalCartons = 0
+  let totalNet = 0
+
+  for (const pallet of pallets) {
+    const mass = totalNetKg(pallet.cartons ?? 0, pallet.packaging)
+    if (mass !== null) {
+      countedPallets += 1
+      totalCartons += pallet.cartons ?? 0
+      totalNet += mass
+    }
+  }
+
+  return {
+    countedPallets,
+    totalPallets: pallets.length,
+    totalCartons,
+    totalNetKg: Math.round(totalNet * 1000) / 1000,
+  }
+}

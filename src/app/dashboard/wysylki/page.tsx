@@ -165,9 +165,13 @@ export default function WysylkiPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+      {/* Flex zamiast grid: formularz ma stałą szerokość i NIE może się
+          ścisnąć (shrink-0), podgląd bierze resztę i scrolluje. Wcześniej
+          kolumna 'auto' podglądu (etykieta 190 mm) zjadała szerokość i
+          formularz zapadał się do kilkudziesięciu pikseli. */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         {/* ===== FORMULARZ ===== */}
-        <Card className="no-print">
+        <Card className="no-print w-full lg:w-[400px] lg:shrink-0">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Dane etykiety</CardTitle>
           </CardHeader>
@@ -312,9 +316,9 @@ export default function WysylkiPage() {
         </Card>
 
         {/* ===== PODGLĄD ===== */}
-        <div>
+        <div className="min-w-0 lg:flex-1">
           <p className="text-xs text-gray-500 mb-2 no-print">Podgląd — tak wyjdzie na wydruku:</p>
-          <div id="pallet-print" className="bg-white shadow-sm border rounded-lg p-4 overflow-auto">
+          <div id="pallet-print" className="bg-white shadow-sm border rounded-lg p-4 overflow-x-auto">
             <LabelSheet data={labelData} />
           </div>
         </div>

@@ -128,12 +128,15 @@ export function summarizePallets(pallets: Pallet[]): PalletSummary {
   let totalNet = 0
 
   for (const pallet of pallets) {
-    const mass = totalNetKg(pallet.cartons ?? 0, pallet.packaging)
-    if (mass !== null) {
-      countedPallets += 1
-      totalCartons += pallet.cartons ?? 0
-      totalNet += mass
-    }
+    const cartons = pallet.cartons
+    if (cartons === null || !Number.isFinite(cartons)) continue
+    const mass = totalNetKg(cartons, pallet.packaging)
+    if (mass === null) continue
+
+    // Dotąd doszliśmy tylko gdy cartons > 0 i konfekcja jest — nic nie zgadujemy.
+    countedPallets += 1
+    totalCartons += cartons
+    totalNet += mass
   }
 
   return {

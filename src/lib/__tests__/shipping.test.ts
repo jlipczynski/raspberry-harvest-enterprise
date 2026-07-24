@@ -7,6 +7,8 @@ import {
   formatBatchNumber,
   formatKg,
   formatLabelDate,
+  summarizePallets,
+  type Pallet,
 } from '@/lib/shipping'
 
 describe('cartonWeightKg', () => {
@@ -118,5 +120,40 @@ describe('formatLabelDate', () => {
 
   it('zwraca wejście bez zmian dla nie-ISO', () => {
     expect(formatLabelDate('cokolwiek')).toBe('cokolwiek')
+  })
+})
+
+describe('summarizePallets', () => {
+  const p10x250 = { id: 'a', unitsPerCarton: 10, gramsPerUnit: 250 }
+  const p12x1250 = { id: 'b', unitsPerCarton: 12, gramsPerUnit: 1250 }
+
+  it('sumuje kartony i masę policzalnych palet', () => {
+    const pallets: Pallet[] = [
+      { palletNumber: '1', cartons: 100, packaging: p10x250 }, // 250 kg
+      { palletNumber: '2', cartons: 40, packaging: p12x1250 }, // 600 kg
+    ]
+    const s = summarizePallets(pallets)
+    expect(s.totalPallets).toBe(2)
+    expect(s.countedPallets).toBe(2)
+    expect(s.totalCartons).toBe(140)
+    expect(s.totalNetKg).toBe(850)
+  })
+
+  it('pomija masy palet bez kompletu danych, ale liczy je do totalPallets', () => {
+    const pallets: Pallet[] = [
+      { palletNumber: '1', cartons: 100, packaging: p10x250 }, // 250 kg
+      { palletNumber: '2', cartons: null, packaging: p10x250 }, // brak kartonów
+      { palletNumber: '3', cartons: 50, packaging: null }, // brak konfekcji
+    ]
+    const s = summarizePallets(pallets)
+    expect(s.totalPallets).toBe(3)
+    expect(s.countedPallets).toBe(1)
+    expect(s.totalCartons).toBe(100)
+    expect(s.totalNetKg).toBe(250)
+  })
+
+  it('pusta lista → zera', () => {
+    const s = summarizePallets([])
+    expect(s).toEqual({ countedPallets: 0, totalPallets: 0, totalCartons: 0, totalNetKg: 0 })
   })
 })

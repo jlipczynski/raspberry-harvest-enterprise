@@ -58,14 +58,6 @@ function OneLabel({ data }: { data: LabelData }) {
         <Field label="Masa łączna netto [kg]" value={mass != null ? formatKg(mass) : ''} />
       </div>
 
-      <div className="lbl-producer">
-        <div className="lbl-field-label lbl-producer-label">Dane producenta</div>
-        <div className="lbl-producer-name">{PRODUCER.name}&nbsp;&nbsp;|&nbsp;&nbsp;{PRODUCER.address}</div>
-        <div className="lbl-producer-ids">
-          NIP: {PRODUCER.nip}&nbsp;&nbsp;|&nbsp;&nbsp;REGON: {PRODUCER.regon}&nbsp;&nbsp;|&nbsp;&nbsp;GGN: {PRODUCER.ggn}
-        </div>
-      </div>
-
       <div className="lbl-row">
         <Field label="Data zbioru" value={data.harvestDate ? formatLabelDate(data.harvestDate) : ''} />
         <Field label="Data przygotowania" value={data.prepDate ? formatLabelDate(data.prepDate) : ''} />
@@ -74,6 +66,15 @@ function OneLabel({ data }: { data: LabelData }) {
       <div className="lbl-row">
         <Field label="Numer palety" value={data.palletNumber} muted />
         <div className="lbl-field lbl-field-blank" />
+      </div>
+
+      {/* Dane producenta na samym dole etykiety */}
+      <div className="lbl-producer">
+        <div className="lbl-field-label lbl-producer-label">Dane producenta</div>
+        <div className="lbl-producer-name">{PRODUCER.name}&nbsp;&nbsp;|&nbsp;&nbsp;{PRODUCER.address}</div>
+        <div className="lbl-producer-ids">
+          NIP: {PRODUCER.nip}&nbsp;&nbsp;|&nbsp;&nbsp;REGON: {PRODUCER.regon}&nbsp;&nbsp;|&nbsp;&nbsp;GGN: {PRODUCER.ggn}
+        </div>
       </div>
     </div>
   )
@@ -143,7 +144,7 @@ export default function LabelSheet({ data }: { data: LabelData }) {
           background: #111;
           color: #fff;
           padding: 2.5mm 3mm;
-          margin-bottom: 3mm;
+          margin-bottom: 0;
         }
         .lbl-producer-label { color: #bbb; }
         .lbl-producer-name { font-size: 10pt; font-weight: 700; margin-top: 1mm; }

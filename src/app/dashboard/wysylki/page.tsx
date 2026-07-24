@@ -190,14 +190,16 @@ export default function WysylkiPage() {
           <CardTitle className="text-base">Dane etykiety</CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div className="grid gap-4 sm:grid-cols-2">
+          {/* items-end wyrównuje inputy do dołu komórki — nawet gdy jedna
+              etykieta zawinie się do dwóch linii, pola zostają równo. */}
+          <div className="grid gap-4 sm:grid-cols-2 sm:items-end">
             <div>
-              <Label htmlFor="harvestDate" className="text-xs">Data zbioru</Label>
+              <Label htmlFor="harvestDate" className="text-xs whitespace-nowrap">Data zbioru</Label>
               <Input id="harvestDate" type="date" value={harvestDate} className="mt-1"
                 onChange={(e) => setHarvestDate(e.target.value)} />
             </div>
             <div>
-              <Label htmlFor="prepDate" className="text-xs">Data przygotowania / wydania</Label>
+              <Label htmlFor="prepDate" className="text-xs whitespace-nowrap">Data przygotowania</Label>
               <Input id="prepDate" type="date" value={prepDate} className="mt-1"
                 onChange={(e) => setPrepDate(e.target.value)} />
             </div>
@@ -238,7 +240,7 @@ export default function WysylkiPage() {
             )}
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 sm:items-end">
             <div>
               <Label htmlFor="cartons" className="text-xs">Liczba kartonów zbiorczych</Label>
               <Input id="cartons" type="number" min={0} value={cartons} className="mt-1"
@@ -342,7 +344,7 @@ export default function WysylkiPage() {
             )}
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 sm:items-end">
             <div>
               <Label className="text-xs">Masa łączna netto</Label>
               <div className="mt-1 h-9 flex items-center px-3 rounded-md bg-gray-50 border text-sm font-semibold">

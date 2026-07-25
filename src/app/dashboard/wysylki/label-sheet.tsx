@@ -50,30 +50,33 @@ function OneLabel({ data }: { data: LabelData }) {
         <span className="lbl-header-main">MALINY <span className="lbl-header-en">/ RASPBERRIES</span></span>
       </div>
 
-      <Field pl="Odbiorca / klient" en="Recipient / customer" value={data.recipient} />
+      {/* Środek rozkłada pola na całą wysokość między nagłówkiem a producentem */}
+      <div className="lbl-body">
+        <Field pl="Odbiorca / klient" en="Recipient / customer" value={data.recipient} />
 
-      <div className="lbl-row">
-        <Field pl="Liczba kartonów zbiorczych" en="No. of master cartons"
-          value={data.cartons != null ? String(data.cartons) : ''} />
-        <Field pl="Numer partii" en="Batch number" value={data.batchNumber} />
-      </div>
+        <div className="lbl-row">
+          <Field pl="Liczba kartonów zbiorczych" en="No. of master cartons"
+            value={data.cartons != null ? String(data.cartons) : ''} />
+          <Field pl="Numer partii" en="Batch number" value={data.batchNumber} />
+        </div>
 
-      <div className="lbl-row">
-        <Field pl="Konfekcja" en="Packaging" value={data.packaging ? packagingLabel(data.packaging) : ''} />
-        <Field pl="Masa łączna netto [kg]" en="Total net weight [kg]"
-          value={mass != null ? formatKg(mass) : ''} />
-      </div>
+        <div className="lbl-row">
+          <Field pl="Konfekcja" en="Packaging" value={data.packaging ? packagingLabel(data.packaging) : ''} />
+          <Field pl="Masa łączna netto [kg]" en="Total net weight [kg]"
+            value={mass != null ? formatKg(mass) : ''} />
+        </div>
 
-      <div className="lbl-row">
-        <Field pl="Data zbioru" en="Harvest date"
-          value={data.harvestDate ? formatLabelDate(data.harvestDate) : ''} />
-        <Field pl="Data przygotowania" en="Preparation date"
-          value={data.prepDate ? formatLabelDate(data.prepDate) : ''} />
-      </div>
+        <div className="lbl-row">
+          <Field pl="Data zbioru" en="Harvest date"
+            value={data.harvestDate ? formatLabelDate(data.harvestDate) : ''} />
+          <Field pl="Data przygotowania" en="Preparation date"
+            value={data.prepDate ? formatLabelDate(data.prepDate) : ''} />
+        </div>
 
-      <div className="lbl-row">
-        <Field pl="Numer palety" en="Pallet number" value={data.palletNumber} muted />
-        <div className="lbl-field lbl-field-blank" />
+        <div className="lbl-row">
+          <Field pl="Numer palety" en="Pallet number" value={data.palletNumber} muted />
+          <div className="lbl-field lbl-field-blank" />
+        </div>
       </div>
 
       {/* Dane producenta na samym dole etykiety */}
@@ -106,36 +109,58 @@ export default function LabelSheet({ data }: { data: LabelData }) {
       <style dangerouslySetInnerHTML={{ __html: `
         .lbl-sheet {
           width: 190mm;
+          /* Pełna wysokość pola druku A4 (297 - 2×10 mm margines) minus drobny
+             luz, żeby druk się nie przelał na drugą stronę. */
+          height: 273mm;
+          display: flex;
+          flex-direction: column;
           background: #fff;
           color: #111;
           font-family: Arial, Helvetica, sans-serif;
         }
         .lbl {
-          border: 1.2pt solid #111;
-          padding: 2.5mm;
+          flex: 1 1 0;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          border: 1.4pt solid #111;
+          padding: 3.5mm;
+          overflow: hidden;
         }
         .lbl-header {
+          flex: 0 0 auto;
           background: #111;
           color: #fff;
           text-align: center;
           font-weight: 700;
-          font-size: 12pt;
+          font-size: 14pt;
           letter-spacing: 0.03em;
-          padding: 1.8mm 0;
-          margin: -2.5mm -2.5mm 2mm -2.5mm;
+          padding: 2.6mm 0;
+          margin: -3.5mm -3.5mm 0 -3.5mm;
         }
-        .lbl-header-en { font-size: 7.5pt; font-weight: 400; opacity: 0.75; }
-        .lbl-header-sep { margin: 0 2.5mm; opacity: 0.5; font-weight: 400; }
-        .lbl-row { display: flex; gap: 2.5mm; }
+        .lbl-header-en { font-size: 8.5pt; font-weight: 400; opacity: 0.75; }
+        .lbl-header-sep { margin: 0 3mm; opacity: 0.5; font-weight: 400; }
+        /* Środek wypełnia całą przestrzeń; każdy wiersz pól rośnie równo */
+        .lbl-body {
+          flex: 1 1 auto;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          padding: 3mm 0;
+          gap: 2.5mm;
+        }
+        .lbl-body > * { flex: 1 1 0; min-height: 0; }
+        .lbl-row { display: flex; gap: 3mm; }
         .lbl-row > * { flex: 1; }
         .lbl-field {
-          border: 0.6pt solid #111;
-          padding: 1.2mm 2.5mm 1.5mm;
-          margin-bottom: 2mm;
+          border: 0.7pt solid #111;
+          padding: 2mm 3mm;
+          display: flex;
+          flex-direction: column;
         }
         .lbl-field-blank { border: none; }
         .lbl-field-label {
-          font-size: 7pt;
+          font-size: 8pt;
           text-transform: uppercase;
           letter-spacing: 0.03em;
           color: #333;
@@ -144,7 +169,7 @@ export default function LabelSheet({ data }: { data: LabelData }) {
         }
         .lbl-field-en {
           display: block;
-          font-size: 6pt;
+          font-size: 6.5pt;
           font-weight: 400;
           font-style: italic;
           color: #777;
@@ -152,25 +177,28 @@ export default function LabelSheet({ data }: { data: LabelData }) {
           letter-spacing: 0;
         }
         .lbl-field-value {
-          font-size: 12.5pt;
+          flex: 1;
+          display: flex;
+          align-items: center;
+          font-size: 15pt;
           font-weight: 700;
-          margin-top: 0.8mm;
-          min-height: 5mm;
+          margin-top: 1.2mm;
           word-break: break-word;
           line-height: 1.1;
         }
         .lbl-muted { color: #999; font-weight: 400; }
         .lbl-producer {
+          flex: 0 0 auto;
           background: #111;
           color: #fff;
-          padding: 1.8mm 2.5mm;
-          margin-bottom: 0;
+          padding: 2.4mm 3mm;
         }
         .lbl-producer-label { color: #bbb; }
         .lbl-producer-en { color: #999; }
-        .lbl-producer-name { font-size: 9pt; font-weight: 700; margin-top: 0.6mm; }
-        .lbl-producer-ids { font-size: 7.5pt; margin-top: 0.3mm; color: #ddd; }
+        .lbl-producer-name { font-size: 10pt; font-weight: 700; margin-top: 0.8mm; }
+        .lbl-producer-ids { font-size: 8.5pt; margin-top: 0.4mm; color: #ddd; }
         .lbl-cut {
+          flex: 0 0 auto;
           display: flex;
           align-items: center;
           gap: 2mm;

@@ -674,7 +674,7 @@ export default function PieceRateCalculatorPage() {
 
       {/* ========== PASEK STEROWANIA — stawka na górze ========== */}
       {hasData && (
-        <div className="sticky top-0 lg:top-2 z-30 bg-white rounded-xl border shadow-sm">
+        <div className="bg-white rounded-xl border shadow-sm">
           <div className="p-4 space-y-3">
             {/* Wejścia */}
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 items-start">
@@ -1443,7 +1443,8 @@ function RankingList({ title, tone, workers, startRank, descendingRank }: {
             <th className="p-2 w-8 text-right">#</th>
             <th className="p-2 text-left">Pracownik</th>
             <th className="p-2 text-right">kg/h</th>
-            <th className="p-2 text-right">kg</th>
+            <th className="p-2 text-right">kg/dzień</th>
+            <th className="p-2 text-right">kg razem</th>
             <th className="p-2 text-right">dni</th>
           </tr>
         </thead>
@@ -1459,6 +1460,9 @@ function RankingList({ title, tone, workers, startRank, descendingRank }: {
               </td>
               <td className={`p-2 text-right tabular-nums font-semibold ${accent}`}>
                 {w.avgKgPerHour.toFixed(2)}
+              </td>
+              <td className="p-2 text-right tabular-nums text-gray-700">
+                {w.days > 0 ? (w.totalKg / w.days).toFixed(1) : '—'}
               </td>
               <td className="p-2 text-right tabular-nums text-gray-600">{w.totalKg.toFixed(1)}</td>
               <td className="p-2 text-right tabular-nums text-gray-500">{w.days}</td>

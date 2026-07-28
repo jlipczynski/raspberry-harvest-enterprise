@@ -155,6 +155,8 @@ export default function PieceRateCalculatorPage() {
   const [ranking, setRanking] = useState<WorkerRanking[]>([])
   const [topCount, setTopCount] = useState(10)
   const [minDays, setMinDays] = useState(1)
+  const [rankFrom, setRankFrom] = useState('')
+  const [rankTo, setRankTo] = useState('')
 
   const rowKey = (row: ParsedRow) => row.externalId || row.workerName
 
@@ -171,14 +173,18 @@ export default function PieceRateCalculatorPage() {
 
   const fetchRanking = useCallback(async () => {
     try {
-      const response = await fetch('/api/piece-rate/ranking', { cache: 'no-store' })
+      const params = new URLSearchParams()
+      if (rankFrom) params.set('from', rankFrom)
+      if (rankTo) params.set('to', rankTo)
+      const qs = params.toString()
+      const response = await fetch(`/api/piece-rate/ranking${qs ? `?${qs}` : ''}`, { cache: 'no-store' })
       if (!response.ok) return
       const data = await response.json()
       setRanking(data.ranking || [])
     } catch {
       // Ranking jest dodatkiem — jego brak nie blokuje liczenia stawki.
     }
-  }, [])
+  }, [rankFrom, rankTo])
 
   useEffect(() => { fetchSessions(); fetchRanking() }, [fetchSessions, fetchRanking])
 
@@ -668,7 +674,7 @@ export default function PieceRateCalculatorPage() {
 
       {/* ========== PASEK STEROWANIA — stawka na górze ========== */}
       {hasData && (
-        <div className="sticky top-0 lg:top-2 z-30 bg-white rounded-xl border shadow-sm">
+        <div className="bg-white rounded-xl border shadow-sm">
           <div className="p-4 space-y-3">
             {/* Wejścia */}
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 items-start">
@@ -1283,9 +1289,18 @@ export default function PieceRateCalculatorPage() {
         </CardHeader>
         <CardContent>
           {ranking.length === 0 ? (
-            <p className="text-sm text-gray-500">
-              Brak danych — zapisz przynajmniej jedną wycenę, żeby zobaczyć ranking.
-            </p>
+            (rankFrom || rankTo) ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-sm text-gray-500">Brak zapisanych wycen w wybranym zakresie dat.</p>
+                <Button variant="outline" size="sm" onClick={() => { setRankFrom(''); setRankTo('') }}>
+                  <X className="w-3.5 h-3.5 mr-1" /> cały sezon
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">
+                Brak danych — zapisz przynajmniej jedną wycenę, żeby zobaczyć ranking.
+              </p>
+            )
           ) : (
             <>
               <div className="flex flex-wrap items-end gap-4 mb-4">
@@ -1307,8 +1322,26 @@ export default function PieceRateCalculatorPage() {
                   <Input id="minDays" type="number" min={1} value={minDays} className="mt-1 w-24"
                     onChange={(e) => setMinDays(Math.max(1, parseInt(e.target.value) || 1))} />
                 </div>
+                <div>
+                  <Label htmlFor="rankFrom" className="text-xs">Od (data zbioru)</Label>
+                  <Input id="rankFrom" type="date" value={rankFrom} className="mt-1"
+                    max={rankTo || undefined}
+                    onChange={(e) => setRankFrom(e.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="rankTo" className="text-xs">Do</Label>
+                  <Input id="rankTo" type="date" value={rankTo} className="mt-1"
+                    min={rankFrom || undefined}
+                    onChange={(e) => setRankTo(e.target.value)} />
+                </div>
+                {(rankFrom || rankTo) && (
+                  <Button variant="outline" size="sm" onClick={() => { setRankFrom(''); setRankTo('') }}
+                    title="Pokaż cały sezon">
+                    <X className="w-3.5 h-3.5 mr-1" /> cały sezon
+                  </Button>
+                )}
                 <p className="text-xs text-gray-400">
-                  Wydajność ważona (suma kg / suma godzin) ze wszystkich dni. Tylko zbieracze.
+                  Wydajność ważona (suma kg / suma godzin){rankFrom || rankTo ? ' w wybranym zakresie' : ' ze wszystkich dni'}. Tylko zbieracze.
                 </p>
               </div>
 
@@ -1410,7 +1443,8 @@ function RankingList({ title, tone, workers, startRank, descendingRank }: {
             <th className="p-2 w-8 text-right">#</th>
             <th className="p-2 text-left">Pracownik</th>
             <th className="p-2 text-right">kg/h</th>
-            <th className="p-2 text-right">kg</th>
+            <th className="p-2 text-right">kg/dzień</th>
+            <th className="p-2 text-right">kg razem</th>
             <th className="p-2 text-right">dni</th>
           </tr>
         </thead>
@@ -1426,6 +1460,9 @@ function RankingList({ title, tone, workers, startRank, descendingRank }: {
               </td>
               <td className={`p-2 text-right tabular-nums font-semibold ${accent}`}>
                 {w.avgKgPerHour.toFixed(2)}
+              </td>
+              <td className="p-2 text-right tabular-nums text-gray-700">
+                {w.days > 0 ? (w.totalKg / w.days).toFixed(1) : '—'}
               </td>
               <td className="p-2 text-right tabular-nums text-gray-600">{w.totalKg.toFixed(1)}</td>
               <td className="p-2 text-right tabular-nums text-gray-500">{w.days}</td>

@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import {
   Upload, Calculator, ArrowLeft, Trash2, Save, AlertTriangle, Loader2,
   ChevronUp, ChevronDown, ChevronsUpDown, Coffee, X, Scissors, Factory,
-  ChevronLeft, ChevronRight, MapPin, Pencil, FolderOpen, Copy,
+  ChevronLeft, ChevronRight, MapPin, Pencil, FolderOpen, Copy, Trophy,
 } from 'lucide-react'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -21,6 +21,7 @@ import {
   type PieceRateInputRow,
   type HourlyBand,
 } from '@/lib/piece-rate'
+import { topAndBottom, type WorkerRanking } from '@/lib/piece-rate-ranking'
 
 // Wartości startowe formularza — użytkownik je nadpisuje, nic nie jest
 // zapisywane bez jego decyzji.
@@ -151,6 +152,9 @@ export default function PieceRateCalculatorPage() {
   const [sortKey, setSortKey] = useState<SortKey>('kgPerHour')
   const [sortAsc, setSortAsc] = useState(true)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [ranking, setRanking] = useState<WorkerRanking[]>([])
+  const [topCount, setTopCount] = useState(10)
+  const [minDays, setMinDays] = useState(1)
 
   const rowKey = (row: ParsedRow) => row.externalId || row.workerName
 
@@ -165,7 +169,18 @@ export default function PieceRateCalculatorPage() {
     }
   }, [])
 
-  useEffect(() => { fetchSessions() }, [fetchSessions])
+  const fetchRanking = useCallback(async () => {
+    try {
+      const response = await fetch('/api/piece-rate/ranking', { cache: 'no-store' })
+      if (!response.ok) return
+      const data = await response.json()
+      setRanking(data.ranking || [])
+    } catch {
+      // Ranking jest dodatkiem — jego brak nie blokuje liczenia stawki.
+    }
+  }, [])
+
+  useEffect(() => { fetchSessions(); fetchRanking() }, [fetchSessions, fetchRanking])
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -433,6 +448,7 @@ export default function PieceRateCalculatorPage() {
       setSavedMessage(`Zapisano ${fmtDate(harvestDate)} — ${data.session.computedRate.toFixed(2)} zł/kg`)
       setEditingSessionId(data.session.id)
       fetchSessions()
+      fetchRanking()
     } catch {
       setError('Błąd połączenia przy zapisie')
     } finally {
@@ -532,6 +548,7 @@ export default function PieceRateCalculatorPage() {
         `Zaktualizowano sesję z ${fmtDate(harvestDate)} — ${data.session.computedRate.toFixed(2)} zł/kg`
       )
       fetchSessions()
+      fetchRanking()
     } catch {
       setError('Błąd połączenia przy zapisie zmian')
     } finally {
@@ -548,7 +565,7 @@ export default function PieceRateCalculatorPage() {
     if (!confirm('Usunąć tę sesję? Tej operacji nie da się cofnąć.')) return
     try {
       const response = await fetch(`/api/piece-rate/sessions/${id}`, { method: 'DELETE' })
-      if (response.ok) fetchSessions()
+      if (response.ok) { fetchSessions(); fetchRanking() }
     } catch {
       setError('Nie udało się usunąć sesji')
     }
@@ -1256,6 +1273,63 @@ export default function PieceRateCalculatorPage() {
         </Card>
       )}
 
+      {/* ========== RANKING PRACOWNIKÓW (cały sezon) ========== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Trophy className="w-4 h-4 text-amber-500" />
+            Najlepsi i najsłabsi pracownicy — wszystkie zapisane wyceny
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {ranking.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              Brak danych — zapisz przynajmniej jedną wycenę, żeby zobaczyć ranking.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-end gap-4 mb-4">
+                <div>
+                  <Label className="text-xs">Ilu najlepszych / najsłabszych</Label>
+                  <div className="flex gap-1 mt-1">
+                    {[5, 10, 15].map((n) => (
+                      <button key={n} onClick={() => setTopCount(n)}
+                        className={`px-3 py-1.5 rounded text-xs border ${
+                          topCount === n ? 'bg-green-600 text-white border-green-600' : 'bg-white border-gray-300 text-gray-600'
+                        }`}>
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="minDays" className="text-xs">Min. dni pracy</Label>
+                  <Input id="minDays" type="number" min={1} value={minDays} className="mt-1 w-24"
+                    onChange={(e) => setMinDays(Math.max(1, parseInt(e.target.value) || 1))} />
+                </div>
+                <p className="text-xs text-gray-400">
+                  Wydajność ważona (suma kg / suma godzin) ze wszystkich dni. Tylko zbieracze.
+                </p>
+              </div>
+
+              {(() => {
+                const { top, bottom, eligible } = topAndBottom(ranking, topCount, topCount, minDays)
+                if (eligible === 0) {
+                  return <p className="text-sm text-gray-500">Nikt nie pracował co najmniej {minDays} dni.</p>
+                }
+                return (
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <RankingList title={`Najlepsi (${top.length})`} tone="top" workers={top} startRank={1} />
+                    <RankingList title={`Najsłabsi (${bottom.length})`} tone="bottom" workers={bottom}
+                      startRank={eligible - bottom.length + 1} descendingRank />
+                  </div>
+                )
+              })()}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       {/* ========== HISTORIA ========== */}
       <Card>
         <CardHeader className="pb-3">
@@ -1314,6 +1388,51 @@ export default function PieceRateCalculatorPage() {
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function RankingList({ title, tone, workers, startRank, descendingRank }: {
+  title: string
+  tone: 'top' | 'bottom'
+  workers: WorkerRanking[]
+  startRank: number
+  descendingRank?: boolean
+}) {
+  const accent = tone === 'top' ? 'text-green-700' : 'text-red-600'
+  const head = tone === 'top' ? 'bg-green-50' : 'bg-red-50'
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <div className={`px-3 py-2 text-sm font-semibold ${accent} ${head}`}>{title}</div>
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+          <tr>
+            <th className="p-2 w-8 text-right">#</th>
+            <th className="p-2 text-left">Pracownik</th>
+            <th className="p-2 text-right">kg/h</th>
+            <th className="p-2 text-right">kg</th>
+            <th className="p-2 text-right">dni</th>
+          </tr>
+        </thead>
+        <tbody>
+          {workers.map((w, i) => (
+            <tr key={w.key} className="border-t">
+              <td className="p-2 text-right text-gray-400 tabular-nums">
+                {descendingRank ? startRank + (workers.length - 1 - i) : startRank + i}
+              </td>
+              <td className="p-2">
+                {w.workerName}
+                {w.externalId && <span className="text-gray-400 text-xs ml-1.5">{w.externalId}</span>}
+              </td>
+              <td className={`p-2 text-right tabular-nums font-semibold ${accent}`}>
+                {w.avgKgPerHour.toFixed(2)}
+              </td>
+              <td className="p-2 text-right tabular-nums text-gray-600">{w.totalKg.toFixed(1)}</td>
+              <td className="p-2 text-right tabular-nums text-gray-500">{w.days}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

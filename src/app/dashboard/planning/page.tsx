@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Users, AlertTriangle, BarChart3, Target, Loader2, FileDown, Printer, Calendar, Info, ChevronDown, ChevronUp } from 'lucide-react'
+import StrategyTab from './strategy-tab'
 
 // ==================== TYPES ====================
 interface SectionGdh {
@@ -158,6 +159,7 @@ export default function PlanningPage() {
   const [availableTemplates, setAvailableTemplates] = useState<AvailableTemplate[]>([])
   const [curveDropdownOpen, setCurveDropdownOpen] = useState<string | null>(null)
   const [showCurveAssignment, setShowCurveAssignment] = useState(false)
+  const [subTab, setSubTab] = useState<'plan' | 'strategy'>('plan')
   const [planView, setPlanView] = useState<'weekly' | 'daily'>('weekly')
   const [planSections, setPlanSections] = useState<string>('all')
   const [planDateMode, setPlanDateMode] = useState<'season' | 'range'>('season')
@@ -795,6 +797,30 @@ export default function PlanningPage() {
         </div>
       </div>
 
+      {/* Podzakładki */}
+      <div className="flex items-center gap-1 border-b border-gray-200">
+        {([
+          { id: 'plan' as const, label: 'Plan zbiorów' },
+          { id: 'strategy' as const, label: 'Strategia' },
+        ]).map(t => (
+          <button
+            key={t.id}
+            onClick={() => setSubTab(t.id)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              subTab === t.id
+                ? 'border-indigo-600 text-indigo-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'strategy' && <StrategyTab />}
+
+      {subTab === 'plan' && (
+      <>
       {/* KPI tiles + Bottleneck + Workers — moved to top */}
       {weeklyPlan.weeks.length > 0 && (
         <>
@@ -1628,6 +1654,8 @@ export default function PlanningPage() {
             </div>
           </div>
         </>
+      )}
+      </>
       )}
     </div>
   )

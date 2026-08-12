@@ -149,6 +149,9 @@ model Variety {
   sections      Section[]
   harvestCurves HarvestCurve[]
   templates     ProductionCurveTemplate[] @relation("TemplateVariety")
+
+  plantingCosts VarietyPlantingCost[]
+  plugPlans     ScenarioPlugPlan[]
   createdAt     DateTime                  @default(now())
   updatedAt     DateTime                  @updatedAt
 
@@ -210,6 +213,7 @@ model Section {
   templateAssignments SectionTemplateAssignment[]
   sourceTemplates     ProductionCurveTemplate[]   @relation("TemplateSource")
   harvestSeasons      HarvestSeason[]
+  scenarioItems       PlantingScenarioItem[]
   plantingDate        DateTime?
   autumnShootDate     DateTime?
   harvestCurveSummer  Float[]                     @default([])
@@ -650,4 +654,116 @@ model PackagingFormat {
 
   @@index([tenantId])
   @@map("packaging_formats")
+}
+
+// ==================== STRATEGIA — SCENARIUSZE NASADZEŃ ====================
+
+// Cennik — koszty jednostkowe. Wszystkie wartości pochodzą z bazy, nigdy z kodu.
+model CostItem {
+  id        String  @id @default(cuid())
+  tenantId  String
+  key       String // 'eur_pln' | 'coco_per_pot' | 'lc_transport' | 'tips_price' | ...
+  label     String
+  category  String // 'general' | 'planting' | 'nursery'
+  unit      String
+  valuePln  Float? // null = wartość podana wyłącznie w EUR, przeliczana kursem
+  valueEur  Float?
+  sortOrder Int     @default(0)
+  note      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("cost_items")
+}
+
+// Cena long cane per odmiana (w Excelu: DJ 2,15 EUR / Ruby 2,20 EUR)
+model VarietyPlantingCost {
+  id       String @id @default(cuid())
+  tenantId String
+
+  varietyId String
+  variety   Variety @relation(fields: [varietyId], references: [id], onDelete: Cascade)
+
+  lcPriceEur Float?
+  lcPricePln Float? // jeśli podana wprost — ma pierwszeństwo przed przeliczeniem z EUR
+
+  // Koszt wyhodowania long cane z własnej plagi — ustalany indywidualnie.
+  // null = użyj pozycji globalnej 'lc_grow_from_plug' z cennika
+  lcGrowEur Float?
+  lcGrowPln Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, varietyId])
+  @@index([tenantId])
+  @@map("variety_planting_costs")
+}
+
+model PlantingScenario {
+  id          String  @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  startYear   Int
+  endYear     Int
+  isArchived  Boolean @default(false)
+
+  items     PlantingScenarioItem[]
+  plugPlans ScenarioPlugPlan[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@map("planting_scenarios")
+}
+
+// Decyzja "czym obsadzam" dla jednej sekcji w jednym roku
+model PlantingScenarioItem {
+  id String @id @default(cuid())
+
+  scenarioId String
+  scenario   PlantingScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  year   Int
+  method String // 'NOT_PLANTED' | 'BUY_LC' | 'OWN_PLUGS' | 'MOULDOWN' | 'CUT_TO_ROOT'
+
+  producesSummer Boolean @default(false)
+  producesAutumn Boolean @default(false)
+  note           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([scenarioId, year, sectionId])
+  @@index([scenarioId])
+  @@map("planting_scenario_items")
+}
+
+// Produkcja plag w danym roku — pokrywa zapotrzebowanie na własne plagi w roku następnym
+model ScenarioPlugPlan {
+  id String @id @default(cuid())
+
+  scenarioId String
+  scenario   PlantingScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  varietyId String
+  variety   Variety @relation(fields: [varietyId], references: [id], onDelete: Cascade)
+
+  year     Int
+  quantity Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([scenarioId, year, varietyId])
+  @@index([scenarioId])
+  @@map("scenario_plug_plans")
 }

@@ -44,6 +44,7 @@ interface Scenario {
   plugPlans: PlugPlanRow[]
 }
 
+/** Kształt z API — wartości liczbowe. */
 interface CostItemRow {
   key: string
   label: string
@@ -65,12 +66,32 @@ interface VarietyCostRow {
 }
 
 /**
+ * Kształt formularza — wartości trzymamy jako tekst, żeby dało się wpisać
+ * miejsca po przecinku. Parsowanie na liczbę następuje dopiero przy liczeniu
+ * i przy zapisie; parsowanie w onChange zjadałoby przecinek w trakcie pisania.
+ */
+interface CostItemForm extends Omit<CostItemRow, 'valuePln' | 'valueEur'> {
+  valuePln: string
+  valueEur: string
+  /** pozycja ma sens tylko w PLN (kurs) — nie pokazujemy pola EUR */
+  plnOnly?: boolean
+}
+
+interface VarietyCostForm {
+  varietyId: string
+  lcPriceEur: string
+  lcPricePln: string
+  lcGrowEur: string
+  lcGrowPln: string
+}
+
+/**
  * Propozycje wartości cennika — stałe UI, NIE dane domenowe.
  * Nic nie trafia do bazy, dopóki użytkownik nie zapisze formularza.
  * Źródło: arkusz "Plantacja_planowanie_nasadzen", zakładka "Cennik".
  */
-const COST_TEMPLATE: Omit<CostItemRow, 'valuePln' | 'valueEur'>[] = [
-  { key: COST_KEYS.eurPln, label: 'Kurs EUR/PLN', category: 'general', unit: 'PLN za 1 EUR', sortOrder: 10, note: null },
+const COST_TEMPLATE: Omit<CostItemForm, 'valuePln' | 'valueEur'>[] = [
+  { key: COST_KEYS.eurPln, label: 'Kurs — ile PLN za 1 EUR', category: 'general', unit: '', sortOrder: 10, note: null, plnOnly: true },
   { key: COST_KEYS.cocoPerPot, label: 'Kokos na doniczkę', category: 'planting', unit: 'PLN / doniczkę', sortOrder: 20, note: 'w arkuszu wyliczany z materiału i transportu big bag' },
   { key: COST_KEYS.targetPot, label: 'Doniczka docelowa', category: 'planting', unit: 'PLN / doniczkę', sortOrder: 30, note: 'własne = 0' },
   { key: COST_KEYS.lcTransport, label: 'Transport long cane', category: 'planting', unit: 'PLN / szt.', sortOrder: 40, note: null },
@@ -109,6 +130,9 @@ const parseNum = (v: string): number | null => {
   const n = parseFloat(v.replace(',', '.'))
   return Number.isFinite(n) ? n : null
 }
+/** liczba z bazy → tekst w polu formularza (przecinek jako separator dziesiętny) */
+const numToText = (n: number | null | undefined): string =>
+  n == null ? '' : String(n).replace('.', ',')
 const itemKey = (year: number, sectionId: string) => `${year}:${sectionId}`
 
 // ==================== COMPONENT ====================
@@ -121,8 +145,8 @@ export default function StrategyTab() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeYear, setActiveYear] = useState<number | null>(null)
 
-  const [costItems, setCostItems] = useState<CostItemRow[]>([])
-  const [varietyCosts, setVarietyCosts] = useState<VarietyCostRow[]>([])
+  const [costItems, setCostItems] = useState<CostItemForm[]>([])
+  const [varietyCosts, setVarietyCosts] = useState<VarietyCostForm[]>([])
   const [showCostBook, setShowCostBook] = useState(false)
   const [savingCosts, setSavingCosts] = useState(false)
 
@@ -155,7 +179,7 @@ export default function StrategyTab() {
       const [sData, cData, scData] = await Promise.all([sRes.json(), cRes.json(), scRes.json()])
       setSections(sData.sections || [])
       setCostItems(mergeWithTemplate(cData.items || []))
-      setVarietyCosts(cData.varieties || [])
+      setVarietyCosts(toVarietyForms(cData.varieties || []))
       setScenarios(scData.scenarios || [])
       setActiveId(prev => prev ?? (scData.scenarios?.[0]?.id ?? null))
     } catch (e) {
@@ -167,15 +191,32 @@ export default function StrategyTab() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  /** Cennik zawsze pokazuje pełen zestaw pozycji — brakujące mają puste wartości (nie zera). */
-  function mergeWithTemplate(saved: CostItemRow[]): CostItemRow[] {
+  /** Cennik zawsze pokazuje pełen zestaw pozycji — brakujące mają puste pola (nie zera). */
+  function mergeWithTemplate(saved: CostItemRow[]): CostItemForm[] {
     const byKey = new Map(saved.map(i => [i.key, i]))
-    const merged = COST_TEMPLATE.map(t => {
+    const merged: CostItemForm[] = COST_TEMPLATE.map(t => {
       const found = byKey.get(t.key)
-      return found ? { ...t, ...found } : { ...t, valuePln: null, valueEur: null }
+      return {
+        ...t,
+        valuePln: numToText(found?.valuePln),
+        valueEur: numToText(found?.valueEur),
+      }
     })
-    for (const s of saved) if (!merged.some(m => m.key === s.key)) merged.push(s)
+    for (const s of saved) {
+      if (merged.some(m => m.key === s.key)) continue
+      merged.push({ ...s, valuePln: numToText(s.valuePln), valueEur: numToText(s.valueEur) })
+    }
     return merged.sort((a, b) => a.sortOrder - b.sortOrder)
+  }
+
+  function toVarietyForms(saved: VarietyCostRow[]): VarietyCostForm[] {
+    return saved.map(v => ({
+      varietyId: v.varietyId,
+      lcPriceEur: numToText(v.lcPriceEur),
+      lcPricePln: numToText(v.lcPricePln),
+      lcGrowEur: numToText(v.lcGrowEur),
+      lcGrowPln: numToText(v.lcGrowPln),
+    }))
   }
 
   const active = useMemo(() => scenarios.find(s => s.id === activeId) ?? null, [scenarios, activeId])
@@ -200,12 +241,13 @@ export default function StrategyTab() {
   }, [active])
 
   // ==================== COST BOOK ====================
+  // wyliczenia na żywo z tego, co jest wpisane w formularzu
   const book: CostBook = useMemo(() => ({
-    items: costItems.map(i => ({ key: i.key, valuePln: i.valuePln, valueEur: i.valueEur })),
+    items: costItems.map(i => ({ key: i.key, valuePln: parseNum(i.valuePln), valueEur: parseNum(i.valueEur) })),
     varieties: varietyCosts.map(v => ({
       varietyId: v.varietyId,
-      lcPriceEur: v.lcPriceEur, lcPricePln: v.lcPricePln,
-      lcGrowEur: v.lcGrowEur, lcGrowPln: v.lcGrowPln,
+      lcPriceEur: parseNum(v.lcPriceEur), lcPricePln: parseNum(v.lcPricePln),
+      lcGrowEur: parseNum(v.lcGrowEur), lcGrowPln: parseNum(v.lcGrowPln),
     })),
   }), [costItems, varietyCosts])
 
@@ -219,12 +261,16 @@ export default function StrategyTab() {
     setCostItems(prev => prev.map(i => {
       const s = COST_SUGGESTIONS[i.key]
       if (!s) return i
-      return { ...i, valuePln: s.pln ?? i.valuePln, valueEur: s.eur ?? i.valueEur }
+      return {
+        ...i,
+        valuePln: s.pln != null ? numToText(s.pln) : i.valuePln,
+        valueEur: s.eur != null ? numToText(s.eur) : i.valueEur,
+      }
     }))
     setVarietyCosts(prev => {
       const existing = new Map(prev.map(v => [v.varietyId, v]))
       return varieties.map(v => existing.get(v.id) ?? {
-        varietyId: v.id, lcPriceEur: null, lcPricePln: null, lcGrowEur: null, lcGrowPln: null,
+        varietyId: v.id, lcPriceEur: '', lcPricePln: '', lcGrowEur: '', lcGrowPln: '',
       })
     })
   }
@@ -236,7 +282,18 @@ export default function StrategyTab() {
       const res = await fetch('/api/strategy/cost-book', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: costItems, varieties: varietyCosts }),
+        body: JSON.stringify({
+          items: costItems.map(i => ({
+            key: i.key, label: i.label, category: i.category, unit: i.unit,
+            sortOrder: i.sortOrder, note: i.note,
+            valuePln: parseNum(i.valuePln), valueEur: parseNum(i.valueEur),
+          })),
+          varieties: varietyCosts.map(v => ({
+            varietyId: v.varietyId,
+            lcPriceEur: parseNum(v.lcPriceEur), lcPricePln: parseNum(v.lcPricePln),
+            lcGrowEur: parseNum(v.lcGrowEur), lcGrowPln: parseNum(v.lcGrowPln),
+          })),
+        }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -244,7 +301,7 @@ export default function StrategyTab() {
       }
       const data = await res.json()
       setCostItems(mergeWithTemplate(data.items || []))
-      setVarietyCosts(data.varieties || [])
+      setVarietyCosts(toVarietyForms(data.varieties || []))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Nie udało się zapisać cennika')
     } finally {
@@ -560,22 +617,30 @@ export default function StrategyTab() {
                           {item.note && <div className="text-xs text-gray-400">{item.note}</div>}
                         </td>
                         <td className="py-1.5">
-                          <input
-                            value={item.valueEur ?? ''}
-                            onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valueEur: parseNum(e.target.value) } : i))}
-                            placeholder="—"
-                            className="h-8 w-full border border-gray-200 rounded px-2 text-right text-sm"
-                          />
+                          {item.plnOnly ? (
+                            <div className="h-8 flex items-center justify-end text-sm text-gray-500 pr-2">1 EUR =</div>
+                          ) : (
+                            <input
+                              inputMode="decimal"
+                              value={item.valueEur}
+                              onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valueEur: e.target.value } : i))}
+                              placeholder="—"
+                              className="h-8 w-full border border-gray-200 rounded px-2 text-right text-sm"
+                            />
+                          )}
                         </td>
                         <td className="py-1.5">
                           <input
-                            value={item.valuePln ?? ''}
-                            onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valuePln: parseNum(e.target.value) } : i))}
+                            inputMode="decimal"
+                            value={item.valuePln}
+                            onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valuePln: e.target.value } : i))}
                             placeholder="—"
                             className="h-8 w-full border border-gray-200 rounded px-2 text-right text-sm"
                           />
                         </td>
-                        <td className="py-1.5 pl-3 text-xs text-gray-500">{item.unit}</td>
+                        <td className="py-1.5 pl-3 text-xs text-gray-500">
+                          {item.plnOnly ? 'PLN' : item.unit}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -598,24 +663,25 @@ export default function StrategyTab() {
                 <tbody>
                   {varieties.map(v => {
                     const row = varietyCosts.find(x => x.varietyId === v.id)
-                    const upd = (patch: Partial<VarietyCostRow>) => setVarietyCosts(prev => {
+                    const upd = (patch: Partial<VarietyCostForm>) => setVarietyCosts(prev => {
                       const exists = prev.some(x => x.varietyId === v.id)
-                      if (!exists) return [...prev, { varietyId: v.id, lcPriceEur: null, lcPricePln: null, lcGrowEur: null, lcGrowPln: null, ...patch }]
+                      if (!exists) return [...prev, { varietyId: v.id, lcPriceEur: '', lcPricePln: '', lcGrowEur: '', lcGrowPln: '', ...patch }]
                       return prev.map(x => x.varietyId === v.id ? { ...x, ...patch } : x)
                     })
                     return (
                       <tr key={v.id} className="border-b border-gray-50">
                         <td className="py-1.5 text-gray-800">{v.name}</td>
                         {([
-                          ['lcPriceEur', row?.lcPriceEur],
-                          ['lcPricePln', row?.lcPricePln],
-                          ['lcGrowEur', row?.lcGrowEur],
-                          ['lcGrowPln', row?.lcGrowPln],
+                          ['lcPriceEur', row?.lcPriceEur ?? ''],
+                          ['lcPricePln', row?.lcPricePln ?? ''],
+                          ['lcGrowEur', row?.lcGrowEur ?? ''],
+                          ['lcGrowPln', row?.lcGrowPln ?? ''],
                         ] as const).map(([field, value]) => (
                           <td key={field} className="py-1.5 pl-2">
                             <input
-                              value={value ?? ''}
-                              onChange={e => upd({ [field]: parseNum(e.target.value) } as Partial<VarietyCostRow>)}
+                              inputMode="decimal"
+                              value={value}
+                              onChange={e => upd({ [field]: e.target.value } as Partial<VarietyCostForm>)}
                               placeholder="—"
                               className="h-8 w-full border border-gray-200 rounded px-2 text-right text-sm"
                             />

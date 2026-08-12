@@ -122,7 +122,7 @@ export function calculateWeeklyBlockForecasts(
 
   // --- 2. Aggregate actual harvest per block per week ---
   const blockActualMap = new Map<string, Map<string, number>>()
-  let blockTotalHarvested = new Map<string, number>()
+  const blockTotalHarvested = new Map<string, number>()
 
   for (const entry of harvestEntries) {
     const entryMonday = getWeekMonday(new Date(entry.date))

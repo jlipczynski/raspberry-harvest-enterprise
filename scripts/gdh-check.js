@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- skrypt uruchamiany bezpośrednio node'em, nie przez bundler */
 require('dotenv').config({ path: '.env.local' });
 const { PrismaClient } = require('@prisma/client');
 const p = new PrismaClient();

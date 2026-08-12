@@ -616,7 +616,7 @@ export default function PieceRateCalculatorPage() {
             {/* Liczby wprost w banerze: od razu widać, czy wczytała się ta sesja,
                 o którą chodziło, bez porównywania tabel. */}
             <strong>{result.rows.length} os., {num(result.totalKg, 1)} kg</strong>.
-            Zmiany parametrów nadpiszą ją po kliknięciu „Zapisz zmiany".
+            Zmiany parametrów nadpiszą ją po kliknięciu „Zapisz zmiany”.
           </span>
           <Button variant="outline" size="sm" onClick={exitEditing}>Zakończ edycję</Button>
         </div>

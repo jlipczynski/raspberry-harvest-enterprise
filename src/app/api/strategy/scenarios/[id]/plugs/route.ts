@@ -29,14 +29,21 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
+    // Odmiana jest "nasza", jeśli rośnie na sekcji tego tenanta. Sprawdzanie
+    // variety.tenantId nie wystarcza — odmiana może być współdzielona/globalna,
+    // a sekcje i tak należą do gospodarstwa.
     const varietyIds = [...new Set(plans.map(p => String(p.varietyId)))]
     if (varietyIds.length > 0) {
-      const owned = await prisma.variety.findMany({
-        where: { id: { in: varietyIds }, tenantId },
-        select: { id: true },
+      const used = await prisma.section.findMany({
+        where: { varietyId: { in: varietyIds }, block: { farm: { tenantId } } },
+        select: { varietyId: true },
+        distinct: ['varietyId'],
       })
-      if (owned.length !== varietyIds.length) {
-        return NextResponse.json({ error: 'Któraś z odmian nie należy do tego gospodarstwa' }, { status: 403 })
+      if (used.length !== varietyIds.length) {
+        return NextResponse.json(
+          { error: 'Któraś z odmian nie występuje na sekcjach tego gospodarstwa' },
+          { status: 403 }
+        )
       }
     }
 

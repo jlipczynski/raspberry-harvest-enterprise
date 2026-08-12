@@ -168,6 +168,14 @@ describe('computeSectionVolume', () => {
     expect(computeSectionVolume(b0913, item({ sectionId: 'b0913', method: 'NOT_PLANTED' })).kgGross).toBe(0)
   })
 
+  it('brak waste% zgłasza brak — netto nie jest zgadywane jako brutto', () => {
+    const r = computeSectionVolume(
+      { ...b0913, wastePercent: null },
+      item({ sectionId: 'b0913', method: 'BUY_LC', producesSummer: true })
+    )
+    expect(r.missing).toEqual(['wastePercent'])
+  })
+
   it('brak normy kg/pęd zgłasza brak zamiast liczyć zero', () => {
     const r = computeSectionVolume(
       { ...b0913, yieldSummerPerShoot: null },

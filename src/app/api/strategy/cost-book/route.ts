@@ -46,12 +46,13 @@ export async function PUT(request: NextRequest) {
       if (!raw?.key || !raw?.label) {
         return NextResponse.json({ error: 'Każda pozycja cennika wymaga key i label' }, { status: 400 })
       }
-      const valuePln = num(raw.valuePln)
       const data = {
         label: String(raw.label),
-        category: String(raw.category ?? 'general'),
-        unit: String(raw.unit ?? ''),
-        valuePln: valuePln ?? 0,
+        category: raw.category ? String(raw.category) : 'general',
+        unit: raw.unit ? String(raw.unit) : '',
+        // puste pole zapisujemy jako null, NIE jako 0 — inaczej pozycja podana
+        // tylko w EUR zostałaby policzona jako zero zamiast przeliczona kursem
+        valuePln: num(raw.valuePln),
         valueEur: num(raw.valueEur),
         sortOrder: Number.isFinite(raw.sortOrder) ? Number(raw.sortOrder) : 0,
         note: raw.note ? String(raw.note) : null,

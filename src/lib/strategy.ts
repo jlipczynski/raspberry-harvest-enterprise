@@ -251,7 +251,9 @@ export function computeSectionVolume(
   }
 
   const kgGross = kgSummer + kgAutumn
-  const waste = section.wastePercent ?? 0
+  // waste% też musi pochodzić z bazy — brak zgłaszamy, nie zakładamy zera
+  if (kgGross > 0 && section.wastePercent == null) missing.push('wastePercent')
+  const waste = section.wastePercent ?? 0 // dozwolone: wartość i tak zgłoszona jako brak powyżej
   return {
     sectionId: section.id,
     shoots,
@@ -396,7 +398,9 @@ export function computePlugCoverage(
     for (const item of items.filter(i => i.year === year && i.method === 'OWN_PLUGS')) {
       const section = sectionById.get(item.sectionId)
       if (!section) continue
-      needByVariety.set(section.varietyId, (needByVariety.get(section.varietyId) ?? 0) + sectionShoots(section))
+      // dozwolone: inicjalizacja akumulatora, nie wartość domenowa
+      const soFar = needByVariety.get(section.varietyId) ?? 0
+      needByVariety.set(section.varietyId, soFar + sectionShoots(section))
     }
 
     const varietyIds = new Set<string>([
@@ -405,7 +409,7 @@ export function computePlugCoverage(
     ])
 
     for (const varietyId of varietyIds) {
-      const needed = needByVariety.get(varietyId) ?? 0
+      const needed = needByVariety.get(varietyId) ?? 0 // dozwolone: brak wpisu = zero zapotrzebowania
       const available = plugPlans
         .filter(p => p.year === year - 1 && p.varietyId === varietyId)
         .reduce((s, p) => s + p.quantity, 0)

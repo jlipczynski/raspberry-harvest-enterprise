@@ -666,7 +666,7 @@ model CostItem {
   label     String
   category  String // 'general' | 'planting' | 'nursery'
   unit      String
-  valuePln  Float   @default(0)
+  valuePln  Float? // null = wartość podana wyłącznie w EUR, przeliczana kursem
   valueEur  Float?
   sortOrder Int     @default(0)
   note      String?

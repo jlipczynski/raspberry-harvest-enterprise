@@ -106,38 +106,23 @@ interface VarietyCostForm {
  * Źródło: arkusz "Plantacja_planowanie_nasadzen", zakładka "Cennik".
  */
 const COST_TEMPLATE: Omit<CostItemForm, 'valuePln' | 'valueEur' | 'year'>[] = [
-  { key: COST_KEYS.eurPln, label: 'Kurs — ile PLN za 1 EUR', category: 'general', unit: 'PLN', sortOrder: 10, note: null, plnOnly: true, eurPrefix: '1 EUR =' },
+  { key: COST_KEYS.eurPln, label: 'Kurs EUR/PLN', category: 'general', unit: 'PLN', sortOrder: 10, note: null, plnOnly: true, eurPrefix: '1 EUR =' },
   { key: COST_KEYS.cocoPerPot, label: 'Kokos na doniczkę', category: 'planting', unit: 'PLN / doniczkę', sortOrder: 20, note: 'w arkuszu wyliczany z materiału i transportu big bag' },
   { key: COST_KEYS.targetPot, label: 'Doniczka docelowa', category: 'planting', unit: 'PLN / doniczkę', sortOrder: 30, note: 'własne = 0' },
   { key: COST_KEYS.lcTransport, label: 'Transport long cane', category: 'planting', unit: 'PLN / szt.', sortOrder: 40, note: null },
   { key: COST_KEYS.plantingLabourPerPot, label: 'Robocizna sadzenia', category: 'planting', unit: 'PLN / doniczkę', sortOrder: 50, note: 'brak w arkuszu — uzupełnij jeśli chcesz liczyć' },
-  { key: COST_KEYS.lcGrowFromPlug, label: 'Wyhodowanie long cane z plagi', category: 'nursery', unit: 'na long cane', sortOrder: 60, note: 'ustalane indywidualnie — można nadpisać per odmiana' },
+  { key: COST_KEYS.lcGrowFromPlug, label: 'Wyhodowanie LC z plagi', category: 'nursery', unit: 'na long cane', sortOrder: 60, note: 'ustalane indywidualnie — można nadpisać per odmiana' },
   { key: COST_KEYS.tipsPrice, label: 'Tips (sadzonka)', category: 'nursery', unit: 'na szt.', sortOrder: 70, note: null },
   { key: COST_KEYS.tipsTransport, label: 'Transport tips', category: 'nursery', unit: 'PLN / szt.', sortOrder: 80, note: null },
   { key: COST_KEYS.nurseryPot, label: 'Doniczka szkółkowa', category: 'nursery', unit: 'PLN / szt.', sortOrder: 90, note: 'jednorazowo, tylko tips' },
 
-  // Arkusz "szkolka" — koszt budowy. Pozycje jednorazowe, nie wchodzą do kosztu sadzenia sekcji.
-  { key: 'nursery_inv_valves',    label: 'Zawory',                  category: 'nursery_investment', unit: 'PLN', sortOrder: 100, note: null, plnOnly: true },
-  { key: 'nursery_inv_clips',     label: 'Klipsy',                  category: 'nursery_investment', unit: 'PLN', sortOrder: 110, note: null, plnOnly: true },
-  { key: 'nursery_inv_steel',     label: 'Stal',                    category: 'nursery_investment', unit: 'PLN', sortOrder: 120, note: null, plnOnly: true },
-  { key: 'nursery_inv_fabric',    label: 'Tkanina z gwoździami',    category: 'nursery_investment', unit: 'PLN', sortOrder: 130, note: null, plnOnly: true },
-  { key: 'nursery_inv_driplines', label: 'Wężyki z kroplownikami',  category: 'nursery_investment', unit: 'PLN', sortOrder: 140, note: null, plnOnly: true },
-  { key: 'nursery_inv_pipe',      label: 'Doprowadzenie rury',      category: 'nursery_investment', unit: 'PLN', sortOrder: 150, note: null, plnOnly: true },
-  { key: 'nursery_inv_labour',    label: 'Robocizna',               category: 'nursery_investment', unit: 'PLN', sortOrder: 160, note: null, plnOnly: true },
-  { key: 'nursery_inv_pump',      label: 'Przepompownia',           category: 'nursery_investment', unit: 'PLN', sortOrder: 170, note: null, plnOnly: true },
-  { key: 'nursery_inv_budget',    label: 'Budżet do założenia',     category: 'nursery_investment', unit: 'PLN', sortOrder: 180, note: 'arkusz podaje 130–150 tys.', plnOnly: true },
-  { key: 'nursery_inv_fons',      label: 'Wycena Fonsa — całość',   category: 'nursery_investment', unit: 'PLN', sortOrder: 190, note: 'konstrukcja 25 000 + emitery 10 000 + agrowłóknina 3 000, na 10 tys. doniczek / 20 tys. canów', plnOnly: true },
-  { key: 'nursery_pots_per_meter', label: 'Doniczki na metr rzędu', category: 'nursery_investment', unit: 'szt. / m', sortOrder: 200, note: null, plnOnly: true },
-  { key: 'nursery_row_length',    label: 'Długość rzędu',           category: 'nursery_investment', unit: 'm',   sortOrder: 210, note: null, plnOnly: true },
-  { key: 'nursery_row_spacing',   label: 'Rozstaw między rzędami',  category: 'nursery_investment', unit: 'm',   sortOrder: 220, note: null, plnOnly: true },
-
   // Arkusz "Plan 2027-2029" — warunki płatności za rośliny. Rozkładają koszt roku na lata wydatku.
   { key: COST_KEYS.payOrderPct,           label: 'Przy zamówieniu',            category: 'payment', unit: '%',   sortOrder: 300, note: null, plnOnly: true },
-  { key: COST_KEYS.payOrderYearOffset,    label: '↳ rok wydatku',              category: 'payment', unit: 'rok względem roku kosztu (−1 = rok wcześniej)', sortOrder: 310, note: null, plnOnly: true },
+  { key: COST_KEYS.payOrderYearOffset,    label: '↳ rok wydatku',              category: 'payment', unit: 'rok (−1 = wcześniej)', sortOrder: 310, note: null, plnOnly: true },
   { key: COST_KEYS.payDeliveryPct,        label: 'Przy dostawie',              category: 'payment', unit: '%',   sortOrder: 320, note: null, plnOnly: true },
-  { key: COST_KEYS.payDeliveryYearOffset, label: '↳ rok wydatku',              category: 'payment', unit: 'rok względem roku kosztu', sortOrder: 330, note: null, plnOnly: true },
+  { key: COST_KEYS.payDeliveryYearOffset, label: '↳ rok wydatku',              category: 'payment', unit: 'rok (0 = rok kosztu)', sortOrder: 330, note: null, plnOnly: true },
   { key: COST_KEYS.payRestPct,            label: 'Reszta',                     category: 'payment', unit: '%',   sortOrder: 340, note: 'w arkuszu: do sierpnia roku następnego (Berry World: 50% after delivery 30 days)', plnOnly: true },
-  { key: COST_KEYS.payRestYearOffset,     label: '↳ rok wydatku',              category: 'payment', unit: 'rok względem roku kosztu (+1 = rok później)', sortOrder: 350, note: null, plnOnly: true },
+  { key: COST_KEYS.payRestYearOffset,     label: '↳ rok wydatku',              category: 'payment', unit: 'rok (+1 = później)', sortOrder: 350, note: null, plnOnly: true },
 ]
 
 /** Propozycje liczbowe z arkusza — wstawiane do formularza po kliknięciu, nie zapisywane automatycznie. */
@@ -151,19 +136,6 @@ const COST_SUGGESTIONS: Record<string, { pln?: number; eur?: number }> = {
   [COST_KEYS.tipsPrice]: { eur: 0.65 },
   [COST_KEYS.tipsTransport]: { pln: 0.0571 },
   [COST_KEYS.nurseryPot]: { pln: 0.5 },
-  nursery_inv_valves: { pln: 8000 },
-  nursery_inv_clips: { pln: 2000 },
-  nursery_inv_steel: { pln: 35000 },
-  nursery_inv_fabric: { pln: 6000 },
-  nursery_inv_driplines: { pln: 22000 },
-  nursery_inv_pipe: { pln: 5000 },
-  nursery_inv_labour: { pln: 10000 },
-  nursery_inv_pump: { pln: 15000 },
-  nursery_inv_budget: { pln: 130000 },
-  nursery_inv_fons: { pln: 38000 },
-  nursery_pots_per_meter: { pln: 8.5 },
-  nursery_row_length: { pln: 90 },
-  nursery_row_spacing: { pln: 2 },
   [COST_KEYS.payOrderPct]: { pln: 25 },
   [COST_KEYS.payOrderYearOffset]: { pln: -1 },
   [COST_KEYS.payDeliveryPct]: { pln: 25 },
@@ -176,17 +148,11 @@ const CATEGORY_LABELS: Record<string, string> = {
   general: 'Parametry ogólne',
   planting: 'Sadzenie',
   nursery: 'Szkółka / plagi',
-  nursery_investment: 'Szkółka — budowa (koszt jednorazowy)',
   payment: 'Warunki płatności za rośliny',
 }
 
-const COST_CATEGORIES = ['general', 'planting', 'nursery', 'nursery_investment', 'payment']
+const COST_CATEGORIES = ['general', 'planting', 'nursery', 'payment']
 
-/** pozycje sumowane w podsumowaniu inwestycji — bez wariantów i wymiarów */
-const NURSERY_INVESTMENT_SUM_KEYS = [
-  'nursery_inv_valves', 'nursery_inv_clips', 'nursery_inv_steel', 'nursery_inv_fabric',
-  'nursery_inv_driplines', 'nursery_inv_pipe', 'nursery_inv_labour', 'nursery_inv_pump',
-]
 
 // ==================== HELPERS ====================
 const fmtPln = (n: number) => n.toLocaleString('pl-PL', { maximumFractionDigits: 0 }) + ' zł'
@@ -645,13 +611,6 @@ export default function StrategyTab() {
     }))
   }, [allItems, allVarietyCosts, varieties])
 
-  const nurseryInvestmentTotal = useMemo(
-    () => costItems
-      .filter(i => NURSERY_INVESTMENT_SUM_KEYS.includes(i.key))
-      .reduce((s, i) => s + (parseNum(i.valuePln) ?? 0), 0), // dozwolone: puste pole nie dokłada się do sumy
-    [costItems]
-  )
-
   const paymentShares = useMemo(() => readPaymentShares(book), [book])
   const paymentPercentTotal = useMemo(
     () => paymentShares.shares.reduce((s, x) => s + x.percent, 0),
@@ -955,13 +914,19 @@ export default function StrategyTab() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
+              <table className="w-full table-fixed border-collapse text-[13px]">
+                <colgroup>
+                  <col />
+                  <col className="w-24" />
+                  <col className="w-24" />
+                  <col className="w-44" />
+                </colgroup>
                 <thead>
-                  <tr className="text-[11px] uppercase tracking-wide text-gray-500 bg-gray-50">
-                    <th className="text-left font-medium px-3 py-1.5 border-b border-gray-200">Pozycja</th>
-                    <th className="text-right font-medium px-2 py-1.5 border-b border-gray-200 w-28">EUR</th>
-                    <th className="text-right font-medium px-2 py-1.5 border-b border-gray-200 w-28">PLN</th>
-                    <th className="text-left font-medium px-3 py-1.5 border-b border-gray-200 w-56">Jednostka</th>
+                  <tr className="text-[11px] uppercase tracking-wide text-gray-500 bg-gray-100">
+                    <th className="text-left font-medium px-2 py-1 border border-gray-300">Pozycja</th>
+                    <th className="text-right font-medium px-2 py-1 border border-gray-300">EUR</th>
+                    <th className="text-right font-medium px-2 py-1 border border-gray-300">PLN</th>
+                    <th className="text-left font-medium px-2 py-1 border border-gray-300">Jednostka</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -971,7 +936,7 @@ export default function StrategyTab() {
                     return (
                       <Fragment key={cat}>
                         <tr>
-                          <td colSpan={4} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border-y border-gray-200">
+                          <td colSpan={4} className="px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-gray-200/70 border border-gray-300">
                             {CATEGORY_LABELS[cat] ?? cat}
                           </td>
                         </tr>
@@ -982,51 +947,42 @@ export default function StrategyTab() {
                           const derivedEur = plnNum != null && fxRate ? plnNum / fxRate : null
                           const inherited = inheritedValue(item.key)
                           return (
-                            <tr key={item.key} className="odd:bg-white even:bg-gray-50/40 hover:bg-indigo-50/30">
-                              <td className="px-3 py-1 border-b border-gray-100 whitespace-nowrap">
-                                <span className="text-gray-800">{item.label}</span>
-                                {item.note && <span className="ml-2 text-[11px] text-gray-400">{item.note}</span>}
+                            <tr key={item.key} className="hover:bg-indigo-50/40">
+                              <td className="px-2 py-0.5 border border-gray-200 text-gray-800 truncate" title={item.note ? `${item.label} — ${item.note}` : item.label}>
+                                {item.label}
                               </td>
-                              <td className="px-2 py-1 border-b border-gray-100">
+                              <td className="border border-gray-200 p-0">
                                 {item.plnOnly ? (
-                                  <div className="text-right text-xs text-gray-400 pr-1">{item.eurPrefix ?? ''}</div>
+                                  <div className="h-6 flex items-center justify-end px-2 text-[11px] text-gray-400">{item.eurPrefix ?? ''}</div>
                                 ) : (
                                   <input
                                     inputMode="decimal"
                                     value={item.valueEur}
                                     onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valueEur: e.target.value } : i))}
                                     placeholder={derivedEur != null ? numToText(round4(derivedEur)) : (inherited?.valueEur != null ? numToText(inherited.valueEur) : '')}
-                                    className="h-7 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:bg-white rounded px-1.5 text-right tabular-nums outline-none"
+                                    className="h-6 w-full bg-transparent px-2 text-right tabular-nums outline-none focus:bg-indigo-50 placeholder:text-gray-300"
                                   />
                                 )}
                               </td>
-                              <td className="px-2 py-1 border-b border-gray-100">
+                              <td className="border border-gray-200 p-0">
                                 <input
                                   inputMode="decimal"
                                   value={item.valuePln}
                                   onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valuePln: e.target.value } : i))}
                                   placeholder={derivedPln != null ? numToText(round4(derivedPln)) : (inherited?.valuePln != null ? numToText(inherited.valuePln) : '')}
-                                  className="h-7 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:bg-white rounded px-1.5 text-right tabular-nums outline-none"
+                                  className="h-6 w-full bg-transparent px-2 text-right tabular-nums outline-none focus:bg-indigo-50 placeholder:text-gray-300"
                                 />
                               </td>
-                              <td className="px-3 py-1 border-b border-gray-100 text-[11px] text-gray-500">{item.unit}</td>
+                              <td className="px-2 py-0.5 border border-gray-200 text-[11px] text-gray-500 truncate" title={item.unit}>{item.unit}</td>
                             </tr>
                           )
                         })}
-                        {cat === 'nursery_investment' && (
-                          <tr className="bg-gray-50 font-semibold">
-                            <td className="px-3 py-1 border-b border-gray-200">Razem budowa szkółki</td>
-                            <td className="border-b border-gray-200" />
-                            <td className="px-2 py-1 border-b border-gray-200 text-right tabular-nums">{fmtPln(nurseryInvestmentTotal)}</td>
-                            <td className="px-3 py-1 border-b border-gray-200 text-[11px] text-gray-500">bez wariantów i wymiarów</td>
-                          </tr>
-                        )}
                         {cat === 'payment' && (
                           <tr className={`font-semibold ${Math.abs(paymentPercentTotal - 100) < 0.001 ? 'bg-gray-50' : 'bg-amber-50 text-amber-800'}`}>
-                            <td className="px-3 py-1 border-b border-gray-200">Razem udziały</td>
-                            <td className="border-b border-gray-200" />
-                            <td className="px-2 py-1 border-b border-gray-200 text-right tabular-nums">{paymentPercentTotal}</td>
-                            <td className="px-3 py-1 border-b border-gray-200 text-[11px]">
+                            <td className="px-2 py-0.5 border border-gray-200">Razem udziały</td>
+                            <td className="border border-gray-200" />
+                            <td className="px-2 py-0.5 border border-gray-200 text-right tabular-nums">{paymentPercentTotal}</td>
+                            <td className="px-2 py-0.5 border border-gray-200 text-[11px]">
                               {Math.abs(paymentPercentTotal - 100) < 0.001 ? '% — komplet' : '% — powinno być 100'}
                             </td>
                           </tr>
@@ -1037,7 +993,7 @@ export default function StrategyTab() {
 
                   {/* Ceny per odmiana */}
                   <tr>
-                    <td colSpan={4} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border-y border-gray-200">
+                    <td colSpan={4} className="px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-gray-200/70 border border-gray-300">
                       Ceny per odmiana
                     </td>
                   </tr>
@@ -1060,27 +1016,27 @@ export default function StrategyTab() {
                       const derivedPln = eurNum != null && fxRate != null ? eurNum * fxRate : null
                       const derivedEur = plnNum != null && fxRate ? plnNum / fxRate : null
                       return (
-                        <tr key={v.id + pair.eurField} className="odd:bg-white even:bg-gray-50/40 hover:bg-indigo-50/30">
-                          <td className="px-3 py-1 border-b border-gray-100 text-gray-800 whitespace-nowrap">{pair.label}</td>
-                          <td className="px-2 py-1 border-b border-gray-100">
+                        <tr key={v.id + pair.eurField} className="hover:bg-indigo-50/40">
+                          <td className="px-2 py-0.5 border border-gray-200 text-gray-800 truncate" title={pair.label}>{pair.label}</td>
+                          <td className="border border-gray-200 p-0">
                             <input
                               inputMode="decimal"
                               value={row?.[pair.eurField] ?? ''}
                               onChange={e => upd({ [pair.eurField]: e.target.value } as Partial<VarietyCostForm>)}
                               placeholder={derivedEur != null ? numToText(round4(derivedEur)) : ''}
-                              className="h-7 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:bg-white rounded px-1.5 text-right tabular-nums outline-none"
+                              className="h-6 w-full bg-transparent px-2 text-right tabular-nums outline-none focus:bg-indigo-50 placeholder:text-gray-300"
                             />
                           </td>
-                          <td className="px-2 py-1 border-b border-gray-100">
+                          <td className="border border-gray-200 p-0">
                             <input
                               inputMode="decimal"
                               value={row?.[pair.plnField] ?? ''}
                               onChange={e => upd({ [pair.plnField]: e.target.value } as Partial<VarietyCostForm>)}
                               placeholder={derivedPln != null ? numToText(round4(derivedPln)) : ''}
-                              className="h-7 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:bg-white rounded px-1.5 text-right tabular-nums outline-none"
+                              className="h-6 w-full bg-transparent px-2 text-right tabular-nums outline-none focus:bg-indigo-50 placeholder:text-gray-300"
                             />
                           </td>
-                          <td className="px-3 py-1 border-b border-gray-100 text-[11px] text-gray-500">{pair.unit}</td>
+                          <td className="px-2 py-0.5 border border-gray-200 text-[11px] text-gray-500 truncate" title={pair.unit}>{pair.unit}</td>
                         </tr>
                       )
                     })

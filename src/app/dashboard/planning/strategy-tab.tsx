@@ -116,21 +116,6 @@ const COST_TEMPLATE: Omit<CostItemForm, 'valuePln' | 'valueEur' | 'year'>[] = [
   { key: COST_KEYS.tipsTransport, label: 'Transport tips', category: 'nursery', unit: 'PLN / szt.', sortOrder: 80, note: null },
   { key: COST_KEYS.nurseryPot, label: 'Doniczka szkółkowa', category: 'nursery', unit: 'PLN / szt.', sortOrder: 90, note: 'jednorazowo, tylko tips' },
 
-  // Arkusz "szkolka" — koszt budowy. Pozycje jednorazowe, nie wchodzą do kosztu sadzenia sekcji.
-  { key: 'nursery_inv_valves',    label: 'Zawory',                  category: 'nursery_investment', unit: 'PLN', sortOrder: 100, note: null, plnOnly: true },
-  { key: 'nursery_inv_clips',     label: 'Klipsy',                  category: 'nursery_investment', unit: 'PLN', sortOrder: 110, note: null, plnOnly: true },
-  { key: 'nursery_inv_steel',     label: 'Stal',                    category: 'nursery_investment', unit: 'PLN', sortOrder: 120, note: null, plnOnly: true },
-  { key: 'nursery_inv_fabric',    label: 'Tkanina z gwoździami',    category: 'nursery_investment', unit: 'PLN', sortOrder: 130, note: null, plnOnly: true },
-  { key: 'nursery_inv_driplines', label: 'Wężyki z kroplownikami',  category: 'nursery_investment', unit: 'PLN', sortOrder: 140, note: null, plnOnly: true },
-  { key: 'nursery_inv_pipe',      label: 'Doprowadzenie rury',      category: 'nursery_investment', unit: 'PLN', sortOrder: 150, note: null, plnOnly: true },
-  { key: 'nursery_inv_labour',    label: 'Robocizna',               category: 'nursery_investment', unit: 'PLN', sortOrder: 160, note: null, plnOnly: true },
-  { key: 'nursery_inv_pump',      label: 'Przepompownia',           category: 'nursery_investment', unit: 'PLN', sortOrder: 170, note: null, plnOnly: true },
-  { key: 'nursery_inv_budget',    label: 'Budżet do założenia',     category: 'nursery_investment', unit: 'PLN', sortOrder: 180, note: 'arkusz podaje 130–150 tys.', plnOnly: true },
-  { key: 'nursery_inv_fons',      label: 'Wycena Fonsa',   category: 'nursery_investment', unit: 'PLN', sortOrder: 190, note: 'konstrukcja 25 000 + emitery 10 000 + agrowłóknina 3 000, na 10 tys. doniczek / 20 tys. canów', plnOnly: true },
-  { key: 'nursery_pots_per_meter', label: 'Doniczki na metr', category: 'nursery_investment', unit: 'szt. / m', sortOrder: 200, note: null, plnOnly: true },
-  { key: 'nursery_row_length',    label: 'Długość rzędu',           category: 'nursery_investment', unit: 'm',   sortOrder: 210, note: null, plnOnly: true },
-  { key: 'nursery_row_spacing',   label: 'Rozstaw rzędów',  category: 'nursery_investment', unit: 'm',   sortOrder: 220, note: null, plnOnly: true },
-
   // Arkusz "Plan 2027-2029" — warunki płatności za rośliny. Rozkładają koszt roku na lata wydatku.
   { key: COST_KEYS.payOrderPct,           label: 'Przy zamówieniu',            category: 'payment', unit: '%',   sortOrder: 300, note: null, plnOnly: true },
   { key: COST_KEYS.payOrderYearOffset,    label: '↳ rok wydatku',              category: 'payment', unit: 'rok (−1 = wcześniej)', sortOrder: 310, note: null, plnOnly: true },
@@ -151,19 +136,6 @@ const COST_SUGGESTIONS: Record<string, { pln?: number; eur?: number }> = {
   [COST_KEYS.tipsPrice]: { eur: 0.65 },
   [COST_KEYS.tipsTransport]: { pln: 0.0571 },
   [COST_KEYS.nurseryPot]: { pln: 0.5 },
-  nursery_inv_valves: { pln: 8000 },
-  nursery_inv_clips: { pln: 2000 },
-  nursery_inv_steel: { pln: 35000 },
-  nursery_inv_fabric: { pln: 6000 },
-  nursery_inv_driplines: { pln: 22000 },
-  nursery_inv_pipe: { pln: 5000 },
-  nursery_inv_labour: { pln: 10000 },
-  nursery_inv_pump: { pln: 15000 },
-  nursery_inv_budget: { pln: 130000 },
-  nursery_inv_fons: { pln: 38000 },
-  nursery_pots_per_meter: { pln: 8.5 },
-  nursery_row_length: { pln: 90 },
-  nursery_row_spacing: { pln: 2 },
   [COST_KEYS.payOrderPct]: { pln: 25 },
   [COST_KEYS.payOrderYearOffset]: { pln: -1 },
   [COST_KEYS.payDeliveryPct]: { pln: 25 },
@@ -176,17 +148,11 @@ const CATEGORY_LABELS: Record<string, string> = {
   general: 'Parametry ogólne',
   planting: 'Sadzenie',
   nursery: 'Szkółka / plagi',
-  nursery_investment: 'Szkółka — budowa (koszt jednorazowy)',
   payment: 'Warunki płatności za rośliny',
 }
 
-const COST_CATEGORIES = ['general', 'planting', 'nursery', 'nursery_investment', 'payment']
+const COST_CATEGORIES = ['general', 'planting', 'nursery', 'payment']
 
-/** pozycje sumowane w podsumowaniu inwestycji — bez wariantów i wymiarów */
-const NURSERY_INVESTMENT_SUM_KEYS = [
-  'nursery_inv_valves', 'nursery_inv_clips', 'nursery_inv_steel', 'nursery_inv_fabric',
-  'nursery_inv_driplines', 'nursery_inv_pipe', 'nursery_inv_labour', 'nursery_inv_pump',
-]
 
 // ==================== HELPERS ====================
 const fmtPln = (n: number) => n.toLocaleString('pl-PL', { maximumFractionDigits: 0 }) + ' zł'
@@ -645,13 +611,6 @@ export default function StrategyTab() {
     }))
   }, [allItems, allVarietyCosts, varieties])
 
-  const nurseryInvestmentTotal = useMemo(
-    () => costItems
-      .filter(i => NURSERY_INVESTMENT_SUM_KEYS.includes(i.key))
-      .reduce((s, i) => s + (parseNum(i.valuePln) ?? 0), 0), // dozwolone: puste pole nie dokłada się do sumy
-    [costItems]
-  )
-
   const paymentShares = useMemo(() => readPaymentShares(book), [book])
   const paymentPercentTotal = useMemo(
     () => paymentShares.shares.reduce((s, x) => s + x.percent, 0),
@@ -1018,14 +977,6 @@ export default function StrategyTab() {
                             </tr>
                           )
                         })}
-                        {cat === 'nursery_investment' && (
-                          <tr className="bg-gray-50 font-semibold">
-                            <td className="px-2 py-0.5 border border-gray-200">Razem budowa szkółki</td>
-                            <td className="border border-gray-200" />
-                            <td className="px-2 py-0.5 border border-gray-200 text-right tabular-nums">{fmtNum(nurseryInvestmentTotal)}</td>
-                            <td className="px-2 py-0.5 border border-gray-200 text-[11px] text-gray-500">bez wariantów</td>
-                          </tr>
-                        )}
                         {cat === 'payment' && (
                           <tr className={`font-semibold ${Math.abs(paymentPercentTotal - 100) < 0.001 ? 'bg-gray-50' : 'bg-amber-50 text-amber-800'}`}>
                             <td className="px-2 py-0.5 border border-gray-200">Razem udziały</td>

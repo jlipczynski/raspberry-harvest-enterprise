@@ -11,6 +11,7 @@ import {
   computePlugCoverage,
   computeCashflow,
   readPaymentShares,
+  bookFor,
   plugUnitCost,
   COST_KEYS,
   type CostBook,
@@ -313,5 +314,36 @@ describe('cashflow — warunki płatności za rośliny', () => {
       [2027, 'Przy dostawie'],
       [2028, 'Przy zamówieniu'],
     ])
+  })
+})
+
+describe('cennik zależny od roku', () => {
+  const sections = [b0913]
+  const items: ScenarioItemInput[] = [
+    { sectionId: 'b0913', year: 2027, method: 'BUY_LC', producesSummer: true, producesAutumn: false },
+    { sectionId: 'b0913', year: 2028, method: 'BUY_LC', producesSummer: true, producesAutumn: false },
+  ]
+
+  /** 2028: long cane drożeje z 2,20 do 2,60 EUR */
+  const bookOf = (year: number): CostBook => ({
+    ...book,
+    varieties: [{ varietyId: 'ruby', lcPriceEur: year >= 2028 ? 2.6 : 2.2, lcPricePln: null, lcGrowEur: null, lcGrowPln: null }],
+  })
+
+  it('każdy rok liczy się własnym cennikiem', () => {
+    const r = computeScenario(sections, items, [], bookOf, [2027, 2028])
+    const [y27, y28] = r.years
+    expect(y28.plantingCostPln).toBeGreaterThan(y27.plantingCostPln)
+    expect(y28.plantingCostPln - y27.plantingCostPln).toBeCloseTo(7200 * 0.4 * EUR_PLN, 2)
+  })
+
+  it('zwykły cennik przekazany wprost obowiązuje w każdym roku', () => {
+    const r = computeScenario(sections, items, [], book, [2027, 2028])
+    expect(r.years[0].plantingCostPln).toBeCloseTo(r.years[1].plantingCostPln, 6)
+  })
+
+  it('bookFor rozwiązuje obie formy źródła cennika', () => {
+    expect(bookFor(book, 2027)).toBe(book)
+    expect(lcPricePln(bookFor(bookOf, 2028), 'ruby')).toBeCloseTo(2.6 * EUR_PLN, 4)
   })
 })

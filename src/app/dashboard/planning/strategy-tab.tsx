@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { Loader2, Plus, Copy, Trash2, Save, ChevronDown, ChevronUp, AlertTriangle, Check } from 'lucide-react'
 import {
   PLANTING_METHODS,
   COST_KEYS,
+  costPln,
   computeScenario,
   computeSectionCost,
   computeSectionVolume,
@@ -49,6 +50,7 @@ interface Scenario {
 /** Kształt z API — wartości liczbowe. */
 interface CostItemRow {
   key: string
+  year: number
   label: string
   category: string
   unit: string
@@ -60,6 +62,7 @@ interface CostItemRow {
 
 interface VarietyCostRow {
   varietyId: string
+  year: number
   lcPriceEur: number | null
   lcPricePln: number | null
   lcGrowEur: number | null
@@ -94,7 +97,7 @@ interface VarietyCostForm {
  * Nic nie trafia do bazy, dopóki użytkownik nie zapisze formularza.
  * Źródło: arkusz "Plantacja_planowanie_nasadzen", zakładka "Cennik".
  */
-const COST_TEMPLATE: Omit<CostItemForm, 'valuePln' | 'valueEur'>[] = [
+const COST_TEMPLATE: Omit<CostItemForm, 'valuePln' | 'valueEur' | 'year'>[] = [
   { key: COST_KEYS.eurPln, label: 'Kurs — ile PLN za 1 EUR', category: 'general', unit: 'PLN', sortOrder: 10, note: null, plnOnly: true, eurPrefix: '1 EUR =' },
   { key: COST_KEYS.cocoPerPot, label: 'Kokos na doniczkę', category: 'planting', unit: 'PLN / doniczkę', sortOrder: 20, note: 'w arkuszu wyliczany z materiału i transportu big bag' },
   { key: COST_KEYS.targetPot, label: 'Doniczka docelowa', category: 'planting', unit: 'PLN / doniczkę', sortOrder: 30, note: 'własne = 0' },
@@ -190,6 +193,7 @@ const parseNum = (v: string): number | null => {
 const numToText = (n: number | null | undefined): string =>
   n == null ? '' : String(n).replace('.', ',')
 const itemKey = (year: number, sectionId: string) => `${year}:${sectionId}`
+const round4 = (n: number) => Math.round(n * 10000) / 10000
 
 // ==================== COMPONENT ====================
 export default function StrategyTab() {
@@ -201,6 +205,10 @@ export default function StrategyTab() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeYear, setActiveYear] = useState<number | null>(null)
 
+  const [allItems, setAllItems] = useState<CostItemRow[]>([])
+  const [allVarietyCosts, setAllVarietyCosts] = useState<VarietyCostRow[]>([])
+  /** rok, dla którego edytujemy cennik. 0 = cennik bazowy (obowiązuje wszędzie, gdzie brak roku) */
+  const [costYear, setCostYear] = useState<number>(0)
   const [costItems, setCostItems] = useState<CostItemForm[]>([])
   const [varietyCosts, setVarietyCosts] = useState<VarietyCostForm[]>([])
   const [showCostBook, setShowCostBook] = useState(false)
@@ -234,8 +242,8 @@ export default function StrategyTab() {
       }
       const [sData, cData, scData] = await Promise.all([sRes.json(), cRes.json(), scRes.json()])
       setSections(sData.sections || [])
-      setCostItems(mergeWithTemplate(cData.items || []))
-      setVarietyCosts(toVarietyForms(cData.varieties || []))
+      setAllItems(cData.items || [])
+      setAllVarietyCosts(cData.varieties || [])
       setScenarios(scData.scenarios || [])
       setActiveId(prev => prev ?? (scData.scenarios?.[0]?.id ?? null))
     } catch (e) {
@@ -254,6 +262,7 @@ export default function StrategyTab() {
       const found = byKey.get(t.key)
       return {
         ...t,
+        year: costYear,
         valuePln: numToText(found?.valuePln),
         valueEur: numToText(found?.valueEur),
       }
@@ -274,6 +283,34 @@ export default function StrategyTab() {
       lcGrowPln: numToText(v.lcGrowPln),
     }))
   }
+
+  // przepisanie surowych danych z API na formularz wybranego roku
+  useEffect(() => {
+    setCostItems(mergeWithTemplate(allItems.filter(i => i.year === costYear)))
+    setVarietyCosts(toVarietyForms(allVarietyCosts.filter(v => v.year === costYear)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allItems, allVarietyCosts, costYear])
+
+  /** cennik dla konkretnego roku: własna pozycja roku, a gdy jej brak — pozycja bazowa (rok 0) */
+  const bookForYear = useCallback((year: number): CostBook => {
+    const pick = <T extends { year: number }>(rows: T[], match: (r: T) => boolean): T | undefined =>
+      rows.find(r => r.year === year && match(r)) ?? rows.find(r => r.year === 0 && match(r))
+    const keys = [...new Set(allItems.map(i => i.key))]
+    return {
+      items: keys.map(key => {
+        const row = pick(allItems, i => i.key === key)
+        return { key, valuePln: row?.valuePln ?? null, valueEur: row?.valueEur ?? null }
+      }),
+      varieties: [...new Set(allVarietyCosts.map(v => v.varietyId))].map(varietyId => {
+        const row = pick(allVarietyCosts, v => v.varietyId === varietyId)
+        return {
+          varietyId,
+          lcPriceEur: row?.lcPriceEur ?? null, lcPricePln: row?.lcPricePln ?? null,
+          lcGrowEur: row?.lcGrowEur ?? null, lcGrowPln: row?.lcGrowPln ?? null,
+        }
+      }),
+    }
+  }, [allItems, allVarietyCosts])
 
   const active = useMemo(() => scenarios.find(s => s.id === activeId) ?? null, [scenarios, activeId])
   const years = useMemo(() => {
@@ -297,15 +334,33 @@ export default function StrategyTab() {
   }, [active])
 
   // ==================== COST BOOK ====================
-  // wyliczenia na żywo z tego, co jest wpisane w formularzu
-  const book: CostBook = useMemo(() => ({
-    items: costItems.map(i => ({ key: i.key, valuePln: parseNum(i.valuePln), valueEur: parseNum(i.valueEur) })),
-    varieties: varietyCosts.map(v => ({
-      varietyId: v.varietyId,
-      lcPriceEur: parseNum(v.lcPriceEur), lcPricePln: parseNum(v.lcPricePln),
-      lcGrowEur: parseNum(v.lcGrowEur), lcGrowPln: parseNum(v.lcGrowPln),
-    })),
-  }), [costItems, varietyCosts])
+  /**
+   * Cennik edytowanego roku, na żywo z formularza. Puste pole = wartość dziedziczona
+   * z cennika bazowego, więc podkładamy ją pod spód.
+   */
+  const book: CostBook = useMemo(() => {
+    const base = bookForYear(costYear)
+    const baseItem = (key: string) => base.items.find(i => i.key === key)
+    const baseVar = (id: string) => base.varieties.find(v => v.varietyId === id)
+    const or = (typed: number | null, inherited: number | null | undefined) => typed ?? inherited ?? null
+    return {
+      items: costItems.map(i => ({
+        key: i.key,
+        valuePln: or(parseNum(i.valuePln), baseItem(i.key)?.valuePln),
+        valueEur: or(parseNum(i.valueEur), baseItem(i.key)?.valueEur),
+      })),
+      varieties: varietyCosts.map(v => ({
+        varietyId: v.varietyId,
+        lcPriceEur: or(parseNum(v.lcPriceEur), baseVar(v.varietyId)?.lcPriceEur),
+        lcPricePln: or(parseNum(v.lcPricePln), baseVar(v.varietyId)?.lcPricePln),
+        lcGrowEur: or(parseNum(v.lcGrowEur), baseVar(v.varietyId)?.lcGrowEur),
+        lcGrowPln: or(parseNum(v.lcGrowPln), baseVar(v.varietyId)?.lcGrowPln),
+      })),
+    }
+  }, [costItems, varietyCosts, bookForYear, costYear])
+
+  /** kurs obowiązujący w edytowanym roku — do przeliczeń EUR ↔ PLN w tabeli */
+  const fxRate = useMemo(() => costPln(book, COST_KEYS.eurPln), [book])
 
   const varieties = useMemo(() => {
     const map = new Map<string, string>()
@@ -339,6 +394,7 @@ export default function StrategyTab() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          year: costYear,
           items: costItems.map(i => ({
             key: i.key, label: i.label, category: i.category, unit: i.unit,
             sortOrder: i.sortOrder, note: i.note,
@@ -356,8 +412,8 @@ export default function StrategyTab() {
         throw new Error(err.error || `HTTP ${res.status}`)
       }
       const data = await res.json()
-      setCostItems(mergeWithTemplate(data.items || []))
-      setVarietyCosts(toVarietyForms(data.varieties || []))
+      setAllItems(data.items || [])
+      setAllVarietyCosts(data.varieties || [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Nie udało się zapisać cennika')
     } finally {
@@ -501,8 +557,8 @@ export default function StrategyTab() {
   )
 
   const summary = useMemo(
-    () => computeScenario(sections, itemInputs, plugInputs, book, years),
-    [sections, itemInputs, plugInputs, book, years]
+    () => computeScenario(sections, itemInputs, plugInputs, bookForYear, years),
+    [sections, itemInputs, plugInputs, bookForYear, years]
   )
 
   const coverage = useMemo(
@@ -510,7 +566,37 @@ export default function StrategyTab() {
     [sections, itemInputs, plugInputs, years]
   )
 
-  const plugUnit = useMemo(() => plugUnitCost(book), [book])
+  const plugUnit = useMemo(() => plugUnitCost(bookForYear(activeYear ?? 0)), [bookForYear, activeYear])
+
+  /** lata, dla których można prowadzić osobny cennik — z zakresów wszystkich scenariuszy */
+  const costYears = useMemo(() => {
+    const set = new Set<number>()
+    for (const sc of scenarios) for (let y = sc.startYear; y <= sc.endYear; y++) set.add(y)
+    for (const i of allItems) if (i.year !== 0) set.add(i.year)
+    return [...set].sort((a, b) => a - b)
+  }, [scenarios, allItems])
+
+  /** wartość z cennika bazowego — pokazywana jako podpowiedź, gdy rok nie ma własnej */
+  const inheritedValue = useCallback(
+    (key: string) => (costYear === 0 ? null : allItems.find(i => i.year === 0 && i.key === key) ?? null),
+    [allItems, costYear]
+  )
+
+  const copyFromBase = useCallback(() => {
+    setCostItems(prev => prev.map(i => {
+      const base = allItems.find(x => x.year === 0 && x.key === i.key)
+      if (!base) return i
+      return { ...i, valuePln: numToText(base.valuePln), valueEur: numToText(base.valueEur) }
+    }))
+    setVarietyCosts(varieties.map(v => {
+      const base = allVarietyCosts.find(x => x.year === 0 && x.varietyId === v.id)
+      return {
+        varietyId: v.id,
+        lcPriceEur: numToText(base?.lcPriceEur), lcPricePln: numToText(base?.lcPricePln),
+        lcGrowEur: numToText(base?.lcGrowEur), lcGrowPln: numToText(base?.lcGrowPln),
+      }
+    }))
+  }, [allItems, allVarietyCosts, varieties])
 
   const nurseryInvestmentTotal = useMemo(
     () => costItems
@@ -539,9 +625,9 @@ export default function StrategyTab() {
       producesSummer: i.producesSummer, producesAutumn: i.producesAutumn,
     }))
     const plugs = isActive ? plugInputs : sc.plugPlans.map(p => ({ year: p.year, varietyId: p.varietyId, quantity: p.quantity }))
-    const r = computeScenario(sections, items, plugs, book, scYears)
+    const r = computeScenario(sections, items, plugs, bookForYear, scYears)
     return { scenario: sc, result: r, isActive }
-  }), [scenarios, sections, book, activeId, itemInputs, plugInputs])
+  }), [scenarios, sections, bookForYear, activeId, itemInputs, plugInputs])
 
   // ==================== RENDER ====================
   if (loading) {
@@ -642,153 +728,192 @@ export default function StrategyTab() {
 
       {/* ---------- CENNIK ---------- */}
       <div className="bg-white border border-gray-200 rounded-xl">
-        <button
-          onClick={() => setShowCostBook(v => !v)}
-          className="w-full flex items-center justify-between px-4 py-3 text-left"
-        >
-          <div>
+        <div className="flex items-center justify-between gap-3 px-4 py-3 flex-wrap">
+          <button onClick={() => setShowCostBook(v => !v)} className="flex items-center gap-2 text-left">
+            {showCostBook ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
             <span className="font-medium text-gray-900">Cennik</span>
-            <span className="ml-2 text-xs text-gray-500">
-              koszty jednostkowe — wszystkie wyliczenia biorą wartości stąd
+            <span className="text-xs text-gray-500">
+              {costYear === 0 ? 'bazowy — obowiązuje w każdym roku' : `na rok ${costYear}`}
             </span>
+          </button>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500">Cennik na rok:</label>
+            <select
+              value={costYear}
+              onChange={e => { setCostYear(parseInt(e.target.value)); setShowCostBook(true) }}
+              className="h-8 border border-gray-200 rounded-lg px-2 text-sm bg-white"
+            >
+              <option value={0}>Bazowy (wszystkie lata)</option>
+              {costYears.map(y => (
+                <option key={y} value={y}>{y}{allItems.some(i => i.year === y) ? '' : ' — pusty'}</option>
+              ))}
+            </select>
           </div>
-          {showCostBook ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-        </button>
+        </div>
 
         {showCostBook && (
-          <div className="px-4 pb-4 space-y-4 border-t border-gray-100 pt-4">
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="border-t border-gray-100">
+            <div className="flex items-center gap-2 flex-wrap px-4 py-2 bg-gray-50/70 border-b border-gray-100">
               <button onClick={applySuggestions}
-                className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100">
+                className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded hover:bg-gray-100">
                 Wstaw wartości z arkusza
               </button>
-              <span className="text-xs text-gray-400">wypełnia formularz — zapisuje dopiero „Zapisz cennik”</span>
+              {costYear !== 0 && (
+                <button onClick={copyFromBase}
+                  className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded hover:bg-gray-100">
+                  Skopiuj z bazowego
+                </button>
+              )}
+              <span className="text-xs text-gray-400">
+                {costYear === 0
+                  ? 'ten cennik obowiązuje wszędzie, gdzie rok nie ma własnej ceny'
+                  : 'puste pole = cena z cennika bazowego'}
+              </span>
               <button onClick={saveCostBook} disabled={savingCosts}
-                className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
+                className="ml-auto inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50">
                 {savingCosts ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                Zapisz cennik
+                Zapisz {costYear === 0 ? 'cennik bazowy' : costYear}
               </button>
             </div>
 
-            {COST_CATEGORIES.map(cat => (
-              <div key={cat}>
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{CATEGORY_LABELS[cat] ?? cat}</div>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-gray-500 border-b border-gray-100">
-                      <th className="text-left font-medium py-1.5">Pozycja</th>
-                      <th className="text-right font-medium py-1.5 w-28">EUR</th>
-                      <th className="text-right font-medium py-1.5 w-28">PLN</th>
-                      <th className="text-left font-medium py-1.5 pl-3">Jednostka</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {costItems.filter(i => i.category === cat).map(item => (
-                      <tr key={item.key} className="border-b border-gray-50">
-                        <td className="py-1.5">
-                          <div className="text-gray-800">{item.label}</div>
-                          {item.note && <div className="text-xs text-gray-400">{item.note}</div>}
-                        </td>
-                        <td className="py-1.5">
-                          {item.plnOnly ? (
-                            <div className="h-8 flex items-center justify-end text-sm text-gray-500 pr-2">{item.eurPrefix ?? ''}</div>
-                          ) : (
-                            <input
-                              inputMode="decimal"
-                              value={item.valueEur}
-                              onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valueEur: e.target.value } : i))}
-                              placeholder="—"
-                              className="h-8 w-full border border-gray-200 rounded px-2 text-right text-sm"
-                            />
-                          )}
-                        </td>
-                        <td className="py-1.5">
-                          <input
-                            inputMode="decimal"
-                            value={item.valuePln}
-                            onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valuePln: e.target.value } : i))}
-                            placeholder="—"
-                            className="h-8 w-full border border-gray-200 rounded px-2 text-right text-sm"
-                          />
-                        </td>
-                        <td className="py-1.5 pl-3 text-xs text-gray-500">{item.unit}</td>
-                      </tr>
-                    ))}
-                    {cat === 'nursery_investment' && (
-                      <tr className="bg-gray-50 font-semibold">
-                        <td className="py-1.5">Razem budowa szkółki</td>
-                        <td />
-                        <td className="py-1.5 pr-2 text-right">{fmtPln(nurseryInvestmentTotal)}</td>
-                        <td className="py-1.5 pl-3 text-xs text-gray-500">bez wariantów i wymiarów</td>
-                      </tr>
-                    )}
-                    {cat === 'payment' && (
-                      <tr className={`font-semibold ${Math.abs(paymentPercentTotal - 100) < 0.001 ? 'bg-gray-50' : 'bg-amber-50 text-amber-800'}`}>
-                        <td className="py-1.5">Razem udziały</td>
-                        <td />
-                        <td className="py-1.5 pr-2 text-right">{paymentPercentTotal}</td>
-                        <td className="py-1.5 pl-3 text-xs">
-                          {Math.abs(paymentPercentTotal - 100) < 0.001 ? '% — komplet' : '% — powinno być 100'}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-                {cat === 'nursery_investment' && (
-                  <p className="text-xs text-gray-400 mt-2">
-                    Koszt jednorazowy — nie wchodzi do kosztu sadzenia sekcji ani do koszt/kg.
-                  </p>
-                )}
-              </div>
-            ))}
-
-            <div>
-              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Ceny per odmiana</div>
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="text-xs text-gray-500 border-b border-gray-100">
-                    <th className="text-left font-medium py-1.5">Odmiana</th>
-                    <th className="text-right font-medium py-1.5 w-32">Long cane EUR</th>
-                    <th className="text-right font-medium py-1.5 w-32">Long cane PLN</th>
-                    <th className="text-right font-medium py-1.5 w-40">Wyhodowanie z plagi EUR</th>
-                    <th className="text-right font-medium py-1.5 w-40">Wyhodowanie z plagi PLN</th>
+                  <tr className="text-[11px] uppercase tracking-wide text-gray-500 bg-gray-50">
+                    <th className="text-left font-medium px-3 py-1.5 border-b border-gray-200">Pozycja</th>
+                    <th className="text-right font-medium px-2 py-1.5 border-b border-gray-200 w-28">EUR</th>
+                    <th className="text-right font-medium px-2 py-1.5 border-b border-gray-200 w-28">PLN</th>
+                    <th className="text-left font-medium px-3 py-1.5 border-b border-gray-200 w-56">Jednostka</th>
                   </tr>
                 </thead>
                 <tbody>
+                  {COST_CATEGORIES.map(cat => {
+                    const rows = costItems.filter(i => i.category === cat)
+                    if (rows.length === 0) return null
+                    return (
+                      <Fragment key={cat}>
+                        <tr>
+                          <td colSpan={4} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border-y border-gray-200">
+                            {CATEGORY_LABELS[cat] ?? cat}
+                          </td>
+                        </tr>
+                        {rows.map(item => {
+                          const eurNum = parseNum(item.valueEur)
+                          const plnNum = parseNum(item.valuePln)
+                          const derivedPln = eurNum != null && fxRate != null ? eurNum * fxRate : null
+                          const derivedEur = plnNum != null && fxRate ? plnNum / fxRate : null
+                          const inherited = inheritedValue(item.key)
+                          return (
+                            <tr key={item.key} className="odd:bg-white even:bg-gray-50/40 hover:bg-indigo-50/30">
+                              <td className="px-3 py-1 border-b border-gray-100 whitespace-nowrap">
+                                <span className="text-gray-800">{item.label}</span>
+                                {item.note && <span className="ml-2 text-[11px] text-gray-400">{item.note}</span>}
+                              </td>
+                              <td className="px-2 py-1 border-b border-gray-100">
+                                {item.plnOnly ? (
+                                  <div className="text-right text-xs text-gray-400 pr-1">{item.eurPrefix ?? ''}</div>
+                                ) : (
+                                  <input
+                                    inputMode="decimal"
+                                    value={item.valueEur}
+                                    onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valueEur: e.target.value } : i))}
+                                    placeholder={derivedEur != null ? numToText(round4(derivedEur)) : (inherited?.valueEur != null ? numToText(inherited.valueEur) : '')}
+                                    className="h-7 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:bg-white rounded px-1.5 text-right tabular-nums outline-none"
+                                  />
+                                )}
+                              </td>
+                              <td className="px-2 py-1 border-b border-gray-100">
+                                <input
+                                  inputMode="decimal"
+                                  value={item.valuePln}
+                                  onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valuePln: e.target.value } : i))}
+                                  placeholder={derivedPln != null ? numToText(round4(derivedPln)) : (inherited?.valuePln != null ? numToText(inherited.valuePln) : '')}
+                                  className="h-7 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:bg-white rounded px-1.5 text-right tabular-nums outline-none"
+                                />
+                              </td>
+                              <td className="px-3 py-1 border-b border-gray-100 text-[11px] text-gray-500">{item.unit}</td>
+                            </tr>
+                          )
+                        })}
+                        {cat === 'nursery_investment' && (
+                          <tr className="bg-gray-50 font-semibold">
+                            <td className="px-3 py-1 border-b border-gray-200">Razem budowa szkółki</td>
+                            <td className="border-b border-gray-200" />
+                            <td className="px-2 py-1 border-b border-gray-200 text-right tabular-nums">{fmtPln(nurseryInvestmentTotal)}</td>
+                            <td className="px-3 py-1 border-b border-gray-200 text-[11px] text-gray-500">bez wariantów i wymiarów</td>
+                          </tr>
+                        )}
+                        {cat === 'payment' && (
+                          <tr className={`font-semibold ${Math.abs(paymentPercentTotal - 100) < 0.001 ? 'bg-gray-50' : 'bg-amber-50 text-amber-800'}`}>
+                            <td className="px-3 py-1 border-b border-gray-200">Razem udziały</td>
+                            <td className="border-b border-gray-200" />
+                            <td className="px-2 py-1 border-b border-gray-200 text-right tabular-nums">{paymentPercentTotal}</td>
+                            <td className="px-3 py-1 border-b border-gray-200 text-[11px]">
+                              {Math.abs(paymentPercentTotal - 100) < 0.001 ? '% — komplet' : '% — powinno być 100'}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+
+                  {/* Ceny per odmiana */}
+                  <tr>
+                    <td colSpan={4} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-600 bg-gray-100 border-y border-gray-200">
+                      Ceny per odmiana
+                    </td>
+                  </tr>
                   {varieties.map(v => {
                     const row = varietyCosts.find(x => x.varietyId === v.id)
-                    const upd = (patch: Partial<VarietyCostForm>) => setVarietyCosts(prev => {
-                      const exists = prev.some(x => x.varietyId === v.id)
-                      if (!exists) return [...prev, { varietyId: v.id, lcPriceEur: '', lcPricePln: '', lcGrowEur: '', lcGrowPln: '', ...patch }]
-                      return prev.map(x => x.varietyId === v.id ? { ...x, ...patch } : x)
-                    })
-                    return (
-                      <tr key={v.id} className="border-b border-gray-50">
-                        <td className="py-1.5 text-gray-800">{v.name}</td>
-                        {([
-                          ['lcPriceEur', row?.lcPriceEur ?? ''],
-                          ['lcPricePln', row?.lcPricePln ?? ''],
-                          ['lcGrowEur', row?.lcGrowEur ?? ''],
-                          ['lcGrowPln', row?.lcGrowPln ?? ''],
-                        ] as const).map(([field, value]) => (
-                          <td key={field} className="py-1.5 pl-2">
+                    const upd = (patch: Partial<VarietyCostForm>) => {
+                      setVarietyCosts(prev => {
+                        const exists = prev.some(x => x.varietyId === v.id)
+                        if (!exists) return [...prev, { varietyId: v.id, lcPriceEur: '', lcPricePln: '', lcGrowEur: '', lcGrowPln: '', ...patch }]
+                        return prev.map(x => x.varietyId === v.id ? { ...x, ...patch } : x)
+                      })
+                    }
+                    const pairs = [
+                      { label: `Long cane — ${v.name}`, eurField: 'lcPriceEur' as const, plnField: 'lcPricePln' as const, unit: 'zakup / szt.' },
+                      { label: `Wyhodowanie z plagi — ${v.name}`, eurField: 'lcGrowEur' as const, plnField: 'lcGrowPln' as const, unit: 'na long cane — puste = stawka ogólna' },
+                    ]
+                    return pairs.map(pair => {
+                      const eurNum = parseNum(row?.[pair.eurField] ?? '')
+                      const plnNum = parseNum(row?.[pair.plnField] ?? '')
+                      const derivedPln = eurNum != null && fxRate != null ? eurNum * fxRate : null
+                      const derivedEur = plnNum != null && fxRate ? plnNum / fxRate : null
+                      return (
+                        <tr key={v.id + pair.eurField} className="odd:bg-white even:bg-gray-50/40 hover:bg-indigo-50/30">
+                          <td className="px-3 py-1 border-b border-gray-100 text-gray-800 whitespace-nowrap">{pair.label}</td>
+                          <td className="px-2 py-1 border-b border-gray-100">
                             <input
                               inputMode="decimal"
-                              value={value}
-                              onChange={e => upd({ [field]: e.target.value } as Partial<VarietyCostForm>)}
-                              placeholder="—"
-                              className="h-8 w-full border border-gray-200 rounded px-2 text-right text-sm"
+                              value={row?.[pair.eurField] ?? ''}
+                              onChange={e => upd({ [pair.eurField]: e.target.value } as Partial<VarietyCostForm>)}
+                              placeholder={derivedEur != null ? numToText(round4(derivedEur)) : ''}
+                              className="h-7 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:bg-white rounded px-1.5 text-right tabular-nums outline-none"
                             />
                           </td>
-                        ))}
-                      </tr>
-                    )
+                          <td className="px-2 py-1 border-b border-gray-100">
+                            <input
+                              inputMode="decimal"
+                              value={row?.[pair.plnField] ?? ''}
+                              onChange={e => upd({ [pair.plnField]: e.target.value } as Partial<VarietyCostForm>)}
+                              placeholder={derivedPln != null ? numToText(round4(derivedPln)) : ''}
+                              className="h-7 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:bg-white rounded px-1.5 text-right tabular-nums outline-none"
+                            />
+                          </td>
+                          <td className="px-3 py-1 border-b border-gray-100 text-[11px] text-gray-500">{pair.unit}</td>
+                        </tr>
+                      )
+                    })
                   })}
                 </tbody>
               </table>
-              <p className="text-xs text-gray-400 mt-2">
-                Puste „wyhodowanie z plagi” = liczone z pozycji ogólnej. Wartość w PLN ma pierwszeństwo przed EUR.
-              </p>
+            </div>
+
+            <div className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100">
+              Szara liczba w polu to przeliczenie po kursie {fxRate != null ? `${numToText(fxRate)} zł/EUR` : '— brak kursu'} albo wartość z cennika bazowego. Wpisz własną, żeby ją nadpisać.
             </div>
           </div>
         )}

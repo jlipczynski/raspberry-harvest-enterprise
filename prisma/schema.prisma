@@ -666,8 +666,11 @@ model CostItem {
   // Rok obowiązywania ceny. 0 = cennik bazowy — obowiązuje w każdym roku,
   // dla którego nie ma własnej pozycji. Ceny zmieniają się rok do roku.
   year      Int    @default(0)
+  // Odmiana, której dotyczy cena. "" = pozycja wspólna dla wszystkich odmian.
+  // Pusty string zamiast null, bo Postgres traktuje NULL-e jako różne w kluczu unikalnym.
+  varietyId String @default("")
   label     String
-  category  String // 'general' | 'planting' | 'nursery'
+  category  String // 'general' | 'seedlings' | 'planting' | 'nursery' | 'payment'
   unit      String
   valuePln  Float? // null = wartość podana wyłącznie w EUR, przeliczana kursem
   valueEur  Float?
@@ -677,7 +680,7 @@ model CostItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, key, year])
+  @@unique([tenantId, key, year, varietyId])
   @@index([tenantId])
   @@map("cost_items")
 }

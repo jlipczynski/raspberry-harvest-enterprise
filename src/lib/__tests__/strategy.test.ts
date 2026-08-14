@@ -43,10 +43,9 @@ const book: CostBook = {
     { key: COST_KEYS.tipsTransport, valuePln: 4000 / 70000, valueEur: null },
     { key: COST_KEYS.lcGrowFromPlug, valuePln: null, valueEur: 0.55 },
     { key: COST_KEYS.plantingLabourPerPot, valuePln: 0, valueEur: null }, // brak w arkuszu — pozycja istnieje, wartość 0
-  ],
-  varieties: [
-    { varietyId: 'ruby', lcPriceEur: 2.2, lcPricePln: null, lcGrowEur: null, lcGrowPln: null },
-    { varietyId: 'dj', lcPriceEur: 2.15, lcPricePln: null, lcGrowEur: null, lcGrowPln: null },
+    // ceny sadzonek per odmiana
+    { key: COST_KEYS.lcPrice, varietyId: 'ruby', valuePln: null, valueEur: 2.2 },
+    { key: COST_KEYS.lcPrice, varietyId: 'dj', valuePln: null, valueEur: 2.15 },
   ],
 }
 
@@ -93,11 +92,11 @@ describe('cennik', () => {
 
   it('zwraca null gdy pozycji nie ma w cenniku — nigdy nie zgaduje', () => {
     expect(costPln(book, 'nie_istnieje')).toBeNull()
-    expect(costPln({ items: [], varieties: [] }, COST_KEYS.cocoPerPot)).toBeNull()
+    expect(costPln({ items: [] }, COST_KEYS.cocoPerPot)).toBeNull()
   })
 
   it('zwraca null gdy pozycja jest w EUR, a brakuje kursu', () => {
-    const noFx: CostBook = { items: [{ key: COST_KEYS.tipsPrice, valuePln: null, valueEur: 0.65 }], varieties: [] }
+    const noFx: CostBook = { items: [{ key: COST_KEYS.tipsPrice, valuePln: null, valueEur: 0.65 }] }
     expect(costPln(noFx, COST_KEYS.tipsPrice)).toBeNull()
   })
 
@@ -112,8 +111,7 @@ describe('cennik', () => {
 
   it('override per odmiana ma pierwszeństwo przed pozycją globalną', () => {
     const withOverride: CostBook = {
-      ...book,
-      varieties: [{ varietyId: 'ruby', lcPriceEur: 2.2, lcPricePln: null, lcGrowEur: 0.7, lcGrowPln: null }],
+      items: [...book.items, { key: COST_KEYS.lcGrowFromPlug, varietyId: 'ruby', valuePln: null, valueEur: 0.7 }],
     }
     expect(lcGrowPricePln(withOverride, 'ruby')).toBeCloseTo(0.7 * EUR_PLN, 6)
   })
@@ -333,8 +331,10 @@ describe('cennik zależny od roku', () => {
 
   /** 2028: long cane drożeje z 2,20 do 2,60 EUR */
   const bookOf = (year: number): CostBook => ({
-    ...book,
-    varieties: [{ varietyId: 'ruby', lcPriceEur: year >= 2028 ? 2.6 : 2.2, lcPricePln: null, lcGrowEur: null, lcGrowPln: null }],
+    items: [
+      ...book.items.filter(i => i.key !== COST_KEYS.lcPrice),
+      { key: COST_KEYS.lcPrice, varietyId: 'ruby', valuePln: null, valueEur: year >= 2028 ? 2.6 : 2.2 },
+    ],
   })
 
   it('każdy rok liczy się własnym cennikiem', () => {
@@ -400,5 +400,55 @@ describe('sposoby obsadzania definiowane przez użytkownika', () => {
     )
     expect(rows[0].needed).toBe(6000)
     expect(rows[0].ok).toBe(false)
+  })
+})
+
+describe('cennik z cenami per odmiana', () => {
+  it('cena odmiany ma pierwszeństwo przed wspólną', () => {
+    const b: CostBook = {
+      items: [
+        { key: COST_KEYS.eurPln, valuePln: EUR_PLN, valueEur: null },
+        { key: COST_KEYS.lcGrowFromPlug, valuePln: 2, valueEur: null },
+        { key: COST_KEYS.lcGrowFromPlug, varietyId: 'ruby', valuePln: 3, valueEur: null },
+      ],
+    }
+    expect(lcGrowPricePln(b, 'ruby')).toBe(3)
+    expect(lcGrowPricePln(b, 'dj')).toBe(2)
+  })
+
+  it('brak ceny dla odmiany i brak wspólnej daje null', () => {
+    expect(lcPricePln({ items: [] }, 'ruby')).toBeNull()
+  })
+
+  it('gotowa cena zakupu plagi zastępuje składanie z tips + transport + doniczka', () => {
+    const b: CostBook = {
+      items: [
+        { key: COST_KEYS.eurPln, valuePln: EUR_PLN, valueEur: null },
+        { key: COST_KEYS.plugPrice, varietyId: 'ruby', valuePln: 4.2, valueEur: null },
+      ],
+    }
+    expect(plugUnitCost(b, 'ruby').unitPln).toBe(4.2)
+    // dla innej odmiany brak gotowej ceny → składanie, a więc zgłoszone braki
+    expect(plugUnitCost(b, 'dj').missing.length).toBeGreaterThan(0)
+  })
+
+  it('bez gotowej ceny plaga liczy się jak w arkuszu', () => {
+    expect(plugUnitCost(book).unitPln).toBeCloseTo(3.359, 3)
+  })
+
+  it('koszt plag liczony jest ceną właściwą dla odmiany', () => {
+    const b: CostBook = {
+      items: [
+        { key: COST_KEYS.eurPln, valuePln: EUR_PLN, valueEur: null },
+        { key: COST_KEYS.plugPrice, varietyId: 'ruby', valuePln: 4, valueEur: null },
+        { key: COST_KEYS.plugPrice, varietyId: 'dj', valuePln: 10, valueEur: null },
+      ],
+    }
+    const r = computeScenario(
+      [b0913], [],
+      [{ year: 2027, varietyId: 'ruby', quantity: 1000 }, { year: 2027, varietyId: 'dj', quantity: 1000 }],
+      b, [2027], METHODS
+    )
+    expect(r.years[0].plugCostPln).toBe(14000)
   })
 })

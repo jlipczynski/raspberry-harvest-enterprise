@@ -5,8 +5,6 @@ import { Loader2, Plus, Copy, Trash2, Save, ChevronDown, ChevronUp, AlertTriangl
 import {
   DEFAULT_PLANTING_METHODS,
   methodByCode,
-  COST_KEYS,
-  costPln,
   computeScenario,
   computeSectionCost,
   computeSectionVolume,
@@ -18,10 +16,10 @@ import {
   sectionShoots,
   type PlantingMethod,
   type PlantingMethodDef,
-  type CostBook,
   type StrategySection,
   type ScenarioItemInput,
 } from '@/lib/strategy'
+import CostBookPanel, { buildBookForYear, type CostItemRow } from './cost-book-panel'
 
 // ==================== TYPES ====================
 interface ScenarioItemRow {
@@ -49,110 +47,11 @@ interface Scenario {
   plugPlans: PlugPlanRow[]
 }
 
-/** Kształt z API — wartości liczbowe. */
-interface CostItemRow {
-  key: string
-  year: number
-  label: string
-  category: string
-  unit: string
-  valuePln: number | null
-  valueEur: number | null
-  sortOrder: number
-  note: string | null
-}
-
-interface VarietyCostRow {
-  varietyId: string
-  year: number
-  lcPriceEur: number | null
-  lcPricePln: number | null
-  lcGrowEur: number | null
-  lcGrowPln: number | null
-  variety?: { id: string; name: string }
-}
-
-/**
- * Kształt formularza — wartości trzymamy jako tekst, żeby dało się wpisać
- * miejsca po przecinku. Parsowanie na liczbę następuje dopiero przy liczeniu
- * i przy zapisie; parsowanie w onChange zjadałoby przecinek w trakcie pisania.
- */
-interface CostItemForm extends Omit<CostItemRow, 'valuePln' | 'valueEur'> {
-  valuePln: string
-  valueEur: string
-  /** pozycja ma sens tylko w jednej walucie/jednostce — nie pokazujemy pola EUR */
-  plnOnly?: boolean
-  /** tekst w miejscu pola EUR (np. „1 EUR =" przy kursie) */
-  eurPrefix?: string
-}
-
 /** definicja sposobu obsadzania wraz z polami porządkowymi z bazy */
 interface MethodRow extends PlantingMethodDef {
   sortOrder: number
   isActive: boolean
 }
-
-interface VarietyCostForm {
-  varietyId: string
-  lcPriceEur: string
-  lcPricePln: string
-  lcGrowEur: string
-  lcGrowPln: string
-}
-
-/**
- * Propozycje wartości cennika — stałe UI, NIE dane domenowe.
- * Nic nie trafia do bazy, dopóki użytkownik nie zapisze formularza.
- * Źródło: arkusz "Plantacja_planowanie_nasadzen", zakładka "Cennik".
- */
-const COST_TEMPLATE: Omit<CostItemForm, 'valuePln' | 'valueEur' | 'year'>[] = [
-  { key: COST_KEYS.eurPln, label: 'Kurs EUR/PLN', category: 'general', unit: 'PLN', sortOrder: 10, note: null, plnOnly: true, eurPrefix: '1 EUR =' },
-  { key: COST_KEYS.cocoPerPot, label: 'Kokos na doniczkę', category: 'planting', unit: 'PLN / doniczkę', sortOrder: 20, note: 'w arkuszu wyliczany z materiału i transportu big bag' },
-  { key: COST_KEYS.targetPot, label: 'Doniczka docelowa', category: 'planting', unit: 'PLN / doniczkę', sortOrder: 30, note: 'własne = 0' },
-  { key: COST_KEYS.lcTransport, label: 'Transport long cane', category: 'planting', unit: 'PLN / szt.', sortOrder: 40, note: null },
-  { key: COST_KEYS.plantingLabourPerPot, label: 'Robocizna sadzenia', category: 'planting', unit: 'PLN / doniczkę', sortOrder: 50, note: 'brak w arkuszu — uzupełnij jeśli chcesz liczyć' },
-  { key: COST_KEYS.lcGrowFromPlug, label: 'Wyhodowanie LC z plagi', category: 'nursery', unit: 'na long cane', sortOrder: 60, note: 'ustalane indywidualnie — można nadpisać per odmiana' },
-  { key: COST_KEYS.tipsPrice, label: 'Tips (sadzonka)', category: 'nursery', unit: 'na szt.', sortOrder: 70, note: null },
-  { key: COST_KEYS.tipsTransport, label: 'Transport tips', category: 'nursery', unit: 'PLN / szt.', sortOrder: 80, note: null },
-  { key: COST_KEYS.nurseryPot, label: 'Doniczka szkółkowa', category: 'nursery', unit: 'PLN / szt.', sortOrder: 90, note: 'jednorazowo, tylko tips' },
-
-  // Arkusz "Plan 2027-2029" — warunki płatności za rośliny. Rozkładają koszt roku na lata wydatku.
-  { key: COST_KEYS.payOrderPct,           label: 'Przy zamówieniu',            category: 'payment', unit: '%',   sortOrder: 300, note: null, plnOnly: true },
-  { key: COST_KEYS.payOrderYearOffset,    label: '↳ rok wydatku',              category: 'payment', unit: 'rok (−1 = wcześniej)', sortOrder: 310, note: null, plnOnly: true },
-  { key: COST_KEYS.payDeliveryPct,        label: 'Przy dostawie',              category: 'payment', unit: '%',   sortOrder: 320, note: null, plnOnly: true },
-  { key: COST_KEYS.payDeliveryYearOffset, label: '↳ rok wydatku',              category: 'payment', unit: 'rok (0 = rok kosztu)', sortOrder: 330, note: null, plnOnly: true },
-  { key: COST_KEYS.payRestPct,            label: 'Reszta',                     category: 'payment', unit: '%',   sortOrder: 340, note: 'w arkuszu: do sierpnia roku następnego (Berry World: 50% after delivery 30 days)', plnOnly: true },
-  { key: COST_KEYS.payRestYearOffset,     label: '↳ rok wydatku',              category: 'payment', unit: 'rok (+1 = później)', sortOrder: 350, note: null, plnOnly: true },
-]
-
-/** Propozycje liczbowe z arkusza — wstawiane do formularza po kliknięciu, nie zapisywane automatycznie. */
-const COST_SUGGESTIONS: Record<string, { pln?: number; eur?: number }> = {
-  [COST_KEYS.eurPln]: { pln: 4.31 },
-  [COST_KEYS.cocoPerPot]: { pln: 3.6167 },
-  [COST_KEYS.targetPot]: { pln: 0 },
-  [COST_KEYS.lcTransport]: { pln: 0.375 },
-  [COST_KEYS.plantingLabourPerPot]: { pln: 0 },
-  [COST_KEYS.lcGrowFromPlug]: { eur: 0.55 },
-  [COST_KEYS.tipsPrice]: { eur: 0.65 },
-  [COST_KEYS.tipsTransport]: { pln: 0.0571 },
-  [COST_KEYS.nurseryPot]: { pln: 0.5 },
-  [COST_KEYS.payOrderPct]: { pln: 25 },
-  [COST_KEYS.payOrderYearOffset]: { pln: -1 },
-  [COST_KEYS.payDeliveryPct]: { pln: 25 },
-  [COST_KEYS.payDeliveryYearOffset]: { pln: 0 },
-  [COST_KEYS.payRestPct]: { pln: 50 },
-  [COST_KEYS.payRestYearOffset]: { pln: 1 },
-}
-
-const CATEGORY_LABELS: Record<string, string> = {
-  general: 'Parametry ogólne',
-  planting: 'Sadzenie',
-  nursery: 'Szkółka / plagi',
-  payment: 'Warunki płatności za rośliny',
-}
-
-const COST_CATEGORIES = ['general', 'planting', 'nursery', 'payment']
-
 
 // ==================== HELPERS ====================
 /** kwoty zawsze z dokładnością do grosza */
@@ -164,16 +63,7 @@ const fmtNum = (n: number) => n.toLocaleString('pl-PL', { maximumFractionDigits:
 /** stawka jednostkowa — do 4 miejsc, bo grosz to za mało przy cenach za sztukę */
 const fmtRate = (n: number) =>
   n.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
-const parseNum = (v: string): number | null => {
-  if (v.trim() === '') return null
-  const n = parseFloat(v.replace(',', '.'))
-  return Number.isFinite(n) ? n : null
-}
-/** liczba z bazy → tekst w polu formularza (przecinek jako separator dziesiętny) */
-const numToText = (n: number | null | undefined): string =>
-  n == null ? '' : String(n).replace('.', ',')
 const itemKey = (year: number, sectionId: string) => `${year}:${sectionId}`
-const round4 = (n: number) => Math.round(n * 10000) / 10000
 
 // ==================== COMPONENT ====================
 export default function StrategyTab() {
@@ -186,17 +76,15 @@ export default function StrategyTab() {
   const [activeYear, setActiveYear] = useState<number | null>(null)
 
   const [allItems, setAllItems] = useState<CostItemRow[]>([])
-  const [allVarietyCosts, setAllVarietyCosts] = useState<VarietyCostRow[]>([])
+
   /** rok, dla którego edytujemy cennik. 0 = cennik bazowy (obowiązuje wszędzie, gdzie brak roku) */
   const [costYear, setCostYear] = useState<number>(0)
-  const [costItems, setCostItems] = useState<CostItemForm[]>([])
-  const [varietyCosts, setVarietyCosts] = useState<VarietyCostForm[]>([])
+
   const [methods, setMethods] = useState<MethodRow[]>([])
   const [methodDraft, setMethodDraft] = useState<MethodRow[]>([])
   const [showMethods, setShowMethods] = useState(false)
   const [savingMethods, setSavingMethods] = useState(false)
-  const [showCostBook, setShowCostBook] = useState(false)
-  const [savingCosts, setSavingCosts] = useState(false)
+
 
   const [draftItems, setDraftItems] = useState<Record<string, ScenarioItemRow>>({})
   const [draftPlugs, setDraftPlugs] = useState<Record<string, number>>({})
@@ -230,7 +118,6 @@ export default function StrategyTab() {
       setMethodDraft(mData.methods || [])
       setSections(sData.sections || [])
       setAllItems(cData.items || [])
-      setAllVarietyCosts(cData.varieties || [])
       setScenarios(scData.scenarios || [])
       setActiveId(prev => prev ?? (scData.scenarios?.[0]?.id ?? null))
     } catch (e) {
@@ -242,62 +129,8 @@ export default function StrategyTab() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  /** Cennik zawsze pokazuje pełen zestaw pozycji — brakujące mają puste pola (nie zera). */
-  function mergeWithTemplate(saved: CostItemRow[]): CostItemForm[] {
-    const byKey = new Map(saved.map(i => [i.key, i]))
-    const merged: CostItemForm[] = COST_TEMPLATE.map(t => {
-      const found = byKey.get(t.key)
-      return {
-        ...t,
-        year: costYear,
-        valuePln: numToText(found?.valuePln),
-        valueEur: numToText(found?.valueEur),
-      }
-    })
-    for (const s of saved) {
-      if (merged.some(m => m.key === s.key)) continue
-      merged.push({ ...s, valuePln: numToText(s.valuePln), valueEur: numToText(s.valueEur) })
-    }
-    return merged.sort((a, b) => a.sortOrder - b.sortOrder)
-  }
-
-  function toVarietyForms(saved: VarietyCostRow[]): VarietyCostForm[] {
-    return saved.map(v => ({
-      varietyId: v.varietyId,
-      lcPriceEur: numToText(v.lcPriceEur),
-      lcPricePln: numToText(v.lcPricePln),
-      lcGrowEur: numToText(v.lcGrowEur),
-      lcGrowPln: numToText(v.lcGrowPln),
-    }))
-  }
-
-  // przepisanie surowych danych z API na formularz wybranego roku
-  useEffect(() => {
-    setCostItems(mergeWithTemplate(allItems.filter(i => i.year === costYear)))
-    setVarietyCosts(toVarietyForms(allVarietyCosts.filter(v => v.year === costYear)))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allItems, allVarietyCosts, costYear])
-
-  /** cennik dla konkretnego roku: własna pozycja roku, a gdy jej brak — pozycja bazowa (rok 0) */
-  const bookForYear = useCallback((year: number): CostBook => {
-    const pick = <T extends { year: number }>(rows: T[], match: (r: T) => boolean): T | undefined =>
-      rows.find(r => r.year === year && match(r)) ?? rows.find(r => r.year === 0 && match(r))
-    const keys = [...new Set(allItems.map(i => i.key))]
-    return {
-      items: keys.map(key => {
-        const row = pick(allItems, i => i.key === key)
-        return { key, valuePln: row?.valuePln ?? null, valueEur: row?.valueEur ?? null }
-      }),
-      varieties: [...new Set(allVarietyCosts.map(v => v.varietyId))].map(varietyId => {
-        const row = pick(allVarietyCosts, v => v.varietyId === varietyId)
-        return {
-          varietyId,
-          lcPriceEur: row?.lcPriceEur ?? null, lcPricePln: row?.lcPricePln ?? null,
-          lcGrowEur: row?.lcGrowEur ?? null, lcGrowPln: row?.lcGrowPln ?? null,
-        }
-      }),
-    }
-  }, [allItems, allVarietyCosts])
+  /** cennik obowiązujący w danym roku — pozycja roku, a gdy brak, bazowa */
+  const bookForYear = useCallback((year: number) => buildBookForYear(allItems, year), [allItems])
 
   const active = useMemo(() => scenarios.find(s => s.id === activeId) ?? null, [scenarios, activeId])
   const years = useMemo(() => {
@@ -321,57 +154,11 @@ export default function StrategyTab() {
   }, [active])
 
   // ==================== COST BOOK ====================
-  /**
-   * Cennik edytowanego roku, na żywo z formularza. Puste pole = wartość dziedziczona
-   * z cennika bazowego, więc podkładamy ją pod spód.
-   */
-  const book: CostBook = useMemo(() => {
-    const base = bookForYear(costYear)
-    const baseItem = (key: string) => base.items.find(i => i.key === key)
-    const baseVar = (id: string) => base.varieties.find(v => v.varietyId === id)
-    const or = (typed: number | null, inherited: number | null | undefined) => typed ?? inherited ?? null
-    return {
-      items: costItems.map(i => ({
-        key: i.key,
-        valuePln: or(parseNum(i.valuePln), baseItem(i.key)?.valuePln),
-        valueEur: or(parseNum(i.valueEur), baseItem(i.key)?.valueEur),
-      })),
-      varieties: varietyCosts.map(v => ({
-        varietyId: v.varietyId,
-        lcPriceEur: or(parseNum(v.lcPriceEur), baseVar(v.varietyId)?.lcPriceEur),
-        lcPricePln: or(parseNum(v.lcPricePln), baseVar(v.varietyId)?.lcPricePln),
-        lcGrowEur: or(parseNum(v.lcGrowEur), baseVar(v.varietyId)?.lcGrowEur),
-        lcGrowPln: or(parseNum(v.lcGrowPln), baseVar(v.varietyId)?.lcGrowPln),
-      })),
-    }
-  }, [costItems, varietyCosts, bookForYear, costYear])
-
-  /** kurs obowiązujący w edytowanym roku — do przeliczeń EUR ↔ PLN w tabeli */
-  const fxRate = useMemo(() => costPln(book, COST_KEYS.eurPln), [book])
-
   const varieties = useMemo(() => {
     const map = new Map<string, string>()
     for (const s of sections) if (s.varietyId) map.set(s.varietyId, s.varietyName ?? s.varietyId)
     return [...map].map(([id, name]) => ({ id, name }))
   }, [sections])
-
-  const applySuggestions = () => {
-    setCostItems(prev => prev.map(i => {
-      const s = COST_SUGGESTIONS[i.key]
-      if (!s) return i
-      return {
-        ...i,
-        valuePln: s.pln != null ? numToText(s.pln) : i.valuePln,
-        valueEur: s.eur != null ? numToText(s.eur) : i.valueEur,
-      }
-    }))
-    setVarietyCosts(prev => {
-      const existing = new Map(prev.map(v => [v.varietyId, v]))
-      return varieties.map(v => existing.get(v.id) ?? {
-        varietyId: v.id, lcPriceEur: '', lcPricePln: '', lcGrowEur: '', lcGrowPln: '',
-      })
-    })
-  }
 
   const addMethod = () => {
     setMethodDraft(prev => [...prev, {
@@ -402,41 +189,6 @@ export default function StrategyTab() {
       setError(e instanceof Error ? e.message : 'Nie udało się zapisać sposobów obsadzania')
     } finally {
       setSavingMethods(false)
-    }
-  }
-
-  const saveCostBook = async () => {
-    setSavingCosts(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/strategy/cost-book', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          year: costYear,
-          items: costItems.map(i => ({
-            key: i.key, label: i.label, category: i.category, unit: i.unit,
-            sortOrder: i.sortOrder, note: i.note,
-            valuePln: parseNum(i.valuePln), valueEur: parseNum(i.valueEur),
-          })),
-          varieties: varietyCosts.map(v => ({
-            varietyId: v.varietyId,
-            lcPriceEur: parseNum(v.lcPriceEur), lcPricePln: parseNum(v.lcPricePln),
-            lcGrowEur: parseNum(v.lcGrowEur), lcGrowPln: parseNum(v.lcGrowPln),
-          })),
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || `HTTP ${res.status}`)
-      }
-      const data = await res.json()
-      setAllItems(data.items || [])
-      setAllVarietyCosts(data.varieties || [])
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Nie udało się zapisać cennika')
-    } finally {
-      setSavingCosts(false)
     }
   }
 
@@ -595,33 +347,7 @@ export default function StrategyTab() {
     return [...set].sort((a, b) => a - b)
   }, [scenarios, allItems])
 
-  /** wartość z cennika bazowego — pokazywana jako podpowiedź, gdy rok nie ma własnej */
-  const inheritedValue = useCallback(
-    (key: string) => (costYear === 0 ? null : allItems.find(i => i.year === 0 && i.key === key) ?? null),
-    [allItems, costYear]
-  )
-
-  const copyFromBase = useCallback(() => {
-    setCostItems(prev => prev.map(i => {
-      const base = allItems.find(x => x.year === 0 && x.key === i.key)
-      if (!base) return i
-      return { ...i, valuePln: numToText(base.valuePln), valueEur: numToText(base.valueEur) }
-    }))
-    setVarietyCosts(varieties.map(v => {
-      const base = allVarietyCosts.find(x => x.year === 0 && x.varietyId === v.id)
-      return {
-        varietyId: v.id,
-        lcPriceEur: numToText(base?.lcPriceEur), lcPricePln: numToText(base?.lcPricePln),
-        lcGrowEur: numToText(base?.lcGrowEur), lcGrowPln: numToText(base?.lcGrowPln),
-      }
-    }))
-  }, [allItems, allVarietyCosts, varieties])
-
-  const paymentShares = useMemo(() => readPaymentShares(book), [book])
-  const paymentPercentTotal = useMemo(
-    () => paymentShares.shares.reduce((s, x) => s + x.percent, 0),
-    [paymentShares]
-  )
+  const paymentShares = useMemo(() => readPaymentShares(bookForYear(activeYear ?? 0)), [bookForYear, activeYear])
   const cashflow = useMemo(
     () => computeCashflow(summary.years, paymentShares.shares),
     [summary.years, paymentShares]
@@ -868,195 +594,14 @@ export default function StrategyTab() {
         )}
       </div>
 
-      {/* ---------- CENNIK ---------- */}
-      <div className="bg-white border border-gray-200 rounded-xl">
-        <div className="flex items-center justify-between gap-3 px-4 py-3 flex-wrap">
-          <button onClick={() => setShowCostBook(v => !v)} className="flex items-center gap-2 text-left">
-            {showCostBook ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-            <span className="font-medium text-gray-900">Cennik</span>
-            <span className="text-xs text-gray-500">
-              {costYear === 0 ? 'bazowy — obowiązuje w każdym roku' : `na rok ${costYear}`}
-            </span>
-          </button>
-
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">Cennik na rok:</label>
-            <select
-              value={costYear}
-              onChange={e => { setCostYear(parseInt(e.target.value)); setShowCostBook(true) }}
-              className="h-8 border border-gray-200 rounded-lg px-2 text-sm bg-white"
-            >
-              <option value={0}>Bazowy (wszystkie lata)</option>
-              {costYears.map(y => (
-                <option key={y} value={y}>{y}{allItems.some(i => i.year === y) ? '' : ' — pusty'}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {showCostBook && (
-          <div className="border-t border-gray-100">
-            <div className="flex items-center gap-2 flex-wrap px-4 py-2 bg-gray-50/70 border-b border-gray-100">
-              <button onClick={applySuggestions}
-                className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded hover:bg-gray-100">
-                Wstaw wartości z arkusza
-              </button>
-              {costYear !== 0 && (
-                <button onClick={copyFromBase}
-                  className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded hover:bg-gray-100">
-                  Skopiuj z bazowego
-                </button>
-              )}
-              <span className="text-xs text-gray-400">
-                {costYear === 0
-                  ? 'ten cennik obowiązuje wszędzie, gdzie rok nie ma własnej ceny'
-                  : 'puste pole = cena z cennika bazowego'}
-              </span>
-              <button onClick={saveCostBook} disabled={savingCosts}
-                className="ml-auto inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50">
-                {savingCosts ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                Zapisz {costYear === 0 ? 'cennik bazowy' : costYear}
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full table-fixed border-collapse text-[13px]">
-                <colgroup>
-                  <col />
-                  <col className="w-24" />
-                  <col className="w-24" />
-                  <col className="w-44" />
-                </colgroup>
-                <thead>
-                  <tr className="text-[11px] uppercase tracking-wide text-gray-500 bg-gray-100">
-                    <th className="text-left font-medium px-2 py-1 border border-gray-300">Pozycja</th>
-                    <th className="text-right font-medium px-2 py-1 border border-gray-300">EUR</th>
-                    <th className="text-right font-medium px-2 py-1 border border-gray-300">PLN</th>
-                    <th className="text-left font-medium px-2 py-1 border border-gray-300">Jednostka</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {COST_CATEGORIES.map(cat => {
-                    const rows = costItems.filter(i => i.category === cat)
-                    if (rows.length === 0) return null
-                    return (
-                      <Fragment key={cat}>
-                        <tr>
-                          <td colSpan={4} className="px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-gray-200/70 border border-gray-300">
-                            {CATEGORY_LABELS[cat] ?? cat}
-                          </td>
-                        </tr>
-                        {rows.map(item => {
-                          const eurNum = parseNum(item.valueEur)
-                          const plnNum = parseNum(item.valuePln)
-                          const derivedPln = eurNum != null && fxRate != null ? eurNum * fxRate : null
-                          const derivedEur = plnNum != null && fxRate ? plnNum / fxRate : null
-                          const inherited = inheritedValue(item.key)
-                          return (
-                            <tr key={item.key} className="hover:bg-indigo-50/40">
-                              <td className="px-2 py-0.5 border border-gray-200 text-gray-800 truncate" title={item.note ? `${item.label} — ${item.note}` : item.label}>
-                                {item.label}
-                              </td>
-                              <td className="border border-gray-200 p-0">
-                                {item.plnOnly ? (
-                                  <div className="h-6 flex items-center justify-end px-2 text-[11px] text-gray-400">{item.eurPrefix ?? ''}</div>
-                                ) : (
-                                  <input
-                                    inputMode="decimal"
-                                    value={item.valueEur}
-                                    onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valueEur: e.target.value } : i))}
-                                    placeholder={derivedEur != null ? numToText(round4(derivedEur)) : (inherited?.valueEur != null ? numToText(inherited.valueEur) : '')}
-                                    className="h-6 w-full bg-transparent px-2 text-right tabular-nums outline-none focus:bg-indigo-50 placeholder:text-gray-300"
-                                  />
-                                )}
-                              </td>
-                              <td className="border border-gray-200 p-0">
-                                <input
-                                  inputMode="decimal"
-                                  value={item.valuePln}
-                                  onChange={e => setCostItems(prev => prev.map(i => i.key === item.key ? { ...i, valuePln: e.target.value } : i))}
-                                  placeholder={derivedPln != null ? numToText(round4(derivedPln)) : (inherited?.valuePln != null ? numToText(inherited.valuePln) : '')}
-                                  className="h-6 w-full bg-transparent px-2 text-right tabular-nums outline-none focus:bg-indigo-50 placeholder:text-gray-300"
-                                />
-                              </td>
-                              <td className="px-2 py-0.5 border border-gray-200 text-[11px] text-gray-500 truncate" title={item.unit}>{item.unit}</td>
-                            </tr>
-                          )
-                        })}
-                        {cat === 'payment' && (
-                          <tr className={`font-semibold ${Math.abs(paymentPercentTotal - 100) < 0.001 ? 'bg-gray-50' : 'bg-amber-50 text-amber-800'}`}>
-                            <td className="px-2 py-0.5 border border-gray-200">Razem udziały</td>
-                            <td className="border border-gray-200" />
-                            <td className="px-2 py-0.5 border border-gray-200 text-right tabular-nums">{paymentPercentTotal}</td>
-                            <td className="px-2 py-0.5 border border-gray-200 text-[11px]">
-                              {Math.abs(paymentPercentTotal - 100) < 0.001 ? '% — komplet' : '% — powinno być 100'}
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    )
-                  })}
-
-                  {/* Ceny per odmiana */}
-                  <tr>
-                    <td colSpan={4} className="px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-700 bg-gray-200/70 border border-gray-300">
-                      Ceny per odmiana
-                    </td>
-                  </tr>
-                  {varieties.map(v => {
-                    const row = varietyCosts.find(x => x.varietyId === v.id)
-                    const upd = (patch: Partial<VarietyCostForm>) => {
-                      setVarietyCosts(prev => {
-                        const exists = prev.some(x => x.varietyId === v.id)
-                        if (!exists) return [...prev, { varietyId: v.id, lcPriceEur: '', lcPricePln: '', lcGrowEur: '', lcGrowPln: '', ...patch }]
-                        return prev.map(x => x.varietyId === v.id ? { ...x, ...patch } : x)
-                      })
-                    }
-                    const pairs = [
-                      { label: `Long cane — ${v.name}`, eurField: 'lcPriceEur' as const, plnField: 'lcPricePln' as const, unit: 'zakup / szt.' },
-                      { label: `Wyhodowanie z plagi — ${v.name}`, eurField: 'lcGrowEur' as const, plnField: 'lcGrowPln' as const, unit: 'na long cane — puste = stawka ogólna' },
-                    ]
-                    return pairs.map(pair => {
-                      const eurNum = parseNum(row?.[pair.eurField] ?? '')
-                      const plnNum = parseNum(row?.[pair.plnField] ?? '')
-                      const derivedPln = eurNum != null && fxRate != null ? eurNum * fxRate : null
-                      const derivedEur = plnNum != null && fxRate ? plnNum / fxRate : null
-                      return (
-                        <tr key={v.id + pair.eurField} className="hover:bg-indigo-50/40">
-                          <td className="px-2 py-0.5 border border-gray-200 text-gray-800 truncate" title={pair.label}>{pair.label}</td>
-                          <td className="border border-gray-200 p-0">
-                            <input
-                              inputMode="decimal"
-                              value={row?.[pair.eurField] ?? ''}
-                              onChange={e => upd({ [pair.eurField]: e.target.value } as Partial<VarietyCostForm>)}
-                              placeholder={derivedEur != null ? numToText(round4(derivedEur)) : ''}
-                              className="h-6 w-full bg-transparent px-2 text-right tabular-nums outline-none focus:bg-indigo-50 placeholder:text-gray-300"
-                            />
-                          </td>
-                          <td className="border border-gray-200 p-0">
-                            <input
-                              inputMode="decimal"
-                              value={row?.[pair.plnField] ?? ''}
-                              onChange={e => upd({ [pair.plnField]: e.target.value } as Partial<VarietyCostForm>)}
-                              placeholder={derivedPln != null ? numToText(round4(derivedPln)) : ''}
-                              className="h-6 w-full bg-transparent px-2 text-right tabular-nums outline-none focus:bg-indigo-50 placeholder:text-gray-300"
-                            />
-                          </td>
-                          <td className="px-2 py-0.5 border border-gray-200 text-[11px] text-gray-500 truncate" title={pair.unit}>{pair.unit}</td>
-                        </tr>
-                      )
-                    })
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100">
-              Szara liczba w polu to przeliczenie po kursie {fxRate != null ? `${numToText(fxRate)} zł/EUR` : '— brak kursu'} albo wartość z cennika bazowego. Wpisz własną, żeby ją nadpisać.
-            </div>
-          </div>
-        )}
-      </div>
+      <CostBookPanel
+        allItems={allItems}
+        onSaved={setAllItems}
+        varieties={varieties}
+        years={costYears}
+        costYear={costYear}
+        setCostYear={setCostYear}
+      />
 
       {!active ? null : (
         <>

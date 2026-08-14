@@ -663,6 +663,9 @@ model CostItem {
   id        String  @id @default(cuid())
   tenantId  String
   key       String // 'eur_pln' | 'coco_per_pot' | 'lc_transport' | 'tips_price' | ...
+  // Rok obowiązywania ceny. 0 = cennik bazowy — obowiązuje w każdym roku,
+  // dla którego nie ma własnej pozycji. Ceny zmieniają się rok do roku.
+  year      Int    @default(0)
   label     String
   category  String // 'general' | 'planting' | 'nursery'
   unit      String
@@ -674,7 +677,7 @@ model CostItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, key])
+  @@unique([tenantId, key, year])
   @@index([tenantId])
   @@map("cost_items")
 }
@@ -687,6 +690,9 @@ model VarietyPlantingCost {
   varietyId String
   variety   Variety @relation(fields: [varietyId], references: [id], onDelete: Cascade)
 
+  // 0 = cennik bazowy, jak w CostItem
+  year Int @default(0)
+
   lcPriceEur Float?
   lcPricePln Float? // jeśli podana wprost — ma pierwszeństwo przed przeliczeniem z EUR
 
@@ -698,7 +704,7 @@ model VarietyPlantingCost {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, varietyId])
+  @@unique([tenantId, varietyId, year])
   @@index([tenantId])
   @@map("variety_planting_costs")
 }

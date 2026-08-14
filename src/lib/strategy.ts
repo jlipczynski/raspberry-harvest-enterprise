@@ -299,19 +299,30 @@ export interface ScenarioSummary {
   warnings: string[]
 }
 
+/**
+ * Cennik może różnić się rok do roku — stąd funkcja rok → cennik.
+ * Zwykły CostBook przekazany wprost oznacza „ten sam cennik w każdym roku".
+ */
+export type CostBookSource = CostBook | ((year: number) => CostBook)
+
+export function bookFor(source: CostBookSource, year: number): CostBook {
+  return typeof source === 'function' ? source(year) : source
+}
+
 export function computeScenario(
   sections: StrategySection[],
   items: ScenarioItemInput[],
   plugPlans: PlugPlanInput[],
-  book: CostBook,
+  bookSource: CostBookSource,
   years: number[]
 ): ScenarioSummary {
   const sectionById = new Map(sections.map(s => [s.id, s]))
-  const plug = plugUnitCost(book)
   const yearRows: YearSummary[] = []
   const allWarnings = new Set<string>()
 
   for (const year of years) {
+    const book = bookFor(bookSource, year)
+    const plug = plugUnitCost(book)
     const warnings: string[] = []
     let plantingCostPln = 0
     let kgGross = 0

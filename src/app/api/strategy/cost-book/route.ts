@@ -36,6 +36,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Pole items jest wymagane' }, { status: 400 })
     }
 
+    // 0 = cennik bazowy; każdy inny rok to nadpisanie na ten konkretny rok
+    const year = Number.isInteger(Number(body.year)) ? Number(body.year) : 0
+    if (year !== 0 && (year < 2000 || year > 2100)) {
+      return NextResponse.json({ error: 'Nieprawidłowy rok cennika' }, { status: 400 })
+    }
+
     const num = (v: unknown): number | null => {
       if (v === null || v === undefined || v === '') return null
       const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'))
@@ -58,8 +64,8 @@ export async function PUT(request: NextRequest) {
         note: raw.note ? String(raw.note) : null,
       }
       await prisma.costItem.upsert({
-        where: { tenantId_key: { tenantId, key: String(raw.key) } },
-        create: { tenantId, key: String(raw.key), ...data },
+        where: { tenantId_key_year: { tenantId, key: String(raw.key), year } },
+        create: { tenantId, key: String(raw.key), year, ...data },
         update: data,
       })
     }
@@ -74,8 +80,8 @@ export async function PUT(request: NextRequest) {
           lcGrowPln: num(raw.lcGrowPln),
         }
         await prisma.varietyPlantingCost.upsert({
-          where: { tenantId_varietyId: { tenantId, varietyId: String(raw.varietyId) } },
-          create: { tenantId, varietyId: String(raw.varietyId), ...data },
+          where: { tenantId_varietyId_year: { tenantId, varietyId: String(raw.varietyId), year } },
+          create: { tenantId, varietyId: String(raw.varietyId), year, ...data },
           update: data,
         })
       }

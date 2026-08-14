@@ -103,6 +103,52 @@ export interface ScenarioItemInput {
   method: PlantingMethod
   producesSummer: boolean
   producesAutumn: boolean
+  /** odmiana, którą obsadzamy w tym roku; brak = odmiana przypisana do sekcji */
+  varietyId?: string | null
+}
+
+/** Parametry odmiany potrzebne do policzenia kosztu i plonu. */
+export interface VarietyInfo {
+  id: string
+  name: string | null
+  yieldSummerPerShoot: number | null
+  yieldAutumnPerShoot: number | null
+  wastePercent: number | null
+  canesPerPot: number | null
+}
+
+/**
+ * Odmiana obowiązująca dla sekcji w danym roku — wybrana w scenariuszu,
+ * a gdy jej nie wskazano, ta przypisana do sekcji.
+ */
+export function effectiveVariety(
+  section: StrategySection,
+  item: ScenarioItemInput,
+  varieties: VarietyInfo[]
+): VarietyInfo {
+  const chosen = item.varietyId ? varieties.find(v => v.id === item.varietyId) : undefined
+  if (chosen) return chosen
+  return {
+    id: section.varietyId,
+    name: section.varietyName,
+    yieldSummerPerShoot: section.yieldSummerPerShoot,
+    yieldAutumnPerShoot: section.yieldAutumnPerShoot,
+    wastePercent: section.wastePercent,
+    canesPerPot: null,
+  }
+}
+
+/**
+ * Ile canów wchodzi na doniczkę.
+ * Wartość odmiany ma pierwszeństwo — to cecha rośliny, nie konkretnej sekcji.
+ * Gdy odmiana nie ma ustalonej liczby, zostaje wartość z sekcji.
+ */
+export function resolveCanesPerPot(
+  varietyCanesPerPot: number | null | undefined,
+  sectionShootsPerPot: number
+): number {
+  if (varietyCanesPerPot != null && varietyCanesPerPot > 0) return varietyCanesPerPot
+  return sectionShootsPerPot
 }
 
 /** pots = potsOverride > 0 ? potsOverride : metersLength × potsPerMeter */
@@ -111,8 +157,11 @@ export function sectionPots(s: Pick<StrategySection, 'potsOverride' | 'metersLen
   return s.metersLength * s.potsPerMeter
 }
 
-export function sectionShoots(s: Pick<StrategySection, 'potsOverride' | 'metersLength' | 'potsPerMeter' | 'shootsPerPot'>): number {
-  return sectionPots(s) * s.shootsPerPot
+export function sectionShoots(
+  s: Pick<StrategySection, 'potsOverride' | 'metersLength' | 'potsPerMeter' | 'shootsPerPot'>,
+  variety?: Pick<VarietyInfo, 'canesPerPot'> | null
+): number {
+  return sectionPots(s) * resolveCanesPerPot(variety?.canesPerPot, s.shootsPerPot)
 }
 
 /**
@@ -176,10 +225,12 @@ export function computeSectionCost(
   section: StrategySection,
   item: ScenarioItemInput,
   book: CostBook,
-  method: PlantingMethodDef | undefined
+  method: PlantingMethodDef | undefined,
+  variety?: VarietyInfo | null
 ): SectionCostResult {
+  const varietyId = variety?.id ?? section.varietyId
   const pots = sectionPots(section)
-  const canes = sectionShoots(section)
+  const canes = sectionShoots(section, variety)
   const lines: CostLine[] = []
   const missing: string[] = []
 
@@ -194,11 +245,11 @@ export function computeSectionCost(
     missing.push(`method:${item.method}`)
   } else {
     if (method.buysLongCane) {
-      push('Long cane (zakup)', canes, lcPricePln(book, section.varietyId), `${COST_KEYS.lcPrice}:${section.varietyId}`)
-      push('Transport long cane', canes, costPln(book, COST_KEYS.lcTransport), COST_KEYS.lcTransport)
+      push('Long cane (zakup)', canes, lcPricePln(book, varietyId), `${COST_KEYS.lcPrice}:${varietyId}`)
+      push('Transport long cane', canes, costPln(book, COST_KEYS.lcTransport, varietyId), COST_KEYS.lcTransport)
     }
     if (method.growsFromOwnPlug) {
-      push('Wyhodowanie LC z plagi', canes, lcGrowPricePln(book, section.varietyId), COST_KEYS.lcGrowFromPlug)
+      push('Wyhodowanie LC z plagi', canes, lcGrowPricePln(book, varietyId), COST_KEYS.lcGrowFromPlug)
     }
     if (method.usesCoco) {
       push('Kokos', pots, costPln(book, COST_KEYS.cocoPerPot), COST_KEYS.cocoPerPot)
@@ -257,27 +308,34 @@ export interface SectionVolumeResult {
  */
 export function computeSectionVolume(
   section: StrategySection,
-  item: ScenarioItemInput
+  item: ScenarioItemInput,
+  variety?: VarietyInfo | null
 ): SectionVolumeResult {
-  const shoots = sectionShoots(section)
+  const v = variety ?? {
+    id: section.varietyId, name: section.varietyName,
+    yieldSummerPerShoot: section.yieldSummerPerShoot,
+    yieldAutumnPerShoot: section.yieldAutumnPerShoot,
+    wastePercent: section.wastePercent, canesPerPot: null,
+  }
+  const shoots = sectionShoots(section, v)
   const missing: string[] = []
 
   let kgSummer = 0
   if (item.producesSummer) {
-    if (section.yieldSummerPerShoot == null) missing.push('yieldSummerPerShoot')
-    else kgSummer = shoots * section.yieldSummerPerShoot
+    if (v.yieldSummerPerShoot == null) missing.push('yieldSummerPerShoot')
+    else kgSummer = shoots * v.yieldSummerPerShoot
   }
 
   let kgAutumn = 0
   if (item.producesAutumn) {
-    if (section.yieldAutumnPerShoot == null) missing.push('yieldAutumnPerShoot')
-    else kgAutumn = shoots * section.yieldAutumnPerShoot
+    if (v.yieldAutumnPerShoot == null) missing.push('yieldAutumnPerShoot')
+    else kgAutumn = shoots * v.yieldAutumnPerShoot
   }
 
   const kgGross = kgSummer + kgAutumn
   // waste% też musi pochodzić z bazy — brak zgłaszamy, nie zakładamy zera
-  if (kgGross > 0 && section.wastePercent == null) missing.push('wastePercent')
-  const waste = section.wastePercent ?? 0 // dozwolone: wartość i tak zgłoszona jako brak powyżej
+  if (kgGross > 0 && v.wastePercent == null) missing.push('wastePercent')
+  const waste = v.wastePercent ?? 0 // dozwolone: wartość i tak zgłoszona jako brak powyżej
   return {
     sectionId: section.id,
     shoots,
@@ -332,7 +390,8 @@ export function computeScenario(
   plugPlans: PlugPlanInput[],
   bookSource: CostBookSource,
   years: number[],
-  methods: PlantingMethodDef[]
+  methods: PlantingMethodDef[],
+  varieties: VarietyInfo[] = []
 ): ScenarioSummary {
   const sectionById = new Map(sections.map(s => [s.id, s]))
   const yearRows: YearSummary[] = []
@@ -351,7 +410,8 @@ export function computeScenario(
       if (!section) continue
 
       const method = methodByCode(methods, item.method)
-      const cost = computeSectionCost(section, item, book, method)
+      const variety = effectiveVariety(section, item, varieties)
+      const cost = computeSectionCost(section, item, book, method, variety)
       if (cost.missing.length > 0) {
         warnings.push(`${section.name ?? section.id}: brak w cenniku — ${cost.missing.join(', ')}`)
       } else {
@@ -359,7 +419,7 @@ export function computeScenario(
       }
       if (cost.totalPln > 0) plantedSections++
 
-      const vol = computeSectionVolume(section, item)
+      const vol = computeSectionVolume(section, item, variety)
       if (vol.missing.length > 0) {
         warnings.push(`${section.name ?? section.id}: brak plonu — ${vol.missing.join(', ')}`)
       } else {
@@ -425,7 +485,8 @@ export function computePlugCoverage(
   items: ScenarioItemInput[],
   plugPlans: PlugPlanInput[],
   years: number[],
-  methods: PlantingMethodDef[]
+  methods: PlantingMethodDef[],
+  varieties: VarietyInfo[] = []
 ): PlugCoverageRow[] {
   const sectionById = new Map(sections.map(s => [s.id, s]))
   const rows: PlugCoverageRow[] = []
@@ -437,9 +498,11 @@ export function computePlugCoverage(
     for (const item of items.filter(i => i.year === year && ownPlugCodes.has(i.method))) {
       const section = sectionById.get(item.sectionId)
       if (!section) continue
+      // zapotrzebowanie przypisujemy odmianie faktycznie sadzonej w tym roku
+      const variety = effectiveVariety(section, item, varieties)
       // dozwolone: inicjalizacja akumulatora, nie wartość domenowa
-      const soFar = needByVariety.get(section.varietyId) ?? 0
-      needByVariety.set(section.varietyId, soFar + sectionShoots(section))
+      const soFar = needByVariety.get(variety.id) ?? 0
+      needByVariety.set(variety.id, soFar + sectionShoots(section, variety))
     }
 
     const varietyIds = new Set<string>([
@@ -456,7 +519,10 @@ export function computePlugCoverage(
       rows.push({
         year,
         varietyId,
-        varietyName: sections.find(s => s.varietyId === varietyId)?.varietyName ?? null,
+        varietyName:
+          varieties.find(v => v.id === varietyId)?.name ??
+          sections.find(s => s.varietyId === varietyId)?.varietyName ??
+          null,
         needed,
         available,
         balance: available - needed,

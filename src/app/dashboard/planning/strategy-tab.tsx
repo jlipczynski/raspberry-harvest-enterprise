@@ -9,13 +9,14 @@ import {
   computeSectionCost,
   computeSectionVolume,
   computePlugCoverage,
+  effectiveVariety,
   computeCashflow,
   readPaymentShares,
   plugUnitCost,
   sectionPots,
-  sectionShoots,
   type PlantingMethod,
   type PlantingMethodDef,
+  type VarietyInfo,
   type StrategySection,
   type ScenarioItemInput,
 } from '@/lib/strategy'
@@ -28,7 +29,18 @@ interface ScenarioItemRow {
   method: string
   producesSummer: boolean
   producesAutumn: boolean
+  varietyId: string | null
   note: string | null
+}
+
+/** parametry odmiany edytowane w zakładce */
+interface VarietyRow {
+  id: string
+  name: string
+  canesPerPot: number | null
+  yieldSummerPerShoot: number | null
+  yieldAutumnPerShoot: number | null
+  sectionFallback: number | null
 }
 
 interface PlugPlanRow {
@@ -80,6 +92,9 @@ export default function StrategyTab() {
   /** rok, dla którego edytujemy cennik. 0 = cennik bazowy (obowiązuje wszędzie, gdzie brak roku) */
   const [costYear, setCostYear] = useState<number>(0)
 
+  const [varietyRows, setVarietyRows] = useState<VarietyRow[]>([])
+  const [varietyDraft, setVarietyDraft] = useState<Record<string, string>>({})
+  const [savingVarieties, setSavingVarieties] = useState(false)
   const [methods, setMethods] = useState<MethodRow[]>([])
   const [methodDraft, setMethodDraft] = useState<MethodRow[]>([])
   const [showMethods, setShowMethods] = useState(false)
@@ -101,19 +116,26 @@ export default function StrategyTab() {
     setLoading(true)
     setError(null)
     try {
-      const [sRes, cRes, scRes, mRes] = await Promise.all([
+      const [sRes, cRes, scRes, mRes, vRes] = await Promise.all([
         fetch('/api/strategy/sections'),
         fetch('/api/strategy/cost-book'),
         fetch('/api/strategy/scenarios'),
         fetch('/api/strategy/methods'),
+        fetch('/api/strategy/varieties'),
       ])
-      for (const res of [sRes, cRes, scRes, mRes]) {
+      for (const res of [sRes, cRes, scRes, mRes, vRes]) {
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
           throw new Error(err.error || `HTTP ${res.status}`)
         }
       }
-      const [sData, cData, scData, mData] = await Promise.all([sRes.json(), cRes.json(), scRes.json(), mRes.json()])
+      const [sData, cData, scData, mData, vData] = await Promise.all([
+        sRes.json(), cRes.json(), scRes.json(), mRes.json(), vRes.json(),
+      ])
+      setVarietyRows(vData.varieties || [])
+      setVarietyDraft(Object.fromEntries(
+        (vData.varieties || []).map((v: VarietyRow) => [v.id, v.canesPerPot == null ? '' : String(v.canesPerPot).replace('.', ',')])
+      ))
       setMethods(mData.methods || [])
       setMethodDraft(mData.methods || [])
       setSections(sData.sections || [])
@@ -154,11 +176,47 @@ export default function StrategyTab() {
   }, [active])
 
   // ==================== COST BOOK ====================
+  /** katalog odmian dla silnika — plony, waste i cany na doniczkę */
+  const varietyCatalog: VarietyInfo[] = useMemo(
+    () => varietyRows.map(v => ({
+      id: v.id, name: v.name,
+      yieldSummerPerShoot: v.yieldSummerPerShoot,
+      yieldAutumnPerShoot: v.yieldAutumnPerShoot,
+      wastePercent: sections.find(s => s.varietyId === v.id)?.wastePercent ?? null,
+      canesPerPot: v.canesPerPot,
+    })),
+    [varietyRows, sections]
+  )
+
   const varieties = useMemo(() => {
     const map = new Map<string, string>()
     for (const s of sections) if (s.varietyId) map.set(s.varietyId, s.varietyName ?? s.varietyId)
     return [...map].map(([id, name]) => ({ id, name }))
   }, [sections])
+
+  const saveVarieties = async () => {
+    setSavingVarieties(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/strategy/varieties', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          varieties: varietyRows.map(v => ({ id: v.id, canesPerPot: varietyDraft[v.id] ?? '' })),
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      setVarietyRows(data.varieties || [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Nie udało się zapisać parametrów odmian')
+    } finally {
+      setSavingVarieties(false)
+    }
+  }
 
   const addMethod = () => {
     setMethodDraft(prev => [...prev, {
@@ -287,9 +345,19 @@ export default function StrategyTab() {
         sectionId, year, method,
         producesSummer: def?.defaultSummer ?? false,
         producesAutumn: def?.defaultAutumn ?? false,
+        varietyId: prev[itemKey(year, sectionId)]?.varietyId ?? null,
         note: prev[itemKey(year, sectionId)]?.note ?? null,
       },
     }))
+    setDirty(true)
+  }
+
+  const setItemVariety = (year: number, sectionId: string, varietyId: string) => {
+    setDraftItems(prev => {
+      const cur = prev[itemKey(year, sectionId)]
+      if (!cur) return prev
+      return { ...prev, [itemKey(year, sectionId)]: { ...cur, varietyId: varietyId || null } }
+    })
     setDirty(true)
   }
 
@@ -315,6 +383,7 @@ export default function StrategyTab() {
       sectionId: i.sectionId, year: i.year,
       method: i.method as PlantingMethod,
       producesSummer: i.producesSummer, producesAutumn: i.producesAutumn,
+      varietyId: i.varietyId,
     })),
     [draftItems]
   )
@@ -328,13 +397,13 @@ export default function StrategyTab() {
   )
 
   const summary = useMemo(
-    () => computeScenario(sections, itemInputs, plugInputs, bookForYear, years, methods),
-    [sections, itemInputs, plugInputs, bookForYear, years, methods]
+    () => computeScenario(sections, itemInputs, plugInputs, bookForYear, years, methods, varietyCatalog),
+    [sections, itemInputs, plugInputs, bookForYear, years, methods, varietyCatalog]
   )
 
   const coverage = useMemo(
-    () => computePlugCoverage(sections, itemInputs, plugInputs, years, methods),
-    [sections, itemInputs, plugInputs, years, methods]
+    () => computePlugCoverage(sections, itemInputs, plugInputs, years, methods, varietyCatalog),
+    [sections, itemInputs, plugInputs, years, methods, varietyCatalog]
   )
 
   const plugUnit = useMemo(() => plugUnitCost(bookForYear(activeYear ?? 0)), [bookForYear, activeYear])
@@ -363,9 +432,9 @@ export default function StrategyTab() {
       producesSummer: i.producesSummer, producesAutumn: i.producesAutumn,
     }))
     const plugs = isActive ? plugInputs : sc.plugPlans.map(p => ({ year: p.year, varietyId: p.varietyId, quantity: p.quantity }))
-    const r = computeScenario(sections, items, plugs, bookForYear, scYears, methods)
+    const r = computeScenario(sections, items, plugs, bookForYear, scYears, methods, varietyCatalog)
     return { scenario: sc, result: r, isActive }
-  }), [scenarios, sections, bookForYear, activeId, itemInputs, plugInputs, methods])
+  }), [scenarios, sections, bookForYear, activeId, itemInputs, plugInputs, methods, varietyCatalog])
 
   // ==================== RENDER ====================
   if (loading) {
@@ -594,6 +663,70 @@ export default function StrategyTab() {
         )}
       </div>
 
+      {/* ---------- PARAMETRY ODMIAN ---------- */}
+      <div className="bg-white border border-gray-200 rounded-xl">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <div>
+            <span className="font-medium text-gray-900">Odmiany</span>
+            <span className="ml-2 text-xs text-gray-500">ile canów wchodzi na doniczkę</span>
+          </div>
+          <button onClick={saveVarieties} disabled={savingVarieties}
+            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50">
+            {savingVarieties ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            Zapisz
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full table-fixed border-collapse text-[13px]">
+            <colgroup>
+              <col />
+              <col className="w-28" />
+              <col className="w-28" />
+              <col className="w-28" />
+              <col className="w-44" />
+            </colgroup>
+            <thead>
+              <tr className="text-[11px] uppercase tracking-wide text-gray-500 bg-gray-100">
+                <th className="text-left font-medium px-2 py-1 border border-gray-300">Odmiana</th>
+                <th className="text-right font-medium px-2 py-1 border border-gray-300">Cany / doniczkę</th>
+                <th className="text-right font-medium px-2 py-1 border border-gray-300">kg / pęd lato</th>
+                <th className="text-right font-medium px-2 py-1 border border-gray-300">kg / pęd jesień</th>
+                <th className="text-left font-medium px-2 py-1 border border-gray-300">Uwaga</th>
+              </tr>
+            </thead>
+            <tbody>
+              {varietyRows.map(v => (
+                <tr key={v.id} className="hover:bg-indigo-50/40">
+                  <td className="px-2 py-0.5 border border-gray-200 text-gray-800">{v.name}</td>
+                  <td className="border border-gray-200 p-0">
+                    <input
+                      inputMode="decimal"
+                      value={varietyDraft[v.id] ?? ''}
+                      onChange={e => setVarietyDraft(prev => ({ ...prev, [v.id]: e.target.value }))}
+                      placeholder={v.sectionFallback != null ? String(v.sectionFallback) : ''}
+                      className="h-6 w-full bg-transparent px-2 text-right tabular-nums outline-none focus:bg-indigo-50 placeholder:text-gray-300"
+                    />
+                  </td>
+                  <td className="px-2 py-0.5 border border-gray-200 text-right tabular-nums text-gray-600">
+                    {v.yieldSummerPerShoot ?? '—'}
+                  </td>
+                  <td className="px-2 py-0.5 border border-gray-200 text-right tabular-nums text-gray-600">
+                    {v.yieldAutumnPerShoot ?? '—'}
+                  </td>
+                  <td className="px-2 py-0.5 border border-gray-200 text-[11px] text-gray-500">
+                    {varietyDraft[v.id]?.trim() ? 'wartość odmiany' : `z sekcji: ${v.sectionFallback ?? '—'}`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100">
+          Liczba canów na doniczkę idzie za odmianą — puste pole oznacza, że system bierze wartość z sekcji.
+          Plony kg/pęd edytujesz na stronie Odmiany.
+        </div>
+      </div>
+
       <CostBookPanel
         allItems={allItems}
         onSaved={setAllItems}
@@ -674,7 +807,7 @@ export default function StrategyTab() {
                 <thead className="bg-gray-50 text-xs text-gray-500">
                   <tr>
                     <th className="text-left font-medium px-3 py-2">Blok / sekcja</th>
-                    <th className="text-left font-medium px-3 py-2">Odmiana</th>
+                    <th className="text-left font-medium px-3 py-2 w-44">Czym obsadzam</th>
                     <th className="text-right font-medium px-3 py-2">Doniczki</th>
                     <th className="text-right font-medium px-3 py-2">Cany</th>
                     <th className="text-left font-medium px-3 py-2 w-44">Sposób</th>
@@ -693,9 +826,11 @@ export default function StrategyTab() {
                       sectionId: sec.id, year: activeYear ?? 0, method,
                       producesSummer: draft?.producesSummer ?? false,
                       producesAutumn: draft?.producesAutumn ?? false,
+                      varietyId: draft?.varietyId ?? null,
                     }
-                    const cost = computeSectionCost(sec, input, bookForYear(activeYear ?? 0), methodByCode(methods, method))
-                    const vol = computeSectionVolume(sec, input)
+                    const chosen = effectiveVariety(sec, input, varietyCatalog)
+                    const cost = computeSectionCost(sec, input, bookForYear(activeYear ?? 0), methodByCode(methods, method), chosen)
+                    const vol = computeSectionVolume(sec, input, chosen)
                     const hasIssue = cost.missing.length > 0 || vol.missing.length > 0
                     return (
                       <tr key={sec.id} className="border-b border-gray-50 hover:bg-gray-50/50">
@@ -703,9 +838,24 @@ export default function StrategyTab() {
                           <div className="text-gray-900">{sec.name ?? '—'}</div>
                           <div className="text-xs text-gray-400">{sec.blockName ?? ''}</div>
                         </td>
-                        <td className="px-3 py-2 text-gray-600">{sec.varietyName ?? '—'}</td>
+                        <td className="px-3 py-2">
+                          {draft ? (
+                            <select
+                              value={input.varietyId ?? ''}
+                              onChange={e => setItemVariety(activeYear ?? 0, sec.id, e.target.value)}
+                              className="h-8 w-full border border-gray-200 rounded px-2 text-sm bg-white"
+                            >
+                              <option value="">{sec.varietyName ?? 'odmiana sekcji'} (bez zmiany)</option>
+                              {varieties.map(v => (
+                                <option key={v.id} value={v.id}>{v.name}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="text-gray-500 text-sm">{sec.varietyName ?? '—'}</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-right text-gray-600">{fmtNum(sectionPots(sec))}</td>
-                        <td className="px-3 py-2 text-right text-gray-600">{fmtNum(sectionShoots(sec))}</td>
+                        <td className="px-3 py-2 text-right text-gray-600">{fmtNum(cost.canes)}</td>
                         <td className="px-3 py-2">
                           <select
                             value={method}

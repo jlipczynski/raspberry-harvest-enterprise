@@ -29,6 +29,22 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     }
 
+    // odmiana wskazana przy obsadzaniu musi rosnąć na sekcjach gospodarstwa
+    const itemVarieties = [...new Set(items.map(i => (i.varietyId ? String(i.varietyId) : '')).filter(Boolean))]
+    if (itemVarieties.length > 0) {
+      const known = await prisma.section.findMany({
+        where: { varietyId: { in: itemVarieties }, block: { farm: { tenantId } } },
+        select: { varietyId: true },
+        distinct: ['varietyId'],
+      })
+      if (known.length !== itemVarieties.length) {
+        return NextResponse.json(
+          { error: 'Któraś z odmian nie występuje na sekcjach tego gospodarstwa' },
+          { status: 403 }
+        )
+      }
+    }
+
     // sposób obsadzenia musi istnieć na liście gospodarstwa
     const usedMethods = [...new Set(items.map(i => String(i.method)))]
     const knownMethods = await prisma.plantingMethodDef.findMany({
@@ -62,6 +78,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           method: String(raw.method),
           producesSummer: Boolean(raw.producesSummer),
           producesAutumn: Boolean(raw.producesAutumn),
+          varietyId: raw.varietyId ? String(raw.varietyId) : null,
           note: raw.note ? String(raw.note) : null,
         })),
       }),

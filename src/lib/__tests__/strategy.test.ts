@@ -14,12 +14,15 @@ import {
   bookFor,
   methodByCode,
   DEFAULT_PLANTING_METHODS,
+  effectiveVariety,
+  resolveCanesPerPot,
   plugUnitCost,
   COST_KEYS,
   type CostBook,
   type StrategySection,
   type ScenarioItemInput,
   type YearSummary,
+  type VarietyInfo,
 } from '../strategy'
 
 /**
@@ -450,5 +453,54 @@ describe('cennik z cenami per odmiana', () => {
       b, [2027], METHODS
     )
     expect(r.years[0].plugCostPln).toBe(14000)
+  })
+})
+
+describe('wybór odmiany przy obsadzaniu', () => {
+  const RUBY: VarietyInfo = { id: 'ruby', name: 'Ruby', yieldSummerPerShoot: 2.1, yieldAutumnPerShoot: 0, wastePercent: 3, canesPerPot: 2 }
+  const DJ: VarietyInfo = { id: 'dj', name: 'Diamond Jubilee', yieldSummerPerShoot: 1.6, yieldAutumnPerShoot: 0.6, wastePercent: 3, canesPerPot: 3 }
+  const CATALOG = [RUBY, DJ]
+
+  it('bez wskazania odmiany zostaje odmiana sekcji', () => {
+    const v = effectiveVariety(b0913, item({ sectionId: 'b0913', method: 'BUY_LC' }), CATALOG)
+    expect(v.id).toBe('ruby')
+  })
+
+  it('wskazana odmiana zastępuje odmianę sekcji w koszcie', () => {
+    const it2 = item({ sectionId: 'b0913', method: 'BUY_LC', varietyId: 'dj' })
+    const r = computeSectionCost(b0913, it2, book, m('BUY_LC'), DJ)
+    const lc = r.lines.find(l => l.label === 'Long cane (zakup)')!
+    expect(lc.unitPln).toBeCloseTo(2.15 * EUR_PLN, 4) // cena DJ, nie Ruby
+  })
+
+  it('liczba canów na doniczkę idzie za odmianą', () => {
+    // 3600 doniczek × 3 cany DJ zamiast × 2 canów Ruby
+    expect(sectionShoots(b0913, DJ)).toBe(10800)
+    expect(sectionShoots(b0913, RUBY)).toBe(7200)
+  })
+
+  it('plon liczy się normą wybranej odmiany', () => {
+    const it2 = item({ sectionId: 'b0913', method: 'BUY_LC', producesSummer: true, varietyId: 'dj' })
+    const vol = computeSectionVolume(b0913, it2, DJ)
+    expect(vol.kgSummer).toBeCloseTo(10800 * 1.6, 6)
+  })
+
+  it('zapotrzebowanie na plagi trafia do odmiany faktycznie sadzonej', () => {
+    const rows = computePlugCoverage(
+      [b0913],
+      [{ sectionId: 'b0913', year: 2028, method: 'OWN_PLUGS', producesSummer: true, producesAutumn: false, varietyId: 'dj' }],
+      [{ year: 2027, varietyId: 'dj', quantity: 20000 }],
+      [2028], METHODS, CATALOG
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].varietyName).toBe('Diamond Jubilee')
+    expect(rows[0].needed).toBe(10800)
+    expect(rows[0].ok).toBe(true)
+  })
+
+  it('resolveCanesPerPot bierze wartość odmiany, a bez niej sekcji', () => {
+    expect(resolveCanesPerPot(3, 2)).toBe(3)
+    expect(resolveCanesPerPot(null, 2)).toBe(2)
+    expect(resolveCanesPerPot(0, 2)).toBe(2)
   })
 })

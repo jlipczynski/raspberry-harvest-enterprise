@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { requireTenantId } from '@/lib/tenant'
 import { NextResponse } from 'next/server'
-import type { StrategySection } from '@/lib/strategy'
+import { resolveCanesPerPot, type StrategySection } from '@/lib/strategy'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,7 +15,7 @@ export async function GET() {
     const sections = await prisma.section.findMany({
       where: { block: { farm: { tenantId } } },
       include: {
-        variety: { select: { id: true, name: true, yieldSummerPerShoot: true, yieldAutumnPerShoot: true, wastePercent: true } },
+        variety: { select: { id: true, name: true, yieldSummerPerShoot: true, yieldAutumnPerShoot: true, wastePercent: true, canesPerPot: true } },
         block: { select: { id: true, name: true } },
       },
       orderBy: [{ block: { name: 'asc' } }, { name: 'asc' }],
@@ -27,7 +27,8 @@ export async function GET() {
       blockName: s.block?.name ?? null,
       metersLength: s.metersLength,
       potsPerMeter: s.potsPerMeter,
-      shootsPerPot: s.shootsPerPot,
+      // liczba canów na doniczkę to cecha odmiany; sekcja jest wartością zapasową
+      shootsPerPot: resolveCanesPerPot(s.variety?.canesPerPot, s.shootsPerPot),
       potsOverride: s.potsOverride,
       varietyId: s.varietyId,
       varietyName: s.variety?.name ?? null,

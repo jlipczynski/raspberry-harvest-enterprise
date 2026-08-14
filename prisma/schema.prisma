@@ -118,6 +118,10 @@ model Variety {
   yieldSummerPerShoot Float?
   yieldAutumnPerShoot Float?
 
+  /// Ile long cane'ów wchodzi na jedną doniczkę tej odmiany.
+  /// Ma pierwszeństwo przed Section.shootsPerPot przy planowaniu nasadzeń.
+  canesPerPot Float?
+
   baseTemp Float? @default(6.0)
 
   // GDH progi — LATO (kwitnienie + owocowanie per typ rośliny)
@@ -152,6 +156,7 @@ model Variety {
 
   plantingCosts VarietyPlantingCost[]
   plugPlans     ScenarioPlugPlan[]
+  scenarioItems PlantingScenarioItem[] @relation("ScenarioItemVariety")
   createdAt     DateTime                  @default(now())
   updatedAt     DateTime                  @updatedAt
 
@@ -742,7 +747,12 @@ model PlantingScenarioItem {
   section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
   year   Int
-  method String // 'NOT_PLANTED' | 'BUY_LC' | 'OWN_PLUGS' | 'MOULDOWN' | 'CUT_TO_ROOT'
+  method String // kod z PlantingMethodDef
+
+  /// Odmiana, którą obsadzamy sekcję w tym roku.
+  /// null = zostaje odmiana przypisana do sekcji.
+  varietyId String?
+  variety   Variety? @relation("ScenarioItemVariety", fields: [varietyId], references: [id], onDelete: SetNull)
 
   producesSummer Boolean @default(false)
   producesAutumn Boolean @default(false)

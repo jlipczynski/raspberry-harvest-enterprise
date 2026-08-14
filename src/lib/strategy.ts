@@ -50,6 +50,8 @@ export function methodByCode(methods: PlantingMethodDef[], code: string): Planti
 /** Klucze pozycji cennika. Etykiety i jednostki trzymane są w bazie. */
 export const COST_KEYS = {
   eurPln: 'eur_pln',
+  lcPrice: 'lc_price',
+  plugPrice: 'plug_price',
   cocoPerPot: 'coco_per_pot',
   targetPot: 'target_pot',
   nurseryPot: 'nursery_pot',
@@ -69,21 +71,14 @@ export const COST_KEYS = {
 
 export interface CostItemValue {
   key: string
+  /** odmiana, której dotyczy cena; puste = pozycja wspólna dla wszystkich odmian */
+  varietyId?: string | null
   valuePln: number | null
   valueEur: number | null
 }
 
-export interface VarietyCost {
-  varietyId: string
-  lcPriceEur: number | null
-  lcPricePln: number | null
-  lcGrowEur: number | null
-  lcGrowPln: number | null
-}
-
 export interface CostBook {
   items: CostItemValue[]
-  varieties: VarietyCost[]
 }
 
 export interface StrategySection {
@@ -120,42 +115,35 @@ export function sectionShoots(s: Pick<StrategySection, 'potsOverride' | 'metersL
   return sectionPots(s) * s.shootsPerPot
 }
 
-/** Zwraca wartość pozycji cennika w PLN. PLN ma pierwszeństwo; EUR przeliczane kursem. */
-export function costPln(book: CostBook, key: string): number | null {
-  const item = book.items.find(i => i.key === key)
+/**
+ * Wartość pozycji cennika w PLN.
+ * Najpierw cena dla wskazanej odmiany, potem pozycja wspólna.
+ * W obrębie pozycji PLN ma pierwszeństwo; EUR przeliczane kursem z tego samego cennika.
+ */
+export function costPln(book: CostBook, key: string, varietyId?: string | null): number | null {
+  const forVariety = varietyId
+    ? book.items.find(i => i.key === key && i.varietyId === varietyId)
+    : undefined
+  const shared = book.items.find(i => i.key === key && !i.varietyId)
+  const item = forVariety ?? shared
   if (!item) return null
   if (item.valuePln != null) return item.valuePln
   if (item.valueEur != null) {
-    const fx = book.items.find(i => i.key === COST_KEYS.eurPln)?.valuePln
+    const fx = book.items.find(i => i.key === COST_KEYS.eurPln && !i.varietyId)?.valuePln
     if (fx == null) return null
     return item.valueEur * fx
   }
   return null
 }
 
-/** Cena zakupu long cane dla odmiany — z VarietyPlantingCost, PLN przed EUR. */
+/** Cena zakupu long cane dla odmiany. */
 export function lcPricePln(book: CostBook, varietyId: string): number | null {
-  const v = book.varieties.find(x => x.varietyId === varietyId)
-  if (!v) return null
-  if (v.lcPricePln != null) return v.lcPricePln
-  if (v.lcPriceEur != null) {
-    const fx = book.items.find(i => i.key === COST_KEYS.eurPln)?.valuePln
-    if (fx == null) return null
-    return v.lcPriceEur * fx
-  }
-  return null
+  return costPln(book, COST_KEYS.lcPrice, varietyId)
 }
 
-/**
- * Koszt wyhodowania long cane z własnej plagi.
- * Kolejność: override per odmiana (PLN → EUR) → pozycja globalna z cennika.
- */
+/** Koszt wyhodowania long cane z własnej plagi — cena odmiany, a gdy brak, wspólna. */
 export function lcGrowPricePln(book: CostBook, varietyId: string): number | null {
-  const v = book.varieties.find(x => x.varietyId === varietyId)
-  const fx = book.items.find(i => i.key === COST_KEYS.eurPln)?.valuePln ?? null
-  if (v?.lcGrowPln != null) return v.lcGrowPln
-  if (v?.lcGrowEur != null) return fx == null ? null : v.lcGrowEur * fx
-  return costPln(book, COST_KEYS.lcGrowFromPlug)
+  return costPln(book, COST_KEYS.lcGrowFromPlug, varietyId)
 }
 
 export interface CostLine {
@@ -206,7 +194,7 @@ export function computeSectionCost(
     missing.push(`method:${item.method}`)
   } else {
     if (method.buysLongCane) {
-      push('Long cane (zakup)', canes, lcPricePln(book, section.varietyId), `lc_price:${section.varietyId}`)
+      push('Long cane (zakup)', canes, lcPricePln(book, section.varietyId), `${COST_KEYS.lcPrice}:${section.varietyId}`)
       push('Transport long cane', canes, costPln(book, COST_KEYS.lcTransport), COST_KEYS.lcTransport)
     }
     if (method.growsFromOwnPlug) {
@@ -232,13 +220,20 @@ export function computeSectionCost(
   }
 }
 
-/** Koszt jednej plagi = tips + transport tips + doniczka szkółkowa. */
-export function plugUnitCost(book: CostBook): { unitPln: number | null; missing: string[] } {
+/**
+ * Koszt jednej plagi.
+ * Jeśli w cenniku jest gotowa cena zakupu plagi — bierzemy ją.
+ * W przeciwnym razie składamy z tips + transport tips + doniczka szkółkowa.
+ */
+export function plugUnitCost(book: CostBook, varietyId?: string | null): { unitPln: number | null; missing: string[] } {
+  const bought = costPln(book, COST_KEYS.plugPrice, varietyId)
+  if (bought != null) return { unitPln: bought, missing: [] }
+
   const parts = [COST_KEYS.tipsPrice, COST_KEYS.tipsTransport, COST_KEYS.nurseryPot]
   const missing: string[] = []
   let sum = 0
   for (const key of parts) {
-    const v = costPln(book, key)
+    const v = costPln(book, key, varietyId)
     if (v == null) { missing.push(key); continue }
     sum += v
   }
@@ -345,7 +340,6 @@ export function computeScenario(
 
   for (const year of years) {
     const book = bookFor(bookSource, year)
-    const plug = plugUnitCost(book)
     const warnings: string[] = []
     let plantingCostPln = 0
     let kgGross = 0
@@ -375,13 +369,13 @@ export function computeScenario(
     }
 
     let plugCostPln = 0
-    const plugsThisYear = plugPlans.filter(p => p.year === year && p.quantity > 0)
-    if (plugsThisYear.length > 0) {
+    for (const plan of plugPlans.filter(p => p.year === year && p.quantity > 0)) {
+      const plug = plugUnitCost(book, plan.varietyId)
       if (plug.unitPln == null) {
         warnings.push(`Plagi ${year}: brak w cenniku — ${plug.missing.join(', ')}`)
-      } else {
-        plugCostPln = plugsThisYear.reduce((s, p) => s + p.quantity * plug.unitPln!, 0)
+        continue
       }
+      plugCostPln += plan.quantity * plug.unitPln
     }
 
     const totalCostPln = plantingCostPln + plugCostPln

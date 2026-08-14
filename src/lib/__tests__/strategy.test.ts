@@ -46,6 +46,7 @@ const book: CostBook = {
     { key: COST_KEYS.tipsTransport, valuePln: 4000 / 70000, valueEur: null },
     { key: COST_KEYS.lcGrowFromPlug, valuePln: null, valueEur: 0.55 },
     { key: COST_KEYS.plantingLabourPerPot, valuePln: 0, valueEur: null }, // brak w arkuszu — pozycja istnieje, wartość 0
+    { key: COST_KEYS.summerRemoval, valuePln: 0, valueEur: null },        // jw. — usuwanie pędów letnich
     // ceny sadzonek per odmiana
     { key: COST_KEYS.lcPrice, varietyId: 'ruby', valuePln: null, valueEur: 2.2 },
     { key: COST_KEYS.lcPrice, varietyId: 'dj', valuePln: null, valueEur: 2.15 },
@@ -554,5 +555,45 @@ describe('koszt wyprodukowania pędu jesiennego', () => {
     }
     expect(costPln(perVariety, COST_KEYS.autumnShoot, 'dj')).toBe(1.5)
     expect(costPln(perVariety, COST_KEYS.autumnShoot, 'ruby')).toBe(0.8)
+  })
+})
+
+describe('koszt usunięcia pędu letniego', () => {
+  const full: CostBook = {
+    items: [
+      ...book.items.filter(i => i.key !== COST_KEYS.summerRemoval),
+      { key: COST_KEYS.autumnShoot, valuePln: 0.8, valueEur: null },
+      { key: COST_KEYS.summerRemoval, valuePln: 0.45, valueEur: null },
+    ],
+  }
+
+  it('dochodzi, gdy jest lato bez jesieni', () => {
+    const r = computeSectionCost(
+      b0913, item({ sectionId: 'b0913', method: 'BUY_LC', producesSummer: true }), full, m('BUY_LC')
+    )
+    const line = r.lines.find(l => l.label === 'Usunięcie pędów letnich')!
+    expect(line.totalPln).toBeCloseTo(7200 * 0.45, 6)
+  })
+
+  it('nie dochodzi, gdy po lecie jest jeszcze jesień', () => {
+    const r = computeSectionCost(
+      b0913, item({ sectionId: 'b0913', method: 'BUY_LC', producesSummer: true, producesAutumn: true }), full, m('BUY_LC')
+    )
+    expect(r.lines.some(l => l.label === 'Usunięcie pędów letnich')).toBe(false)
+    expect(r.lines.some(l => l.label === 'Wyprodukowanie pędów jesiennych')).toBe(true)
+  })
+
+  it('nie dochodzi, gdy sekcja nie jest obsadzona', () => {
+    const r = computeSectionCost(b0913, item({ sectionId: 'b0913', method: 'NOT_PLANTED' }), full, m('NOT_PLANTED'))
+    expect(r.totalPln).toBe(0)
+    expect(r.missing).toEqual([])
+  })
+
+  it('brak pozycji w cenniku zgłasza brak zamiast liczyć zero', () => {
+    const bez: CostBook = { items: book.items.filter(i => i.key !== COST_KEYS.summerRemoval) }
+    const r = computeSectionCost(
+      b0913, item({ sectionId: 'b0913', method: 'BUY_LC', producesSummer: true }), bez, m('BUY_LC')
+    )
+    expect(r.missing).toEqual([COST_KEYS.summerRemoval])
   })
 })

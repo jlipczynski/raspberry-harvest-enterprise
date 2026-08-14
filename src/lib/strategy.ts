@@ -61,6 +61,7 @@ export const COST_KEYS = {
   lcGrowFromPlug: 'lc_grow_from_plug',
   plantingLabourPerPot: 'planting_labour_per_pot',
   autumnShoot: 'autumn_shoot_cost',
+  summerRemoval: 'summer_removal_cost',
   // warunki płatności za rośliny — udział % i rok wydatku względem roku kosztu
   payOrderPct: 'pay_order_pct',
   payOrderYearOffset: 'pay_order_year_offset',
@@ -261,14 +262,22 @@ export function computeSectionCost(
     }
   }
 
-  // Zbiór jesienny wymaga wyprodukowania pędów jesiennych — koszt niezależny
-  // od sposobu obsadzenia, doliczany zawsze, gdy scenariusz przewiduje jesień.
+  // Koszty prowadzenia rośliny — niezależne od sposobu obsadzenia, wynikają
+  // wyłącznie z tego, które zbiory scenariusz przewiduje w danym roku.
   if (item.producesAutumn) {
     push(
       'Wyprodukowanie pędów jesiennych',
       canes,
       costPln(book, COST_KEYS.autumnShoot, varietyId),
       COST_KEYS.autumnShoot
+    )
+  } else if (item.producesSummer) {
+    // lato bez jesieni — pędy letnie trzeba po zbiorze usunąć
+    push(
+      'Usunięcie pędów letnich',
+      canes,
+      costPln(book, COST_KEYS.summerRemoval, varietyId),
+      COST_KEYS.summerRemoval
     )
   }
 

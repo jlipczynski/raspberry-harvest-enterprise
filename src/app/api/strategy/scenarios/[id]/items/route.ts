@@ -1,11 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { requireTenantId } from '@/lib/tenant'
 import { NextRequest, NextResponse } from 'next/server'
-import { PLANTING_METHODS } from '@/lib/strategy'
-
 export const dynamic = 'force-dynamic'
-
-const VALID_METHODS = new Set(PLANTING_METHODS.map(m => m.value as string))
 
 /**
  * PUT — zapis decyzji "czym obsadzam" dla scenariusza.
@@ -30,9 +26,18 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       if (!raw.sectionId || !Number.isInteger(Number(raw.year))) {
         return NextResponse.json({ error: 'Każda pozycja wymaga sectionId i year' }, { status: 400 })
       }
-      if (!VALID_METHODS.has(String(raw.method))) {
-        return NextResponse.json({ error: `Nieznany sposób obsadzenia: ${String(raw.method)}` }, { status: 400 })
-      }
+
+    }
+
+    // sposób obsadzenia musi istnieć na liście gospodarstwa
+    const usedMethods = [...new Set(items.map(i => String(i.method)))]
+    const knownMethods = await prisma.plantingMethodDef.findMany({
+      where: { tenantId, code: { in: usedMethods } },
+      select: { code: true },
+    })
+    const unknown = usedMethods.filter(c => !knownMethods.some(k => k.code === c))
+    if (unknown.length > 0) {
+      return NextResponse.json({ error: `Nieznany sposób obsadzenia: ${unknown.join(', ')}` }, { status: 400 })
     }
 
     // sekcje muszą należeć do tenanta

@@ -773,3 +773,34 @@ model ScenarioPlugPlan {
   @@index([scenarioId])
   @@map("scenario_plug_plans")
 }
+
+/// Sposób obsadzenia sekcji — definiowany przez użytkownika, nie zaszyty w kodzie.
+/// Flagi decydują, z jakich składników zbudowany jest koszt.
+model PlantingMethodDef {
+  id       String @id @default(cuid())
+  tenantId String
+
+  code  String // stabilny identyfikator zapisywany w PlantingScenarioItem.method
+  label String
+  hint  String?
+
+  // składniki kosztu — każdy odsyła do pozycji cennika
+  buysLongCane      Boolean @default(false) // cena LC odmiany + transport long cane
+  growsFromOwnPlug  Boolean @default(false) // koszt wyhodowania LC z własnej plagi
+  usesCoco          Boolean @default(false) // kokos + doniczka docelowa
+  hasPlantingLabour Boolean @default(false) // robocizna sadzenia
+
+  // domyślne zbiory po wybraniu sposobu (użytkownik może zmienić per sekcja)
+  defaultSummer Boolean @default(false)
+  defaultAutumn Boolean @default(false)
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("planting_method_defs")
+}

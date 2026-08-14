@@ -7,32 +7,45 @@
  * wliczana do podsumowania — nigdy nie zgadujemy wartości domyślnej.
  */
 
-export type PlantingMethod =
-  | 'NOT_PLANTED'
-  | 'BUY_LC'
-  | 'OWN_PLUGS'
-  | 'MOULDOWN'
-  | 'CUT_TO_ROOT'
+/** Kod sposobu obsadzenia. Lista jest definiowana przez użytkownika w bazie. */
+export type PlantingMethod = string
 
-/** Etykiety i domyślne założenia produkcyjne — stałe UI, nie wartości domenowe. */
-export const PLANTING_METHODS: {
-  value: PlantingMethod
+/**
+ * Definicja sposobu obsadzenia. Flagi decydują, z czego zbudowany jest koszt —
+ * dzięki temu użytkownik może dodać własny sposób bez zmiany kodu.
+ */
+export interface PlantingMethodDef {
+  code: string
   label: string
-  hint: string
+  hint?: string | null
+  buysLongCane: boolean
+  growsFromOwnPlug: boolean
+  usesCoco: boolean
+  hasPlantingLabour: boolean
   defaultSummer: boolean
   defaultAutumn: boolean
-}[] = [
-  { value: 'NOT_PLANTED', label: 'Nie obsadzam', hint: 'sekcja pusta — brak kosztu i brak plonu', defaultSummer: false, defaultAutumn: false },
-  { value: 'BUY_LC', label: 'Zakup LC', hint: 'kupione long cane + kokos', defaultSummer: true, defaultAutumn: false },
-  { value: 'OWN_PLUGS', label: 'Własne plagi', hint: 'long cane z własnej szkółki + kokos', defaultSummer: true, defaultAutumn: false },
-  { value: 'MOULDOWN', label: 'Mouldown', hint: 'przygięcie własnych pędów — bez zakupu materiału', defaultSummer: true, defaultAutumn: false },
-  { value: 'CUT_TO_ROOT', label: 'Ścięte do korzenia', hint: 'zbiór z nowych pędów', defaultSummer: false, defaultAutumn: true },
+}
+
+/**
+ * Propozycja startowa odtwarzająca sposoby z arkusza użytkownika.
+ * To NIE jest źródło prawdy — trafia do bazy dopiero, gdy użytkownik ją zapisze.
+ */
+export const DEFAULT_PLANTING_METHODS: PlantingMethodDef[] = [
+  { code: 'NOT_PLANTED', label: 'Nie obsadzam', hint: 'sekcja pusta — brak kosztu i brak plonu',
+    buysLongCane: false, growsFromOwnPlug: false, usesCoco: false, hasPlantingLabour: false, defaultSummer: false, defaultAutumn: false },
+  { code: 'BUY_LC', label: 'Zakup LC', hint: 'kupione long cane + kokos',
+    buysLongCane: true, growsFromOwnPlug: false, usesCoco: true, hasPlantingLabour: true, defaultSummer: true, defaultAutumn: false },
+  { code: 'OWN_PLUGS', label: 'Własne plagi', hint: 'long cane z własnej szkółki + kokos',
+    buysLongCane: false, growsFromOwnPlug: true, usesCoco: true, hasPlantingLabour: true, defaultSummer: true, defaultAutumn: false },
+  { code: 'MOULDOWN', label: 'Mouldown', hint: 'przygięcie własnych pędów — bez zakupu materiału',
+    buysLongCane: false, growsFromOwnPlug: false, usesCoco: false, hasPlantingLabour: false, defaultSummer: true, defaultAutumn: false },
+  { code: 'CUT_TO_ROOT', label: 'Ścięte do korzenia', hint: 'zbiór z nowych pędów',
+    buysLongCane: false, growsFromOwnPlug: false, usesCoco: false, hasPlantingLabour: false, defaultSummer: false, defaultAutumn: true },
 ]
 
-export const METHOD_LABELS: Record<PlantingMethod, string> = PLANTING_METHODS.reduce(
-  (acc, m) => ({ ...acc, [m.value]: m.label }),
-  {} as Record<PlantingMethod, string>
-)
+export function methodByCode(methods: PlantingMethodDef[], code: string): PlantingMethodDef | undefined {
+  return methods.find(m => m.code === code)
+}
 
 /** Klucze pozycji cennika. Etykiety i jednostki trzymane są w bazie. */
 export const COST_KEYS = {
@@ -174,7 +187,8 @@ export interface SectionCostResult {
 export function computeSectionCost(
   section: StrategySection,
   item: ScenarioItemInput,
-  book: CostBook
+  book: CostBook,
+  method: PlantingMethodDef | undefined
 ): SectionCostResult {
   const pots = sectionPots(section)
   const canes = sectionShoots(section)
@@ -187,16 +201,24 @@ export function computeSectionCost(
     lines.push({ label, quantity, unitPln: unit, totalPln: quantity * unit })
   }
 
-  if (item.method === 'BUY_LC' || item.method === 'OWN_PLUGS') {
-    if (item.method === 'BUY_LC') {
+  if (!method) {
+    // nieznany sposób obsadzenia — nie zgadujemy kosztu
+    missing.push(`method:${item.method}`)
+  } else {
+    if (method.buysLongCane) {
       push('Long cane (zakup)', canes, lcPricePln(book, section.varietyId), `lc_price:${section.varietyId}`)
       push('Transport long cane', canes, costPln(book, COST_KEYS.lcTransport), COST_KEYS.lcTransport)
-    } else {
+    }
+    if (method.growsFromOwnPlug) {
       push('Wyhodowanie LC z plagi', canes, lcGrowPricePln(book, section.varietyId), COST_KEYS.lcGrowFromPlug)
     }
-    push('Kokos', pots, costPln(book, COST_KEYS.cocoPerPot), COST_KEYS.cocoPerPot)
-    push('Doniczka docelowa', pots, costPln(book, COST_KEYS.targetPot), COST_KEYS.targetPot)
-    push('Robocizna sadzenia', pots, costPln(book, COST_KEYS.plantingLabourPerPot), COST_KEYS.plantingLabourPerPot)
+    if (method.usesCoco) {
+      push('Kokos', pots, costPln(book, COST_KEYS.cocoPerPot), COST_KEYS.cocoPerPot)
+      push('Doniczka docelowa', pots, costPln(book, COST_KEYS.targetPot), COST_KEYS.targetPot)
+    }
+    if (method.hasPlantingLabour) {
+      push('Robocizna sadzenia', pots, costPln(book, COST_KEYS.plantingLabourPerPot), COST_KEYS.plantingLabourPerPot)
+    }
   }
 
   return {
@@ -314,7 +336,8 @@ export function computeScenario(
   items: ScenarioItemInput[],
   plugPlans: PlugPlanInput[],
   bookSource: CostBookSource,
-  years: number[]
+  years: number[],
+  methods: PlantingMethodDef[]
 ): ScenarioSummary {
   const sectionById = new Map(sections.map(s => [s.id, s]))
   const yearRows: YearSummary[] = []
@@ -333,13 +356,14 @@ export function computeScenario(
       const section = sectionById.get(item.sectionId)
       if (!section) continue
 
-      const cost = computeSectionCost(section, item, book)
+      const method = methodByCode(methods, item.method)
+      const cost = computeSectionCost(section, item, book, method)
       if (cost.missing.length > 0) {
         warnings.push(`${section.name ?? section.id}: brak w cenniku — ${cost.missing.join(', ')}`)
       } else {
         plantingCostPln += cost.totalPln
       }
-      if (item.method !== 'NOT_PLANTED') plantedSections++
+      if (cost.totalPln > 0) plantedSections++
 
       const vol = computeSectionVolume(section, item)
       if (vol.missing.length > 0) {
@@ -406,14 +430,17 @@ export function computePlugCoverage(
   sections: StrategySection[],
   items: ScenarioItemInput[],
   plugPlans: PlugPlanInput[],
-  years: number[]
+  years: number[],
+  methods: PlantingMethodDef[]
 ): PlugCoverageRow[] {
   const sectionById = new Map(sections.map(s => [s.id, s]))
   const rows: PlugCoverageRow[] = []
 
   for (const year of years) {
     const needByVariety = new Map<string, number>()
-    for (const item of items.filter(i => i.year === year && i.method === 'OWN_PLUGS')) {
+    // zapotrzebowanie zgłaszają wyłącznie sposoby korzystające z własnych plag
+    const ownPlugCodes = new Set(methods.filter(m => m.growsFromOwnPlug).map(m => m.code))
+    for (const item of items.filter(i => i.year === year && ownPlugCodes.has(i.method))) {
       const section = sectionById.get(item.sectionId)
       if (!section) continue
       // dozwolone: inicjalizacja akumulatora, nie wartość domenowa

@@ -12,6 +12,8 @@ import {
   computeCashflow,
   readPaymentShares,
   bookFor,
+  methodByCode,
+  DEFAULT_PLANTING_METHODS,
   plugUnitCost,
   COST_KEYS,
   type CostBook,
@@ -64,6 +66,10 @@ const c0105: StrategySection = {
 const item = (o: Partial<ScenarioItemInput> & Pick<ScenarioItemInput, 'sectionId' | 'method'>): ScenarioItemInput => ({
   year: 2027, producesSummer: false, producesAutumn: false, ...o,
 })
+
+const METHODS = DEFAULT_PLANTING_METHODS
+/** definicja sposobu o danym kodzie — z listy domyślnej */
+const m = (code: string) => methodByCode(METHODS, code)
 
 describe('sectionPots / sectionShoots', () => {
   it('liczy doniczki z metrów gdy brak override', () => {
@@ -119,7 +125,7 @@ describe('cennik', () => {
 
 describe('computeSectionCost — odtworzenie arkusza "Plan 2027-2029"', () => {
   it('Zakup LC dla B09-13 daje 83 988,8 PLN jak w arkuszu', () => {
-    const r = computeSectionCost(b0913, item({ sectionId: 'b0913', method: 'BUY_LC', producesSummer: true }), book)
+    const r = computeSectionCost(b0913, item({ sectionId: 'b0913', method: 'BUY_LC', producesSummer: true }), book, m('BUY_LC'))
     expect(r.canes).toBe(7200)
     expect(r.pots).toBe(3600)
     expect(r.totalPln).toBeCloseTo(83988.8, 0)
@@ -127,26 +133,26 @@ describe('computeSectionCost — odtworzenie arkusza "Plan 2027-2029"', () => {
   })
 
   it('rozbija koszt na pozycje: long cane, transport, kokos', () => {
-    const r = computeSectionCost(b0913, item({ sectionId: 'b0913', method: 'BUY_LC' }), book)
+    const r = computeSectionCost(b0913, item({ sectionId: 'b0913', method: 'BUY_LC' }), book, m('BUY_LC'))
     expect(r.lines.map(l => l.label)).toEqual(['Long cane (zakup)', 'Transport long cane', 'Kokos'])
   })
 
   it('Własne plagi bez kosztu hodowli to sam kokos — C01-05 = 10 850 PLN jak w arkuszu', () => {
     const bookNoGrow: CostBook = { ...book, items: book.items.filter(i => i.key !== COST_KEYS.lcGrowFromPlug) }
-    const r = computeSectionCost(c0105, item({ sectionId: 'c0105', method: 'OWN_PLUGS' }), bookNoGrow)
+    const r = computeSectionCost(c0105, item({ sectionId: 'c0105', method: 'OWN_PLUGS' }), bookNoGrow, m('OWN_PLUGS'))
     expect(r.missing).toEqual([COST_KEYS.lcGrowFromPlug])
     expect(r.totalPln).toBeCloseTo(10850, 0)
   })
 
   it('Własne plagi z kosztem hodowli 0,55 EUR dokłada canów × 2,3705 PLN', () => {
-    const r = computeSectionCost(c0105, item({ sectionId: 'c0105', method: 'OWN_PLUGS' }), book)
+    const r = computeSectionCost(c0105, item({ sectionId: 'c0105', method: 'OWN_PLUGS' }), book, m('OWN_PLUGS'))
     expect(r.totalPln).toBeCloseTo(10850 + 6000 * 0.55 * EUR_PLN, 0)
     expect(r.missing).toEqual([])
   })
 
   it('mouldown, ścięte do korzenia i nie obsadzam nie generują kosztu', () => {
     for (const method of ['MOULDOWN', 'CUT_TO_ROOT', 'NOT_PLANTED'] as const) {
-      expect(computeSectionCost(b0913, item({ sectionId: 'b0913', method }), book).totalPln).toBe(0)
+      expect(computeSectionCost(b0913, item({ sectionId: 'b0913', method }), book, m(method)).totalPln).toBe(0)
     }
   })
 
@@ -154,7 +160,8 @@ describe('computeSectionCost — odtworzenie arkusza "Plan 2027-2029"', () => {
     const r = computeSectionCost(
       { ...b0913, varietyId: 'nieznana' },
       item({ sectionId: 'b0913', method: 'BUY_LC' }),
-      book
+      book,
+      m('BUY_LC')
     )
     expect(r.missing).toContain('lc_price:nieznana')
   })
@@ -198,7 +205,7 @@ describe('computeScenario', () => {
   ]
 
   it('sumuje koszt sadzenia, koszt plag i wolumen roku', () => {
-    const r = computeScenario(sections, items, [{ year: 2027, varietyId: 'ruby', quantity: 35000 }], book, [2027])
+    const r = computeScenario(sections, items, [{ year: 2027, varietyId: 'ruby', quantity: 35000 }], book, [2027], METHODS)
     const y = r.years[0]
     expect(y.plantingCostPln).toBeCloseTo(83988.8, 0)
     expect(y.plugCostPln).toBeCloseTo(117552.5, 0) // arkusz: "RAZEM plagi" 2027
@@ -209,7 +216,7 @@ describe('computeScenario', () => {
 
   it('sekcja z brakiem w cenniku nie wchodzi do sumy i daje ostrzeżenie', () => {
     const bookNoCoco: CostBook = { ...book, items: book.items.filter(i => i.key !== COST_KEYS.cocoPerPot) }
-    const r = computeScenario(sections, items, [], bookNoCoco, [2027])
+    const r = computeScenario(sections, items, [], bookNoCoco, [2027], METHODS)
     expect(r.years[0].plantingCostPln).toBe(0)
     expect(r.warnings.some(w => w.includes('B09-13'))).toBe(true)
   })
@@ -219,7 +226,7 @@ describe('computeScenario', () => {
       ...items,
       { sectionId: 'c0105', year: 2028, method: 'OWN_PLUGS', producesSummer: true, producesAutumn: false },
     ]
-    const r = computeScenario(sections, multi, [], book, [2027, 2028])
+    const r = computeScenario(sections, multi, [], book, [2027, 2028], METHODS)
     expect(r.years.map(y => y.year)).toEqual([2027, 2028])
     expect(r.totalCostPln).toBeCloseTo(r.years[0].totalCostPln + r.years[1].totalCostPln, 6)
   })
@@ -232,7 +239,7 @@ describe('computePlugCoverage', () => {
     const items: ScenarioItemInput[] = [
       { sectionId: 'c0105', year: 2028, method: 'OWN_PLUGS', producesSummer: true, producesAutumn: false },
     ]
-    const rows = computePlugCoverage(sections, items, [{ year: 2027, varietyId: 'ruby', quantity: 35000 }], [2028])
+    const rows = computePlugCoverage(sections, items, [{ year: 2027, varietyId: 'ruby', quantity: 35000 }], [2028], METHODS)
     expect(rows).toHaveLength(1)
     expect(rows[0].needed).toBe(6000)
     expect(rows[0].available).toBe(35000)
@@ -243,7 +250,7 @@ describe('computePlugCoverage', () => {
     const items: ScenarioItemInput[] = [
       { sectionId: 'b0913', year: 2028, method: 'OWN_PLUGS', producesSummer: true, producesAutumn: false },
     ]
-    const rows = computePlugCoverage(sections, items, [{ year: 2027, varietyId: 'ruby', quantity: 5000 }], [2028])
+    const rows = computePlugCoverage(sections, items, [{ year: 2027, varietyId: 'ruby', quantity: 5000 }], [2028], METHODS)
     expect(rows[0].balance).toBe(-2200)
     expect(rows[0].ok).toBe(false)
   })
@@ -331,19 +338,67 @@ describe('cennik zależny od roku', () => {
   })
 
   it('każdy rok liczy się własnym cennikiem', () => {
-    const r = computeScenario(sections, items, [], bookOf, [2027, 2028])
+    const r = computeScenario(sections, items, [], bookOf, [2027, 2028], METHODS)
     const [y27, y28] = r.years
     expect(y28.plantingCostPln).toBeGreaterThan(y27.plantingCostPln)
     expect(y28.plantingCostPln - y27.plantingCostPln).toBeCloseTo(7200 * 0.4 * EUR_PLN, 2)
   })
 
   it('zwykły cennik przekazany wprost obowiązuje w każdym roku', () => {
-    const r = computeScenario(sections, items, [], book, [2027, 2028])
+    const r = computeScenario(sections, items, [], book, [2027, 2028], METHODS)
     expect(r.years[0].plantingCostPln).toBeCloseTo(r.years[1].plantingCostPln, 6)
   })
 
   it('bookFor rozwiązuje obie formy źródła cennika', () => {
     expect(bookFor(book, 2027)).toBe(book)
     expect(lcPricePln(bookFor(bookOf, 2028), 'ruby')).toBeCloseTo(2.6 * EUR_PLN, 4)
+  })
+})
+
+describe('sposoby obsadzania definiowane przez użytkownika', () => {
+  it('własny sposób składa koszt z zaznaczonych składników', () => {
+    const custom = {
+      code: 'LC_BEZ_KOKOSU', label: 'Zakup LC bez kokosu', hint: null,
+      buysLongCane: true, growsFromOwnPlug: false, usesCoco: false,
+      hasPlantingLabour: false, defaultSummer: true, defaultAutumn: false,
+    }
+    const r = computeSectionCost(b0913, item({ sectionId: 'b0913', method: 'LC_BEZ_KOKOSU' }), book, custom)
+    expect(r.lines.map(l => l.label)).toEqual(['Long cane (zakup)', 'Transport long cane'])
+    expect(r.totalPln).toBeCloseTo(7200 * (9.482 + 1200 * EUR_PLN / 13800), 0)
+  })
+
+  it('sposób łączący zakup LC i własne plagi liczy oba składniki', () => {
+    const hybrid = {
+      code: 'MIX', label: 'Mieszany', hint: null,
+      buysLongCane: true, growsFromOwnPlug: true, usesCoco: true,
+      hasPlantingLabour: true, defaultSummer: true, defaultAutumn: false,
+    }
+    const r = computeSectionCost(c0105, item({ sectionId: 'c0105', method: 'MIX' }), book, hybrid)
+    expect(r.lines.map(l => l.label)).toContain('Long cane (zakup)')
+    expect(r.lines.map(l => l.label)).toContain('Wyhodowanie LC z plagi')
+  })
+
+  it('nieznany sposób zgłasza brak zamiast liczyć zero', () => {
+    const r = computeSectionCost(b0913, item({ sectionId: 'b0913', method: 'NIE_ISTNIEJE' }), book, undefined)
+    expect(r.missing).toEqual(['method:NIE_ISTNIEJE'])
+    expect(r.totalPln).toBe(0)
+  })
+
+  it('pokrycie plag liczy każdy sposób korzystający z własnych plag', () => {
+    const custom = [
+      ...DEFAULT_PLANTING_METHODS,
+      { code: 'PLAGI_PREMIUM', label: 'Własne plagi premium', hint: null,
+        buysLongCane: false, growsFromOwnPlug: true, usesCoco: true,
+        hasPlantingLabour: false, defaultSummer: true, defaultAutumn: false },
+    ]
+    const rows = computePlugCoverage(
+      [b0913, c0105],
+      [{ sectionId: 'c0105', year: 2028, method: 'PLAGI_PREMIUM', producesSummer: true, producesAutumn: false }],
+      [{ year: 2027, varietyId: 'ruby', quantity: 1000 }],
+      [2028],
+      custom
+    )
+    expect(rows[0].needed).toBe(6000)
+    expect(rows[0].ok).toBe(false)
   })
 })

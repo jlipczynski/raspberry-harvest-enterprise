@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { Loader2, Plus, Copy, Trash2, Save, ChevronDown, ChevronUp, AlertTriangle, Check } from 'lucide-react'
 import {
-  PLANTING_METHODS,
+  DEFAULT_PLANTING_METHODS,
+  methodByCode,
   COST_KEYS,
   costPln,
   computeScenario,
@@ -16,6 +17,7 @@ import {
   sectionPots,
   sectionShoots,
   type PlantingMethod,
+  type PlantingMethodDef,
   type CostBook,
   type StrategySection,
   type ScenarioItemInput,
@@ -82,6 +84,12 @@ interface CostItemForm extends Omit<CostItemRow, 'valuePln' | 'valueEur'> {
   plnOnly?: boolean
   /** tekst w miejscu pola EUR (np. „1 EUR =" przy kursie) */
   eurPrefix?: string
+}
+
+/** definicja sposobu obsadzania wraz z polami porządkowymi z bazy */
+interface MethodRow extends PlantingMethodDef {
+  sortOrder: number
+  isActive: boolean
 }
 
 interface VarietyCostForm {
@@ -211,6 +219,10 @@ export default function StrategyTab() {
   const [costYear, setCostYear] = useState<number>(0)
   const [costItems, setCostItems] = useState<CostItemForm[]>([])
   const [varietyCosts, setVarietyCosts] = useState<VarietyCostForm[]>([])
+  const [methods, setMethods] = useState<MethodRow[]>([])
+  const [methodDraft, setMethodDraft] = useState<MethodRow[]>([])
+  const [showMethods, setShowMethods] = useState(false)
+  const [savingMethods, setSavingMethods] = useState(false)
   const [showCostBook, setShowCostBook] = useState(false)
   const [savingCosts, setSavingCosts] = useState(false)
 
@@ -229,18 +241,21 @@ export default function StrategyTab() {
     setLoading(true)
     setError(null)
     try {
-      const [sRes, cRes, scRes] = await Promise.all([
+      const [sRes, cRes, scRes, mRes] = await Promise.all([
         fetch('/api/strategy/sections'),
         fetch('/api/strategy/cost-book'),
         fetch('/api/strategy/scenarios'),
+        fetch('/api/strategy/methods'),
       ])
-      for (const res of [sRes, cRes, scRes]) {
+      for (const res of [sRes, cRes, scRes, mRes]) {
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
           throw new Error(err.error || `HTTP ${res.status}`)
         }
       }
-      const [sData, cData, scData] = await Promise.all([sRes.json(), cRes.json(), scRes.json()])
+      const [sData, cData, scData, mData] = await Promise.all([sRes.json(), cRes.json(), scRes.json(), mRes.json()])
+      setMethods(mData.methods || [])
+      setMethodDraft(mData.methods || [])
       setSections(sData.sections || [])
       setAllItems(cData.items || [])
       setAllVarietyCosts(cData.varieties || [])
@@ -386,6 +401,38 @@ export default function StrategyTab() {
     })
   }
 
+  const addMethod = () => {
+    setMethodDraft(prev => [...prev, {
+      code: '', label: '', hint: null,
+      buysLongCane: false, growsFromOwnPlug: false, usesCoco: false, hasPlantingLabour: false,
+      defaultSummer: false, defaultAutumn: false,
+      sortOrder: prev.length * 10, isActive: true,
+    }])
+  }
+
+  const saveMethods = async () => {
+    setSavingMethods(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/strategy/methods', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ methods: methodDraft.map((m, i) => ({ ...m, sortOrder: i * 10 })) }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      setMethods(data.methods || [])
+      setMethodDraft(data.methods || [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Nie udało się zapisać sposobów obsadzania')
+    } finally {
+      setSavingMethods(false)
+    }
+  }
+
   const saveCostBook = async () => {
     setSavingCosts(true)
     setError(null)
@@ -509,7 +556,7 @@ export default function StrategyTab() {
 
   // ==================== EDYCJA DECYZJI ====================
   const setMethod = (year: number, sectionId: string, method: PlantingMethod) => {
-    const def = PLANTING_METHODS.find(m => m.value === method)
+    const def = methodByCode(methods, method)
     setDraftItems(prev => ({
       ...prev,
       [itemKey(year, sectionId)]: {
@@ -557,13 +604,13 @@ export default function StrategyTab() {
   )
 
   const summary = useMemo(
-    () => computeScenario(sections, itemInputs, plugInputs, bookForYear, years),
-    [sections, itemInputs, plugInputs, bookForYear, years]
+    () => computeScenario(sections, itemInputs, plugInputs, bookForYear, years, methods),
+    [sections, itemInputs, plugInputs, bookForYear, years, methods]
   )
 
   const coverage = useMemo(
-    () => computePlugCoverage(sections, itemInputs, plugInputs, years),
-    [sections, itemInputs, plugInputs, years]
+    () => computePlugCoverage(sections, itemInputs, plugInputs, years, methods),
+    [sections, itemInputs, plugInputs, years, methods]
   )
 
   const plugUnit = useMemo(() => plugUnitCost(bookForYear(activeYear ?? 0)), [bookForYear, activeYear])
@@ -625,9 +672,9 @@ export default function StrategyTab() {
       producesSummer: i.producesSummer, producesAutumn: i.producesAutumn,
     }))
     const plugs = isActive ? plugInputs : sc.plugPlans.map(p => ({ year: p.year, varietyId: p.varietyId, quantity: p.quantity }))
-    const r = computeScenario(sections, items, plugs, bookForYear, scYears)
+    const r = computeScenario(sections, items, plugs, bookForYear, scYears, methods)
     return { scenario: sc, result: r, isActive }
-  }), [scenarios, sections, bookForYear, activeId, itemInputs, plugInputs])
+  }), [scenarios, sections, bookForYear, activeId, itemInputs, plugInputs, methods])
 
   // ==================== RENDER ====================
   if (loading) {
@@ -722,6 +769,136 @@ export default function StrategyTab() {
               className="h-9 px-4 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
               Utwórz
             </button>
+          </div>
+        )}
+      </div>
+
+      {/* ---------- SPOSOBY OBSADZANIA ---------- */}
+      <div className="bg-white border border-gray-200 rounded-xl">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 flex-wrap">
+          <button onClick={() => setShowMethods(v => !v)} className="flex items-center gap-2 text-left">
+            {showMethods ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            <span className="font-medium text-gray-900">Sposoby obsadzania</span>
+            <span className="text-xs text-gray-500">
+              {methods.length === 0 ? 'brak — dodaj, żeby móc planować' : `${methods.filter(m => m.isActive).length} aktywnych`}
+            </span>
+          </button>
+          {showMethods && (
+            <div className="flex items-center gap-2">
+              {methodDraft.length === 0 && (
+                <button onClick={() => setMethodDraft(DEFAULT_PLANTING_METHODS.map((m, i) => ({ ...m, sortOrder: i * 10, isActive: true })))}
+                  className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded hover:bg-gray-100">
+                  Wstaw domyślne
+                </button>
+              )}
+              <button onClick={addMethod}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded hover:bg-gray-100">
+                <Plus className="w-3.5 h-3.5" /> Dodaj sposób
+              </button>
+              <button onClick={saveMethods} disabled={savingMethods}
+                className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-50">
+                {savingMethods ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Zapisz listę
+              </button>
+            </div>
+          )}
+        </div>
+
+        {showMethods && (
+          <div className="border-t border-gray-100 overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-gray-500 bg-gray-50">
+                  <th className="text-left font-medium px-3 py-1.5 border-b border-gray-200">Nazwa</th>
+                  <th className="text-left font-medium px-2 py-1.5 border-b border-gray-200 w-40">Kod</th>
+                  <th className="text-center font-medium px-2 py-1.5 border-b border-gray-200" title="cena long cane odmiany + transport">Zakup LC</th>
+                  <th className="text-center font-medium px-2 py-1.5 border-b border-gray-200" title="koszt wyhodowania long cane z własnej plagi">Z plagi</th>
+                  <th className="text-center font-medium px-2 py-1.5 border-b border-gray-200" title="kokos + doniczka docelowa">Kokos</th>
+                  <th className="text-center font-medium px-2 py-1.5 border-b border-gray-200">Robocizna</th>
+                  <th className="text-center font-medium px-2 py-1.5 border-b border-gray-200">Lato</th>
+                  <th className="text-center font-medium px-2 py-1.5 border-b border-gray-200">Jesień</th>
+                  <th className="text-center font-medium px-2 py-1.5 border-b border-gray-200">Aktywny</th>
+                  <th className="border-b border-gray-200 w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                {methodDraft.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="px-3 py-6 text-center text-sm text-gray-500">
+                      Lista jest pusta. Kliknij „Wstaw domyślne”, żeby zacząć od sposobów z Twojego arkusza.
+                    </td>
+                  </tr>
+                )}
+                {methodDraft.map((md, idx) => {
+                  const upd = (patch: Partial<MethodRow>) =>
+                    setMethodDraft(prev => prev.map((x, i) => (i === idx ? { ...x, ...patch } : x)))
+                  const inUse = scenarios.some(sc => sc.items.some(it => it.method === md.code))
+                  const flags: { field: keyof MethodRow; title: string }[] = [
+                    { field: 'buysLongCane', title: 'dolicza cenę long cane odmiany i transport' },
+                    { field: 'growsFromOwnPlug', title: 'dolicza koszt wyhodowania long cane z plagi' },
+                    { field: 'usesCoco', title: 'dolicza kokos i doniczkę docelową' },
+                    { field: 'hasPlantingLabour', title: 'dolicza robociznę sadzenia' },
+                    { field: 'defaultSummer', title: 'domyślnie zaznacza zbiór letni' },
+                    { field: 'defaultAutumn', title: 'domyślnie zaznacza zbiór jesienny' },
+                    { field: 'isActive', title: 'nieaktywne znikają z listy wyboru, ale nie kasują historii' },
+                  ]
+                  return (
+                    <tr key={idx} className="odd:bg-white even:bg-gray-50/40">
+                      <td className="px-3 py-1 border-b border-gray-100">
+                        <input
+                          value={md.label}
+                          onChange={e => upd({ label: e.target.value })}
+                          placeholder="np. Zakup LC"
+                          className="h-7 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:bg-white rounded px-1.5 outline-none"
+                        />
+                        <input
+                          value={md.hint ?? ''}
+                          onChange={e => upd({ hint: e.target.value })}
+                          placeholder="opis (opcjonalnie)"
+                          className="h-6 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:bg-white rounded px-1.5 text-[11px] text-gray-500 outline-none"
+                        />
+                      </td>
+                      <td className="px-2 py-1 border-b border-gray-100">
+                        <input
+                          value={md.code}
+                          onChange={e => upd({ code: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_') })}
+                          disabled={inUse}
+                          title={inUse ? 'kod jest używany w scenariuszu — nie można go zmienić' : undefined}
+                          className="h-7 w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-indigo-400 focus:bg-white rounded px-1.5 font-mono text-xs outline-none disabled:text-gray-400"
+                        />
+                      </td>
+                      {flags.map(f => (
+                        <td key={String(f.field)} className="px-2 py-1 border-b border-gray-100 text-center">
+                          <input
+                            type="checkbox"
+                            title={f.title}
+                            checked={Boolean(md[f.field])}
+                            onChange={e => upd({ [f.field]: e.target.checked } as Partial<MethodRow>)}
+                            className="w-4 h-4 accent-indigo-600"
+                          />
+                        </td>
+                      ))}
+                      <td className="px-2 py-1 border-b border-gray-100 text-center">
+                        <button
+                          onClick={() => {
+                            if (inUse) { setError(`„${md.label}" jest używany w scenariuszu — odznacz „aktywny" zamiast kasować.`); return }
+                            setMethodDraft(prev => prev.filter((_, i) => i !== idx))
+                          }}
+                          className="text-gray-300 hover:text-red-600"
+                          title={inUse ? 'używany w scenariuszu' : 'usuń'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <div className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100">
+              Zaznaczone składniki decydują, z czego liczony jest koszt: zakup LC bierze cenę odmiany i transport,
+              „z plagi” — koszt wyhodowania, kokos — kokos i doniczkę docelową. Sposób bez żadnego zaznaczenia nie generuje kosztu.
+            </div>
           </div>
         )}
       </div>
@@ -1004,13 +1181,13 @@ export default function StrategyTab() {
                   {sections.map(sec => {
                     const key = itemKey(activeYear ?? 0, sec.id)
                     const draft = draftItems[key]
-                    const method = (draft?.method ?? 'NOT_PLANTED') as PlantingMethod
+                    const method = (draft?.method ?? methods[0]?.code ?? '') as PlantingMethod
                     const input: ScenarioItemInput = {
                       sectionId: sec.id, year: activeYear ?? 0, method,
                       producesSummer: draft?.producesSummer ?? false,
                       producesAutumn: draft?.producesAutumn ?? false,
                     }
-                    const cost = computeSectionCost(sec, input, book)
+                    const cost = computeSectionCost(sec, input, bookForYear(activeYear ?? 0), methodByCode(methods, method))
                     const vol = computeSectionVolume(sec, input)
                     const hasIssue = cost.missing.length > 0 || vol.missing.length > 0
                     return (
@@ -1028,7 +1205,8 @@ export default function StrategyTab() {
                             onChange={e => setMethod(activeYear ?? 0, sec.id, e.target.value as PlantingMethod)}
                             className="h-8 w-full border border-gray-200 rounded px-2 text-sm bg-white"
                           >
-                            {PLANTING_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                            {methods.filter(md => md.isActive || md.code === method)
+                              .map(md => <option key={md.code} value={md.code}>{md.label}</option>)}
                           </select>
                         </td>
                         <td className="px-3 py-2 text-center">

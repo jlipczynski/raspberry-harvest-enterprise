@@ -61,6 +61,7 @@ const COST_ROLES: CostRole[] = [
   { key: COST_KEYS.tipsTransport, label: 'Transport plag', category: 'services', unit: 'PLN / szt.', perVariety: true },
   { key: COST_KEYS.plantingLabourPerPot, label: 'Sadzenie', category: 'services', unit: 'PLN / doniczkę', perVariety: false },
   { key: COST_KEYS.lcGrowFromPlug, label: 'Wyhodowanie z plagi do long cane', category: 'services', unit: 'PLN / long cane', perVariety: true },
+  { key: COST_KEYS.autumnShoot, label: 'Wyprodukowanie pędu jesiennego', category: 'services', unit: 'PLN / pęd', perVariety: true },
 
   { key: COST_KEYS.payOrderPct, label: 'Przy zamówieniu', category: 'payment', unit: '%', perVariety: false, single: true },
   { key: COST_KEYS.payOrderYearOffset, label: '↳ rok wydatku', category: 'payment', unit: 'rok (−1 = wcześniej)', perVariety: false, single: true },
@@ -90,6 +91,7 @@ const SUGGESTIONS: { key: string; perVariety?: boolean; pln?: number; eur?: numb
   { key: COST_KEYS.tipsTransport, pln: 0.057143 },
   { key: COST_KEYS.plantingLabourPerPot, pln: 0 },
   { key: COST_KEYS.lcGrowFromPlug, eur: 0.55 },
+  { key: COST_KEYS.autumnShoot, pln: 0 },
   { key: COST_KEYS.payOrderPct, pln: 25 },
   { key: COST_KEYS.payOrderYearOffset, pln: -1 },
   { key: COST_KEYS.payDeliveryPct, pln: 25 },

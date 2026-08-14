@@ -60,6 +60,7 @@ export const COST_KEYS = {
   tipsTransport: 'tips_transport',
   lcGrowFromPlug: 'lc_grow_from_plug',
   plantingLabourPerPot: 'planting_labour_per_pot',
+  autumnShoot: 'autumn_shoot_cost',
   // warunki płatności za rośliny — udział % i rok wydatku względem roku kosztu
   payOrderPct: 'pay_order_pct',
   payOrderYearOffset: 'pay_order_year_offset',
@@ -258,6 +259,17 @@ export function computeSectionCost(
     if (method.hasPlantingLabour) {
       push('Robocizna sadzenia', pots, costPln(book, COST_KEYS.plantingLabourPerPot), COST_KEYS.plantingLabourPerPot)
     }
+  }
+
+  // Zbiór jesienny wymaga wyprodukowania pędów jesiennych — koszt niezależny
+  // od sposobu obsadzenia, doliczany zawsze, gdy scenariusz przewiduje jesień.
+  if (item.producesAutumn) {
+    push(
+      'Wyprodukowanie pędów jesiennych',
+      canes,
+      costPln(book, COST_KEYS.autumnShoot, varietyId),
+      COST_KEYS.autumnShoot
+    )
   }
 
   return {

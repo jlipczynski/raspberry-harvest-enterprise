@@ -155,9 +155,15 @@ const COST_CATEGORIES = ['general', 'planting', 'nursery', 'payment']
 
 
 // ==================== HELPERS ====================
-const fmtPln = (n: number) => n.toLocaleString('pl-PL', { maximumFractionDigits: 0 }) + ' zł'
+/** kwoty zawsze z dokładnością do grosza */
+const fmtPln = (n: number) =>
+  n.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' zł'
 const fmtKg = (n: number) => n.toLocaleString('pl-PL', { maximumFractionDigits: 0 }) + ' kg'
+/** liczby sztuk — doniczki, cany, plagi — bez części dziesiętnych */
 const fmtNum = (n: number) => n.toLocaleString('pl-PL', { maximumFractionDigits: 0 })
+/** stawka jednostkowa — do 4 miejsc, bo grosz to za mało przy cenach za sztukę */
+const fmtRate = (n: number) =>
+  n.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 const parseNum = (v: string): number | null => {
   if (v.trim() === '') return null
   const n = parseFloat(v.replace(',', '.'))
@@ -1092,7 +1098,7 @@ export default function StrategyTab() {
                 { label: 'Koszt plag', value: fmtPln(yearSummary.plugCostPln) },
                 { label: 'Koszt razem', value: fmtPln(yearSummary.totalCostPln), strong: true },
                 { label: 'Wolumen netto', value: fmtKg(yearSummary.kgNet) },
-                { label: 'Koszt / kg', value: yearSummary.costPerKgNet != null ? `${yearSummary.costPerKgNet.toFixed(2)} zł` : '—', strong: true },
+                { label: 'Koszt / kg', value: yearSummary.costPerKgNet != null ? fmtPln(yearSummary.costPerKgNet) : '—', strong: true },
               ].map(tile => (
                 <div key={tile.label} className={`rounded-xl border p-3 ${tile.strong ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'}`}>
                   <div className="text-xs text-gray-500">{tile.label}</div>
@@ -1196,7 +1202,7 @@ export default function StrategyTab() {
               <span className="text-xs text-gray-500">
                 koszt jednej plagi:{' '}
                 {plugUnit.unitPln != null
-                  ? `${plugUnit.unitPln.toFixed(3)} zł`
+                  ? `${fmtRate(plugUnit.unitPln)} zł`
                   : <span className="text-amber-600">uzupełnij cennik ({plugUnit.missing.join(', ')})</span>}
               </span>
             </div>
@@ -1287,7 +1293,7 @@ export default function StrategyTab() {
                         <td className="px-3 py-2 text-right font-medium text-gray-900">{fmtPln(result.totalCostPln)}</td>
                         <td className="px-3 py-2 text-right text-gray-700">{fmtKg(result.totalKgNet)}</td>
                         <td className="px-3 py-2 text-right font-medium text-indigo-800">
-                          {result.costPerKgNet != null ? `${result.costPerKgNet.toFixed(2)} zł` : '—'}
+                          {result.costPerKgNet != null ? fmtPln(result.costPerKgNet) : '—'}
                         </td>
                         <td className="px-3 py-2 text-right text-xs text-amber-600">
                           {result.warnings.length > 0 ? result.warnings.length : '—'}
@@ -1329,7 +1335,7 @@ export default function StrategyTab() {
                         <td className="px-3 py-2 text-right text-gray-600">{fmtKg(y.kgGross)}</td>
                         <td className="px-3 py-2 text-right text-gray-900">{fmtKg(y.kgNet)}</td>
                         <td className="px-3 py-2 text-right text-indigo-800">
-                          {y.costPerKgNet != null ? `${y.costPerKgNet.toFixed(2)} zł` : '—'}
+                          {y.costPerKgNet != null ? fmtPln(y.costPerKgNet) : '—'}
                         </td>
                       </tr>
                     ))}
@@ -1341,7 +1347,7 @@ export default function StrategyTab() {
                       <td className="px-3 py-2" />
                       <td className="px-3 py-2 text-right text-gray-900">{fmtKg(summary.totalKgNet)}</td>
                       <td className="px-3 py-2 text-right text-indigo-800">
-                        {summary.costPerKgNet != null ? `${summary.costPerKgNet.toFixed(2)} zł` : '—'}
+                        {summary.costPerKgNet != null ? fmtPln(summary.costPerKgNet) : '—'}
                       </td>
                     </tr>
                   </tbody>

@@ -45,6 +45,13 @@ export const COST_KEYS = {
   tipsTransport: 'tips_transport',
   lcGrowFromPlug: 'lc_grow_from_plug',
   plantingLabourPerPot: 'planting_labour_per_pot',
+  // warunki płatności za rośliny — udział % i rok wydatku względem roku kosztu
+  payOrderPct: 'pay_order_pct',
+  payOrderYearOffset: 'pay_order_year_offset',
+  payDeliveryPct: 'pay_delivery_pct',
+  payDeliveryYearOffset: 'pay_delivery_year_offset',
+  payRestPct: 'pay_rest_pct',
+  payRestYearOffset: 'pay_rest_year_offset',
 } as const
 
 export interface CostItemValue {
@@ -427,4 +434,90 @@ export function computePlugCoverage(
   }
 
   return rows
+}
+
+// ==================== CASHFLOW — WARUNKI PŁATNOŚCI ZA ROŚLINY ====================
+
+export interface PaymentShare {
+  key: string
+  label: string
+  /** udział w koszcie roku, w procentach */
+  percent: number
+  /** rok wydatku względem roku kosztu: -1 = rok wcześniej, 0 = ten sam, +1 = rok później */
+  yearOffset: number
+}
+
+export interface CashflowPart {
+  costYear: number
+  label: string
+  amountPln: number
+}
+
+export interface CashflowRow {
+  paymentYear: number
+  amountPln: number
+  parts: CashflowPart[]
+}
+
+export interface CashflowResult {
+  rows: CashflowRow[]
+  /** suma udziałów; != 100 oznacza, że warunki płatności nie pokrywają całości kosztu */
+  totalPercent: number
+  /** kwota kosztu nieprzypisana do żadnego roku wypłaty */
+  unallocatedPln: number
+  warnings: string[]
+}
+
+/** Odczytuje warunki płatności z cennika. Brak którejkolwiek wartości = brak warunków. */
+export function readPaymentShares(book: CostBook): { shares: PaymentShare[]; missing: string[] } {
+  const spec = [
+    { key: COST_KEYS.payOrderPct, offsetKey: COST_KEYS.payOrderYearOffset, label: 'Przy zamówieniu' },
+    { key: COST_KEYS.payDeliveryPct, offsetKey: COST_KEYS.payDeliveryYearOffset, label: 'Przy dostawie' },
+    { key: COST_KEYS.payRestPct, offsetKey: COST_KEYS.payRestYearOffset, label: 'Reszta' },
+  ]
+  const shares: PaymentShare[] = []
+  const missing: string[] = []
+  for (const s of spec) {
+    const percent = costPln(book, s.key)
+    const offset = costPln(book, s.offsetKey)
+    if (percent == null) { missing.push(s.key); continue }
+    if (offset == null) { missing.push(s.offsetKey); continue }
+    shares.push({ key: s.key, label: s.label, percent, yearOffset: Math.round(offset) })
+  }
+  return { shares, missing }
+}
+
+/**
+ * Rozkłada koszt każdego roku na lata wydatku zgodnie z warunkami płatności.
+ * Odpowiednik tabeli "CASHFLOW" z arkusza, ale z konfigurowalnym rokiem wydatku.
+ */
+export function computeCashflow(years: YearSummary[], shares: PaymentShare[]): CashflowResult {
+  const warnings: string[] = []
+  const totalPercent = shares.reduce((s, x) => s + x.percent, 0)
+  if (shares.length > 0 && Math.abs(totalPercent - 100) > 0.001) {
+    warnings.push(`Udziały płatności sumują się do ${totalPercent}%, a nie 100%`)
+  }
+
+  const byYear = new Map<number, CashflowRow>()
+  let allocated = 0
+  for (const y of years) {
+    for (const share of shares) {
+      const amountPln = y.totalCostPln * (share.percent / 100)
+      if (amountPln === 0) continue
+      const paymentYear = y.year + share.yearOffset
+      const row = byYear.get(paymentYear) ?? { paymentYear, amountPln: 0, parts: [] }
+      row.amountPln += amountPln
+      row.parts.push({ costYear: y.year, label: share.label, amountPln })
+      byYear.set(paymentYear, row)
+      allocated += amountPln
+    }
+  }
+
+  const totalCost = years.reduce((s, y) => s + y.totalCostPln, 0)
+  return {
+    rows: [...byYear.values()].sort((a, b) => a.paymentYear - b.paymentYear),
+    totalPercent,
+    unallocatedPln: totalCost - allocated,
+    warnings,
+  }
 }

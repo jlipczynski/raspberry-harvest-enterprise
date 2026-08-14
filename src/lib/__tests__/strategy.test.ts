@@ -9,11 +9,14 @@ import {
   computeSectionVolume,
   computeScenario,
   computePlugCoverage,
+  computeCashflow,
+  readPaymentShares,
   plugUnitCost,
   COST_KEYS,
   type CostBook,
   type StrategySection,
   type ScenarioItemInput,
+  type YearSummary,
 } from '../strategy'
 
 /**
@@ -242,5 +245,73 @@ describe('computePlugCoverage', () => {
     const rows = computePlugCoverage(sections, items, [{ year: 2027, varietyId: 'ruby', quantity: 5000 }], [2028])
     expect(rows[0].balance).toBe(-2200)
     expect(rows[0].ok).toBe(false)
+  })
+})
+
+describe('cashflow — warunki płatności za rośliny', () => {
+  /** Warunki z arkusza: 25% zamówienie, 25% dostawa, 50% do sierpnia roku następnego. */
+  const termsBook: CostBook = {
+    ...book,
+    items: [
+      ...book.items,
+      { key: COST_KEYS.payOrderPct, valuePln: 25, valueEur: null },
+      { key: COST_KEYS.payOrderYearOffset, valuePln: -1, valueEur: null },
+      { key: COST_KEYS.payDeliveryPct, valuePln: 25, valueEur: null },
+      { key: COST_KEYS.payDeliveryYearOffset, valuePln: 0, valueEur: null },
+      { key: COST_KEYS.payRestPct, valuePln: 50, valueEur: null },
+      { key: COST_KEYS.payRestYearOffset, valuePln: 1, valueEur: null },
+    ],
+  }
+
+  const years: YearSummary[] = [
+    { year: 2027, plantingCostPln: 0, plugCostPln: 0, totalCostPln: 300000, kgGross: 0, kgNet: 0, costPerKgNet: null, plantedSections: 0, warnings: [] },
+    { year: 2028, plantingCostPln: 0, plugCostPln: 0, totalCostPln: 480000, kgGross: 0, kgNet: 0, costPerKgNet: null, plantedSections: 0, warnings: [] },
+  ]
+
+  it('odczytuje warunki z cennika', () => {
+    const { shares, missing } = readPaymentShares(termsBook)
+    expect(missing).toEqual([])
+    expect(shares.map(s => [s.percent, s.yearOffset])).toEqual([[25, -1], [25, 0], [50, 1]])
+  })
+
+  it('brak warunków w cenniku zgłasza braki zamiast zakładać rozkład', () => {
+    const { shares, missing } = readPaymentShares(book)
+    expect(shares).toEqual([])
+    expect(missing).toContain(COST_KEYS.payOrderPct)
+  })
+
+  it('rozkłada koszt roku na lata wydatku', () => {
+    const { shares } = readPaymentShares(termsBook)
+    const cf = computeCashflow(years, shares)
+    const byYear = Object.fromEntries(cf.rows.map(r => [r.paymentYear, Math.round(r.amountPln)]))
+    // 2027: 25% z 2027 (dostawa) + 25% z 2028 (zamówienie rok wcześniej)
+    expect(byYear[2026]).toBe(75000)                 // zamówienie pod rok 2027
+    expect(byYear[2027]).toBe(75000 + 120000)        // dostawa 2027 + zamówienie 2028
+    expect(byYear[2028]).toBe(150000 + 120000)       // reszta z 2027 + dostawa 2028
+    expect(byYear[2029]).toBe(240000)                // reszta z 2028
+  })
+
+  it('suma wydatków równa się sumie kosztów', () => {
+    const { shares } = readPaymentShares(termsBook)
+    const cf = computeCashflow(years, shares)
+    const total = cf.rows.reduce((s, r) => s + r.amountPln, 0)
+    expect(total).toBeCloseTo(780000, 6)
+    expect(cf.unallocatedPln).toBeCloseTo(0, 6)
+  })
+
+  it('ostrzega, gdy udziały nie sumują się do 100%', () => {
+    const cf = computeCashflow(years, [{ key: 'a', label: 'Zaliczka', percent: 30, yearOffset: 0 }])
+    expect(cf.warnings[0]).toContain('30%')
+    expect(cf.unallocatedPln).toBeCloseTo(780000 * 0.7, 6)
+  })
+
+  it('pokazuje z którego roku kosztu pochodzi każda rata', () => {
+    const { shares } = readPaymentShares(termsBook)
+    const cf = computeCashflow(years, shares)
+    const y2027 = cf.rows.find(r => r.paymentYear === 2027)!
+    expect(y2027.parts.map(p => [p.costYear, p.label])).toEqual([
+      [2027, 'Przy dostawie'],
+      [2028, 'Przy zamówieniu'],
+    ])
   })
 })

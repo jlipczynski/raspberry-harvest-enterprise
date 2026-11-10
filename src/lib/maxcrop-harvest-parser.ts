@@ -77,7 +77,9 @@ export function parseHarvestRows(rows: Array<Array<string | number>>): HarvestRo
       }
     }
 
-    if (isNaN(weightKg) || weightKg <= 0) continue
+    // 0 kg is a valid MaxCrop correction (entry voided) — keep it so the
+    // upsert overwrites the previously imported weight. Skip only invalid values.
+    if (isNaN(weightKg) || weightKg < 0) continue
 
     results.push({
       date: dateStr,
@@ -89,4 +91,27 @@ export function parseHarvestRows(rows: Array<Array<string | number>>): HarvestRo
   }
 
   return results
+}
+
+const POLISH_MONTHS: Record<string, number> = {
+  stycznia: 1, lutego: 2, marca: 3, kwietnia: 4, maja: 5, czerwca: 6,
+  lipca: 7, sierpnia: 8, 'września': 9, 'października': 10, listopada: 11, grudnia: 12,
+}
+
+/**
+ * Parses the report date range from the MaxCrop title cell, e.g.
+ * "Suma zbiorów \n1 maja 2026 - 9 listopada 2026" → { from: '2026-05-01', to: '2026-11-09' }.
+ * Returns null when the title does not contain a recognizable range.
+ */
+export function parseReportRange(title: string): { from: string; to: string } | null {
+  const re = /(\d{1,2})\s+([a-ząćęłńóśźż]+)\s+(\d{4})/gi
+  const dates: string[] = []
+  for (const m of title.matchAll(re)) {
+    const month = POLISH_MONTHS[m[2].toLowerCase()]
+    if (!month) continue
+    dates.push(`${m[3]}-${String(month).padStart(2, '0')}-${m[1].padStart(2, '0')}`)
+  }
+  if (dates.length < 2) return null
+  const [from, to] = dates
+  return from <= to ? { from, to } : null
 }

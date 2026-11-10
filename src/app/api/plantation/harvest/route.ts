@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireTenantId } from '@/lib/tenant'
-import { parseHarvestRows, mapAreaToBlockName } from '@/lib/maxcrop-harvest-parser'
+import { parseHarvestRows, parseReportRange, mapAreaToBlockName } from '@/lib/maxcrop-harvest-parser'
 import * as XLSX from 'xlsx'
 
 export const dynamic = 'force-dynamic'
@@ -68,6 +68,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No harvest data found in file' }, { status: 400 })
     }
 
+    // Report range: from the MaxCrop title row ("1 maja 2026 - 9 listopada 2026"),
+    // otherwise the span of dates actually present in the file.
+    const parsedDates = parsed.map((r) => r.date).sort()
+    const range = parseReportRange(String(rawRows[0]?.[0] ?? '')) ?? {
+      from: parsedDates[0],
+      to: parsedDates[parsedDates.length - 1],
+    }
+
     // Build block name → id map
     const blockMap = new Map<string, string>()
     for (const b of farm.blocks) {
@@ -123,17 +131,30 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Reconcile: the MaxCrop report is the source of truth for its date range.
+    // Entries in that range that are no longer in the file (e.g. renamed areas,
+    // rows imported earlier with a shifted date) are removed.
+    const fileKeys = new Set(parsed.map((r) => `${r.date}|${r.areaName}|${r.productClass}`))
+    const existing = await prisma.harvestEntry.findMany({
+      where: { farmId: farm.id, date: { gte: new Date(range.from), lte: new Date(range.to) } },
+      select: { id: true, date: true, areaName: true, productClass: true },
+    })
+    const staleIds = existing
+      .filter((e) => !fileKeys.has(`${e.date.toISOString().slice(0, 10)}|${e.areaName}|${e.productClass}`))
+      .map((e) => e.id)
+    const deleted = staleIds.length > 0
+      ? (await prisma.harvestEntry.deleteMany({ where: { farmId: farm.id, id: { in: staleIds } } })).count
+      : 0
+
     return NextResponse.json({
       success: true,
+      deleted,
       totalRows: parsed.length,
       inserted,
       updated,
       unmapped,
       unmappedAreas: Array.from(unmappedAreas),
-      dateRange: {
-        from: parsed[0]?.date,
-        to: parsed[parsed.length - 1]?.date,
-      },
+      dateRange: range,
     })
   } catch (error) {
     console.error('Harvest import error:', error)

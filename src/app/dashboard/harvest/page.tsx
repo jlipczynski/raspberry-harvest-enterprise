@@ -302,7 +302,7 @@ export default function HarvestPage() {
       const data = await res.json()
 
       if (res.ok && data.success) {
-        const msg = `Zaimportowano ${data.totalRows} wierszy (${data.dateRange?.from} — ${data.dateRange?.to})${data.unmapped > 0 ? `. ${data.unmapped} niezmapowanych: ${data.unmappedAreas?.join(', ')}` : ''}`
+        const msg = `Zaimportowano ${data.totalRows} wierszy (${data.dateRange?.from} — ${data.dateRange?.to})${data.deleted > 0 ? `. Usunięto ${data.deleted} nieaktualnych wpisów` : ''}${data.unmapped > 0 ? `. ${data.unmapped} niezmapowanych: ${data.unmappedAreas?.join(', ')}` : ''}`
         setUploadResult(msg)
         fetchData()
       } else {
